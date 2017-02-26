@@ -60,6 +60,7 @@
  */
 #define PEG_CAP 0xa2
 #define SLOTCAP 0xb4
+#define SLOTSTS 0xba
 #define PEGLC 0xec
 #define D1F0_VCCAP 0x104
 #define D1F0_VC0RCTL 0x114

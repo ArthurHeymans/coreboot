@@ -24,10 +24,13 @@
 #include <console/console.h>
 #include <halt.h>
 #include <romstage_handoff.h>
+#include <device/pci_def.h>
 
 void x4x_early_init(void)
 {
 	const pci_devfn_t d0f0 = PCI_DEV(0, 0, 0);
+	u16 reg16;
+	u32 reg32;
 
 	/* Setup MCHBAR. */
 	pci_write_config32(d0f0, D0F0_MCHBAR_LO, (uintptr_t)DEFAULT_MCHBAR | 1);
@@ -64,6 +67,33 @@ void x4x_early_init(void)
 		gfxsize = 6;
 	}
 	pci_write_config16(d0f0, D0F0_GGC, 0x0100 | ((gfxsize + 1) << 4));
+
+	/*
+	 * Disabling IGD later is possible but somehow reclaiming its UMA
+	 * resources fails so enable/disable IGD before raminit if external
+	 * GPU is found.
+	 * NOTE: PCI specifies that one needs to wait at least 100msec after
+	 * reset. In practise GPUs seem to get detected fine without this.
+	 */
+#define TMP_PCI_BUS 0x0a
+
+	if (pci_read_config16(PCI_DEV(0, 0x01, 0), SLOTSTS) & (1 << 6) &&
+		!IS_ENABLED(CONFIG_ONBOARD_VGA_IS_PRIMARY)) {
+		pci_write_config8(PCI_DEV(0, 0x01, 0), PCI_SECONDARY_BUS,
+				TMP_PCI_BUS);
+		pci_write_config8(PCI_DEV(0, 0x01, 0),
+				PCI_SUBORDINATE_BUS, TMP_PCI_BUS);
+		reg16 = pci_read_config16(PCI_DEV(TMP_PCI_BUS, 0, 0),
+					PCI_CLASS_DEVICE) >> 8;
+		if (reg16 == 0x03) {
+			printk(BIOS_DEBUG,"External GPU is found."
+				" xDisabling IGD before raminit\n");
+			reg32 = pci_read_config32(d0f0, D0F0_DEVEN);
+			pci_write_config32(d0f0, D0F0_DEVEN,
+					reg32 & ~(IGD0EN | IGD1EN));
+			pci_write_config16(d0f0, D0F0_GGC, (1 << 1));
+		}
+	}
 }
 
 static void init_egress(void)
