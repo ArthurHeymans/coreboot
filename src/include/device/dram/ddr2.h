@@ -213,6 +213,9 @@ u32 spd_decode_spd_size_ddr2(u8 byte0);
 u32 spd_decode_eeprom_size_ddr2(u8 byte1);
 int spd_decode_ddr2(struct dimm_attr_st *dimm, u8 spd[SPD_SIZE_MAX_DDR2]);
 void dram_print_spd_ddr2(const struct dimm_attr_st *dimm);
-
+void get_common_min_tclk(u8 cas_mask, const int num_dimms, u32 *common_min_tclk,
+			u32 (*cycle_time)[8]);
+u32 get_common_freq_cas(u8 cas_mask, u32 *common_min_tclk, u8 *selected_cas,
+			u32 mimimum_ctrl_tclk);
 
 #endif /* DEVICE_DRAM_DDR2L_H */

@@ -2,6 +2,7 @@
  * This file is part of the coreboot project.
  *
  * Copyright (C) 2017 Patrick Rudolph <siro@das-labor.org>
+ * Copyright (C) 2017 Arthur Heymans <arthur@aheymans.xyz>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -627,4 +628,82 @@ void dram_print_spd_ddr2(const struct dimm_attr_st *dimm)
 	print_ns("  tQHSmax           : ", dimm->tQHS);
 	print_us("  tPLL              : ", dimm->tPLL);
 	print_us("  tRR               : ", dimm->tRR);
+}
+
+/**
+* \Find the common minimal tCLK for all DIMM for each CAS
+*
+* @param cas mask: of supported CAS by all present DIMMs
+*        num_dimms: number of DIMMs
+*        array of common minimal tCLK per CAS, needs to be of size 8
+*        array of minimal tCLK per dimm per CAS, needs to be of size 8
+*/
+
+void get_common_min_tclk(u8 cas_mask, const int num_dimms, u32 *common_min_tclk,
+			u32 (*cycle_time)[8])
+{
+	int i, j, high_common_cas;
+
+	memset(common_min_tclk, 0, 8 * sizeof(common_min_tclk));
+
+	high_common_cas = spd_get_msbs(cas_mask);
+	for (i = high_common_cas; cas_mask & (1 << i); i--) {
+		for (j = 0; j < num_dimms; j++) {
+			/* 0 Means that dimm is empty */
+			if(cycle_time[j][i] == 0)
+				continue;
+			common_min_tclk[i] = MAX(common_min_tclk[i],
+						cycle_time[j][i]);
+		}
+	}
+}
+
+/**
+* \Find common tCLK and CAS based on memory controller mimimal tCLK
+*  and on common minimal tCLK per CAS
+*
+* @param cas mask: of supported CAS by all present DIMMs
+*        array of common minimal tCLK per CAS, needs to be of size 8
+*        array of minimal tCLK per dimm per CAS, needs to be of size 8
+*        pointer to selected CAS
+* returns: the selected tCLK
+*/
+
+u32 get_common_freq_cas(u8 cas_mask, u32 *common_min_tclk, u8 *selected_cas,
+			u32 mimimum_ctrl_tclk)
+{
+	int high_common_cas;
+	u32 tCLK = 0;
+
+	high_common_cas = spd_get_msbs(cas_mask);
+
+	while (common_min_tclk[high_common_cas] < mimimum_ctrl_tclk) {
+		high_common_cas--;
+		if (high_common_cas < 3)
+			break;
+	}
+
+	tCLK = common_min_tclk[high_common_cas];
+
+	if (tCLK <= TCK_800MHZ) {
+		tCLK = TCK_800MHZ;
+	} else if (tCLK <= TCK_666MHZ) {
+		tCLK = TCK_666MHZ;
+	} else if (tCLK <= TCK_533MHZ) {
+		tCLK = TCK_533MHZ;
+	} else if (tCLK <= TCK_400MHZ) {
+		tCLK = TCK_400MHZ;
+	} else if (tCLK <= TCK_333MHZ) {
+		tCLK = TCK_333MHZ;
+	} else if (tCLK <= TCK_266MHZ) {
+		tCLK = TCK_266MHZ;
+	} else if (tCLK <= TCK_200MHZ) {
+		tCLK = TCK_200MHZ;
+	} else {
+		printk(BIOS_DEBUG, "Too slow common tCLK found\n");
+		return 0;
+	}
+
+	*selected_cas = high_common_cas;
+	return tCLK;
 }
