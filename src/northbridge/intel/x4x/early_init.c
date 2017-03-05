@@ -57,17 +57,22 @@ void x4x_early_init(void)
 	pci_write_config8(d0f0, D0F0_PAM(5), 0x33);
 	pci_write_config8(d0f0, D0F0_PAM(6), 0x33);
 
-	/* Enable internal GFX */
-	pci_write_config32(d0f0, D0F0_DEVEN, BOARD_DEVEN);
-	/* Set preallocated IGD size from cmos */
-	u8 gfxsize;
+	if (!(pci_read_config32(d0f0, D0F0_CAPID0 + 4) & (1 << (46 - 32)))) {
+		/* Enable internal GFX */
+		pci_write_config32(d0f0, D0F0_DEVEN, BOARD_DEVEN);
+		/* Set preallocated IGD size from cmos */
+		u8 gfxsize;
 
-	if (get_option(&gfxsize, "gfx_uma_size") != CB_SUCCESS) {
-		/* 6 for 64MB, default if not set in cmos */
-		gfxsize = 6;
+		if (get_option(&gfxsize, "gfx_uma_size") != CB_SUCCESS) {
+			/* 6 for 64MB, default if not set in cmos */
+			gfxsize = 6;
+		}
+		pci_write_config16(d0f0, D0F0_GGC,
+				0x0100 | ((gfxsize + 1) << 4));
+	} else { /* Does not feature internal graphics */
+		pci_write_config32(d0f0, D0F0_DEVEN, D0EN | D1EN | PEG1EN);
+		pci_write_config16(d0f0, D0F0_GGC, (1 << 1));
 	}
-	pci_write_config16(d0f0, D0F0_GGC, 0x0100 | ((gfxsize + 1) << 4));
-
 	/*
 	 * Disabling IGD later is possible but somehow reclaiming its UMA
 	 * resources fails so enable/disable IGD before raminit if external
