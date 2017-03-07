@@ -323,6 +323,7 @@ void sdram_initialize(int boot_path, const u8 *spd_map);
 void raminit_ddr2(struct sysinfo *);
 u32 fsb2mhz(u32 speed);
 u32 ddr2mhz(u32 speed);
+void rcven(const struct sysinfo *);
 
 struct acpi_rsdp;
 #ifndef __SIMPLE_DEVICE__
