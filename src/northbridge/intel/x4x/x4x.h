@@ -145,6 +145,7 @@
 #define TOTAL_DIMMS 4
 #define DIMMS_PER_CHANNEL (TOTAL_DIMMS / TOTAL_CHANNELS)
 #define RAW_CARD_UNPOPULATED 0xff
+#define RAW_CARD_POPULATED 0
 
 #define DIMM_IS_POPULATED(dimms, idx) (dimms[idx].card_type != RAW_CARD_UNPOPULATED)
 #define IF_DIMM_POPULATED(dimms, idx) if (dimms[idx].card_type != RAW_CARD_UNPOPULATED)
@@ -243,6 +244,7 @@ enum chip_cap { /* as in DDR3 spd */
 
 struct timings {
 	unsigned int	CAS;
+	unsigned int    tclk;
 	enum fsb_clock	fsb_clk;
 	enum mem_clock	mem_clk;
 	unsigned int	tRAS;
@@ -259,40 +261,22 @@ struct dimminfo {
 	unsigned int	card_type; /* 0xff: unpopulated,
 				      0xa - 0xf: raw card type A - F */
 	enum chip_width	width;
-	enum chip_cap	chip_capacity;
+	/* enum chip_cap	chip_capacity; */
 	unsigned int	page_size; /* of whole DIMM in Bytes (4096 or 8192) */
-	unsigned int	sides;
-	unsigned int	banks;
+	/* unsigned int	sides; */
+	unsigned int	n_banks; /* 4 -> 0, 8 -> 1 */
 	unsigned int	ranks;
 	unsigned int	rows;
 	unsigned int	cols;
-	unsigned int	cas_latencies;
-	unsigned int	tAAmin;
-	unsigned int	tCKmin;
-	unsigned int	tWR;
-	unsigned int	tRP;
-	unsigned int	tRCD;
-	unsigned int	tRAS;
-	unsigned int	rank_capacity_mb; /* per rank in Megabytes */
-	u8		spd_data[256];
 };
 
 /* The setup is up to two DIMMs per channel */
 struct sysinfo {
-	int		txt_enabled;
-	int		cores;
 	int		boot_path;
 	int		max_ddr2_mhz;
-	int		max_ddr3_mt;
 	enum fsb_clock	max_fsb;
-	int		max_fsb_mhz;
-	int		max_render_mhz;
-	int		enable_igd;
-	int		enable_peg;
-	u16		ggc;
 
 	int		dimm_config[2];
-	int		dimms_per_ch;
 	int		spd_type;
 	int		channel_capacity[2];
 	struct timings	selected_timings;
@@ -337,6 +321,8 @@ u32 decode_igd_gtt_size(u32 gsm);
 u8 decode_pciebar(u32 *const base, u32 *const len);
 void sdram_initialize(int boot_path, const u8 *spd_map);
 void raminit_ddr2(struct sysinfo *);
+u32 fsb2mhz(u32 speed);
+u32 ddr2mhz(u32 speed);
 
 struct acpi_rsdp;
 #ifndef __SIMPLE_DEVICE__
