@@ -244,7 +244,7 @@ static void usage(void)
 
 amd_fw_entry amd_psp_fw_table[] = {
 	{ .type = AMD_FW_PSP_PUBKEY, .level = PSP_BOTH | PSP_LVL2_AB, .skip_hashing = true },
-	{ .type = AMD_FW_PSP_BOOTLOADER, .level = PSP_BOTH | PSP_LVL2_AB,
+	{ .type = AMD_FW_PSP_BOOTLOADER, .level = PSP_BOTH | PSP_BOTH_AB,
 		.generate_manifest = true },
 	{ .type = AMD_FW_PSP_SECURED_OS, .level = PSP_LVL2 | PSP_LVL2_AB },
 	{ .type = AMD_FW_PSP_RECOVERY, .level = PSP_LVL1 },
@@ -257,17 +257,17 @@ amd_fw_entry amd_psp_fw_table[] = {
 	{ .type = AMD_FW_PSP_SECURED_DEBUG, .level = PSP_LVL2 | PSP_LVL2_AB,
 									.skip_hashing = true },
 	{ .type = AMD_FW_ABL_PUBKEY, .level = PSP_BOTH | PSP_BOTH_AB },
-	{ .type = AMD_PSP_FUSE_CHAIN, .level = PSP_LVL2 | PSP_LVL2_AB },
+	{ .type = AMD_PSP_FUSE_CHAIN, .level = PSP_BOTH | PSP_BOTH_AB },
 	{ .type = AMD_FW_PSP_TRUSTLETS, .level = PSP_LVL2 | PSP_LVL2_AB },
 	{ .type = AMD_FW_PSP_TRUSTLETKEY, .level = PSP_LVL2 | PSP_LVL2_AB },
-	{ .type = AMD_FW_PSP_SMU_FIRMWARE2, .level = PSP_BOTH | PSP_LVL2_AB },
+	{ .type = AMD_FW_PSP_SMU_FIRMWARE2, .subprog = 0, .level = PSP_BOTH | PSP_LVL2_AB },
 	{ .type = AMD_FW_PSP_SMU_FIRMWARE2, .subprog = 1, .level = PSP_BOTH | PSP_LVL2_AB },
 	{ .type = AMD_FW_PSP_SMU_FIRMWARE2, .subprog = 2, .level = PSP_BOTH | PSP_LVL2_AB },
 	{ .type = AMD_BOOT_DRIVER, .level = PSP_BOTH | PSP_LVL2_AB },
 	{ .type = AMD_SOC_DRIVER, .level = PSP_BOTH | PSP_LVL2_AB },
 	{ .type = AMD_DEBUG_DRIVER, .level = PSP_BOTH | PSP_LVL2_AB },
 	{ .type = AMD_INTERFACE_DRIVER, .level = PSP_BOTH | PSP_LVL2_AB },
-	{ .type = AMD_DEBUG_UNLOCK, .level = PSP_LVL2 | PSP_LVL2_AB },
+	{ .type = AMD_DEBUG_UNLOCK, .level = PSP_BOTH | PSP_BOTH_AB },
 	{ .type = AMD_HW_IPCFG, .subprog = 0, .level = PSP_LVL2 | PSP_LVL2_AB },
 	{ .type = AMD_HW_IPCFG, .subprog = 1, .level = PSP_LVL2 | PSP_LVL2_AB },
 	{ .type = AMD_WRAPPED_IKEK, .level = PSP_BOTH | PSP_LVL2_AB, .skip_hashing = true },
@@ -306,7 +306,7 @@ amd_fw_entry amd_psp_fw_table[] = {
 	{ .type = AMD_FW_PSP_VERSTAGE, .level = PSP_BOTH | PSP_LVL2_AB },
 	{ .type = AMD_FW_VERSTAGE_SIG, .level = PSP_BOTH | PSP_LVL2_AB },
 	{ .type = AMD_RPMC_NVRAM, .level = PSP_LVL2 | PSP_LVL2_AB },
-	{ .type = AMD_FW_SPL, .level = PSP_LVL2 | PSP_LVL2_AB },
+	{ .type = AMD_FW_SPL, .level = PSP_BOTH | PSP_BOTH_AB },
 	{ .type = AMD_FW_DMCU_ERAM, .level = PSP_LVL2 | PSP_LVL2_AB },
 	{ .type = AMD_FW_DMCU_ISR, .level = PSP_LVL2 | PSP_LVL2_AB },
 	{ .type = AMD_FW_MSMU, .level = PSP_LVL2 | PSP_LVL2_AB },
@@ -706,6 +706,7 @@ static void fill_psp_directory_to_efs(embedded_firmware *amd_romsig, void *pspdi
 	case PLATFORM_PICASSO:
 	case PLATFORM_LUCIENNE:
 	case PLATFORM_RENOIR:
+	case PLATFORM_GENOA:
 	default:
 		/* for combo, it is also combo_psp_directory */
 		amd_romsig->new_psp_directory =
@@ -721,6 +722,7 @@ static void fill_bios_directory_to_efs(embedded_firmware *amd_romsig, void *bios
 	case PLATFORM_RENOIR:
 	case PLATFORM_LUCIENNE:
 	case PLATFORM_CEZANNE:
+	case PLATFORM_GENOA:
 		if (!cb_config->recovery_ab)
 			amd_romsig->bios3_entry =
 				BUFF_TO_RUN_MODE(*ctx, biosdir, AMD_ADDR_REL_BIOS);
@@ -801,6 +803,9 @@ static uint32_t get_psp_id(enum platform soc_id)
 		break;
 	case PLATFORM_PHOENIX:
 		psp_id = 0xBC0D0400;
+		break;
+	case PLATFORM_GENOA:
+		psp_id = 0xBC0C0111;
 		break;
 	case PLATFORM_CARRIZO:
 	default:
@@ -1772,6 +1777,7 @@ static int set_efs_table(uint8_t soc_id, amd_cb_config *cb_config,
 	case PLATFORM_MENDOCINO:
 	case PLATFORM_PHOENIX:
 	case PLATFORM_GLINDA:
+	case PLATFORM_GENOA:
 		amd_romsig->spi_readmode_f17_mod_30_3f = efs_spi_readmode;
 		amd_romsig->spi_fastspeed_f17_mod_30_3f = efs_spi_speed;
 		switch (efs_spi_micron_flag) {

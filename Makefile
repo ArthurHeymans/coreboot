@@ -253,7 +253,8 @@ src-to-obj=\
 	$(patsubst %.adb,%.o,\
 	$(patsubst %.c,%.o,\
 	$(patsubst %.S,%.o,\
-	$(subst .$(1),,$(2))))))))))
+	$(patsubst %.nasm,%.o,\
+	$(subst .$(1),,$(2)))))))))))
 
 # Converts one or more source file paths to the corresponding build/ paths
 # of their Ada library information (.ali) files.

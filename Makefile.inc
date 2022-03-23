@@ -57,6 +57,9 @@ COREBOOT_EXPORTS += objgenerated
 ## discover dependencies it might not notice on its own (e.g. asm (".incbin")).
 COREBOOT_EXPORTS += CCACHE_EXTRAFILES
 
+OPENSIL_DIR := 3rdparty/opensil
+COREBOOT_EXPORTS += OPENSIL_DIR
+
 #######################################################################
 # root rule to resolve if in build mode (ie. configuration exists)
 real-target: $(obj)/config.h coreboot files_added

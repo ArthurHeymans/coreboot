@@ -1,0 +1,34 @@
+[binaries]
+c = '##COMPILER##'
+ar = '##AR##'
+nasm = '##NASM##'
+
+[built-in options]
+c_args = ['-nostdinc',
+          '-I##COREBOOT_DIR##/build',
+          '-I##COREBOOT_DIR##/src/include',
+          '-I##COREBOOT_DIR##/src/arch/x86/include',
+          '-I##COREBOOT_DIR##/src/commonlib/include',
+          '-I##COREBOOT_DIR##/src/commonlib/bsd/include',
+          '-include', '##COREBOOT_DIR##/src/include/kconfig.h',
+          '-include', '##COREBOOT_DIR##/build/config.h',
+          '-include', '##COREBOOT_DIR##/src/commonlib/bsd/include/commonlib/bsd/compiler.h',
+          '-include', '##COREBOOT_DIR##/src/vendorcode/amd/opensil/filter.h',
+          '-DHAS_STRING_H=1',
+          '-D_PORTING_H_=1',
+          '-DSIL_DEBUG_ENABLE=##SIL_DEBUG_ENABLE##',
+          '-Wno-builtin-declaration-mismatch',
+          # opensil uses coreboot assert which uses printk which warns about unused-param
+          '-Wno-unused-parameter',
+          # ubiquitous problem in opensil
+          '-Wno-missing-field-initializers',
+         ]
+
+[host_machine]
+system = 'linux'
+cpu_family = '##CPU_FAMILY##'
+cpu = '##CPU##'
+endian = 'little'
+
+[properties]
+is32bit = ##IS32BIT##

@@ -108,6 +108,8 @@ static enum platform identify_platform(char *soc_name)
 		return PLATFORM_PHOENIX;
 	else if (!strcasecmp(soc_name, "Glinda"))
 		return PLATFORM_GLINDA;
+	else if (!strcasecmp(soc_name, "Genoa"))
+		return PLATFORM_GENOA;
 	else
 		return PLATFORM_UNKNOWN;
 }
@@ -712,6 +714,7 @@ static bool is_second_gen(enum platform platform_type)
 	case PLATFORM_MENDOCINO:
 	case PLATFORM_PHOENIX:
 	case PLATFORM_GLINDA:
+	case PLATFORM_GENOA:
 		return true;
 	case PLATFORM_UNKNOWN:
 	default:
