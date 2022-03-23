@@ -44,6 +44,9 @@
 	url = https://github.com/coreboot/amd_blobs
 	update = none
 	ignore = dirty
+[submodule "3rdparty/opensil"]
+	path = 3rdparty/opensil
+	url = git@github.com:AMD-OpenSIL/OpenSIL.git
 [submodule "3rdparty/cmocka"]
 	path = 3rdparty/cmocka
 	url = https://github.com/coreboot/cmocka.git
