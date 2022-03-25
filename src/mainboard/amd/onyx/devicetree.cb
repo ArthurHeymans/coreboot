@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+chip soc/amd/genoa
+
+	device domain 0 on
+	end
+
+end
