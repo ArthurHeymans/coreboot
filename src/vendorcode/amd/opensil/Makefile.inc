@@ -63,3 +63,5 @@ $$(call src-to-obj,$1,$$(1).nasm): $$(1).nasm $(obj)/config.h $(obj)/fmap_config
 	$(NASM) -felf -o $$$$@ $$$$@.cpp
 en$(EMPTY)def
 endef
+
+ramstage-y += ramstage.c
