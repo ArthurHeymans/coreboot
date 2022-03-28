@@ -1,0 +1,5 @@
+menu "AMD OpenSIL configuration"
+
+source "$(OPENSIL_DIR)/Kconfig"
+
+endmenu
