@@ -33,9 +33,8 @@ const struct memmap_early_dram *memmap_get_early_dram_usage(void)
 	return e;
 }
 
-void smm_region(uintptr_t *start, size_t *size)
+static void fsp_smm_region(uintptr_t *start, size_t *size)
 {
-	static int once;
 	static uintptr_t smm_start;
 	static size_t smm_size;
 
@@ -55,6 +54,18 @@ void smm_region(uintptr_t *start, size_t *size)
 	smm_size =  range_entry_size(&tseg);
 	*start = smm_start;
 	*size = smm_size;
+}
+
+void smm_region(uintptr_t *start, size_t *size)
+{
+	static int once;
+
+	if (CONFIG(PLATFORM_USES_FSP2_0))
+		fsp_smm_region(start, size);
+	else {
+		*start = (uintptr_t)cbmem_top();
+		*size = CONFIG_SMM_TSEG_SIZE;
+	}
 
 	if (!once) {
 		clear_tvalid();

@@ -14,6 +14,7 @@ void clear_tvalid(void);
 void lock_smm(void);
 /* See SMITYPE_* for list possible of events. GEVENTS are handled with mainboard_smi_gpi. */
 void mainboard_handle_smi(int event);
+void fsp_get_tseg_region(uintptr_t *start, size_t *size);
 
 #if CONFIG_SMM_TSEG_SIZE != 0
 #if (CONFIG_SMM_TSEG_SIZE <= CONFIG_SMM_RESERVED_SIZE)
