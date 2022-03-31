@@ -3,8 +3,8 @@
 # Code owners are automatically requested for review when someone opens a pull request that modifies code that they own
 #
 # Default Reviewers
-# 
-# Internal Members: Include everyone in the "AMD Developers" team 
+#
+# Internal Members: Include everyone in the "AMD Developers" team
 # External Collaborators: Key contributors from external organizations who are part of the development team
 #
 * @AMD-OpenSIL/amd-developers @arennie-ami @olegilyasov @ArthurHeymans

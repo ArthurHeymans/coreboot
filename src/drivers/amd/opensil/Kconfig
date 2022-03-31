@@ -1,2 +1,2 @@
 config SOC_AMD_OPENSIL
- 	bool
+	bool
