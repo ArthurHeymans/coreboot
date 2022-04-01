@@ -5,10 +5,6 @@
 # Default Reviewers
 # 
 # Internal Members: Include everyone in the "AMD Developers" team 
-* @AMD-OpenSIL/amd-developers
+# External Collaborators: Key contributors from external organizations who are part of the development team
 #
-# External Collaborators: From organizations who have signed the CLA and part of the development team
-* @arennie-ami
-* @olegilyasov
-* @ArthurHeymans
-
+* @AMD-OpenSIL/amd-developers @arennie-ami @olegilyasov @ArthurHeymans
