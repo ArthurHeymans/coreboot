@@ -1,3 +1,11 @@
+ADDENDUM -- OPENSIL context
+===========================
+
+ * development is conducted on the branch 'opensil-master', the repo's master branch is to be kept pristine from any change as it is used to keep up with upstream coreboot's master
+ * source code submissions must be in line with the coreboot community practices. The openSIL driver should be licensed under the GPLv2.
+ * PR branches must be based on opensil-master
+
+
 coreboot README
 ===============
 
