@@ -9,7 +9,6 @@ romstage-y	+= romstage.c
 romstage-y	+= gpio.c
 
 ramstage-y	+= chip.c
-ramstage-y	+= timer.c
 ramstage-y	+= gpio.c
 
 CPPFLAGS_common += -I$(src)/soc/amd/genoa/include
