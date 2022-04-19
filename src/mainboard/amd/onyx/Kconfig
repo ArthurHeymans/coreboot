@@ -6,11 +6,16 @@ config BOARD_SPECIFIC_OPTIONS
 	def_bool y
 	select SOC_AMD_GENOA
 	select MISSING_BOARD_RESET
+	select AMD_SOC_CONSOLE_UART
 
 config MAINBOARD_DIR
 	default "amd/onyx"
 
 config MAINBOARD_PART_NUMBER
 	default "ONYX"
+
+config UART_FOR_CONSOLE
+	int
+	default 0
 
 endif # BOARD_AMD_ONYX
