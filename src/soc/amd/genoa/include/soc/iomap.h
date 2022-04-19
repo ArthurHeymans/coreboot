@@ -12,4 +12,10 @@
 #define ACPI_IO_BASE			0x0400
 #define  ACPI_CPU_CONTROL		(ACPI_IO_BASE + 0x10)
 
+/* FCH AL2AHB Registers */
+#define ALINK_AHB_ADDRESS		0xfedc0000
+
+#define APU_UART0_BASE			0xfedc9000
+#define APU_UART1_BASE			0xfedca000
+
 #endif /* AMD_GENOA_IOMAP_H */
