@@ -3,6 +3,11 @@
 	url = https://github.com/coreboot/blobs.git
 	update = none
 	ignore = dirty
+[submodule "3rdparty/blobs_internal"]
+	path = 3rdparty/blobs_internal
+	url = git@github.com:AMD-OpenSIL/blobs.git
+	update = none
+	ignore = dirty
 [submodule "util/nvidia-cbootimage"]
 	path = util/nvidia/cbootimage
 	url = https://github.com/coreboot/nvidia-cbootimage.git
@@ -42,6 +47,11 @@
 [submodule "3rdparty/amd_blobs"]
 	path = 3rdparty/amd_blobs
 	url = https://github.com/coreboot/amd_blobs
+	update = none
+	ignore = dirty
+[submodule "3rdparty/amd_blobs_internal"]
+	path = 3rdparty/amd_blobs_internal
+	url = git@github.com:AMD-OpenSIL/amd_blobs.git
 	update = none
 	ignore = dirty
 [submodule "3rdparty/opensil"]
