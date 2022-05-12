@@ -23,3 +23,9 @@ void fch_pre_init(void)
 		set_uart_config(CONFIG_UART_FOR_CONSOLE);
 
 }
+
+/* After console init */
+void fch_early_init(void)
+{
+
+}

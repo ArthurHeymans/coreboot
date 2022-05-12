@@ -7,7 +7,10 @@
 
 #define FCH_LEGACY_UART_DECODE		(ALINK_AHB_ADDRESS + 0x20) /* 0xfedc0020 */
 
+#define PM_ACPI_SMI_CMD			0x6a
+
 void fch_pre_init(void);
+void fch_early_init(void);
 
 void enable_aoac_devices(void);
 void wait_for_aoac_enabled(unsigned int dev);
