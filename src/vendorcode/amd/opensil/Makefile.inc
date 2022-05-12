@@ -50,6 +50,7 @@ subdirs-y += ../../../../3rdparty/opensil/xUSL
 romstage-libs += $(obj)/opensil.a
 ramstage-libs += $(obj)/opensil.a
 
+ramstage-y += ramstage.c
 endif
 
 CPPFLAGS_ramstage += $(CPPFLAGS_xsim) $(CPPFLAGS_xusl) $(CPPFLAGS_xprf)
@@ -63,5 +64,3 @@ $$(call src-to-obj,$1,$$(1).nasm): $$(1).nasm $(obj)/config.h $(obj)/fmap_config
 	$(NASM) -felf -o $$$$@ $$$$@.cpp
 en$(EMPTY)def
 endef
-
-ramstage-y += ramstage.c
