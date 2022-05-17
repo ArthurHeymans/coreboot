@@ -16,18 +16,21 @@ int InitializeAMDSi(void);
 static void testHostDebugService(size_t MsgLevel, const char *SilPrefix, const char *Message,
 				 const char *Function, size_t Line, ...)
 {
+	/* Format the Prefix */
 	char fmt_str[80];
-	char prefix_fixup[80];
-	strcpy(prefix_fixup, SilPrefix);
-	prefix_fixup[10] = 's';
-	snprintf(fmt_str, sizeof(fmt_str), prefix_fixup, (uintptr_t)Function, Line, " ");
+	snprintf(fmt_str, sizeof(fmt_str), SilPrefix, (uintptr_t)Function, Line, " ");
 
+	/* Write formatted data to buffed */
 	char fmt_msg[80];
 	va_list args;
 	va_start(args, Line);
 	vsnprintf(fmt_msg, sizeof(fmt_msg), Message, args);
 	va_end(args);
 
+	/*
+	 * Combine prefix & message to a coreboot message
+	 * TODO: transalte opensil message levels to coreboot ones.
+	 */
 	printk(BIOS_DEBUG, "L=%lu,%s%s", MsgLevel, fmt_str, fmt_msg);
 }
 
