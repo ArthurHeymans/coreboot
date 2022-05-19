@@ -14,8 +14,23 @@ config MAINBOARD_DIR
 config MAINBOARD_PART_NUMBER
 	default "ONYX"
 
+choice
+	prompt "Serial interface"
+	default USE_BMC_SOL
+	help
+	  Onyx has provision for get the serial console logs via BMC
+	  or on board usb-serial connector. BMC streams the UART console
+	  logs via UART1 and UART0 is routed to on board connector.
+config USE_BMC_SOL
+	bool "Use BMC SOL"
+
+config USE_ONBORAD_UART
+	bool "Use On Board serial"
+endchoice
+
 config UART_FOR_CONSOLE
 	int
-	default 0
+	default 0 if USE_ONBORAD_UART
+	default 1 if USE_BMC_SOL
 
 endif # BOARD_AMD_ONYX
