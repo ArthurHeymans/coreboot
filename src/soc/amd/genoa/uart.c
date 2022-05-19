@@ -16,6 +16,10 @@ static const struct {
 			PAD_NF(GPIO_136, UART0_RXD, PULL_NONE),
 			PAD_NF(GPIO_138, UART0_TXD, PULL_NONE),
 	} },
+	[1] = { APU_UART1_BASE, {
+			PAD_NF(GPIO_141, UART1_RXD, PULL_NONE),
+			PAD_NF(GPIO_142, UART1_TXD, PULL_NONE),
+	} },
 };
 
 uintptr_t get_uart_base(unsigned int idx)
