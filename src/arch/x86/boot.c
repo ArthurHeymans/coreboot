@@ -8,6 +8,7 @@
 #include <ip_checksum.h>
 #include <symbols.h>
 #include <assert.h>
+#include <cbmem.h>
 
 int payload_arch_usable_ram_quirk(uint64_t start, uint64_t size)
 {
@@ -33,9 +34,19 @@ void arch_prog_run(struct prog *prog)
 	void (*doit)(void *arg);
 #else
 	/* Ensure the argument is pushed on the stack. */
+#if ENV_RAMSTAGE
+	asmlinkage void (*doit)(void *arg, void *arg2);
+#else
 	asmlinkage void (*doit)(void *arg);
 #endif
+#endif
+
+#if ENV_RAMSTAGE
+	doit = prog_entry(prog);
+	doit(prog_entry_arg(prog), cbmem_find(0xDEADBEEF));
+#else
 	doit = prog_entry(prog);
 	doit(prog_entry_arg(prog));
+#endif
 #endif
 }

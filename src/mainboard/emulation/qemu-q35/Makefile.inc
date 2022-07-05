@@ -20,3 +20,10 @@ ramstage-$(CONFIG_CHROMEOS) += chromeos.c
 
 smm-y += smi.c
 smm-y += memmap.c
+
+$(obj)/test.dtb: $(dir)/test.dts
+	dtc -I dts -O dtb -o $@ $^
+
+cbfs-files-y += devicetree_handoff
+devicetree_handoff-file := $(obj)/test.dtb
+devicetree_handoff-type := raw

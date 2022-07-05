@@ -1,5 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
+#include <lib.h>
+#include <cbfs.h>
+#include <fit.h>
+#include <bootstate.h>
 #include <device/device.h>
 #include <device/pci.h>
 #include <device/pci_ops.h>
@@ -76,3 +80,24 @@ static const struct pci_driver nb_driver __pci_driver = {
 	.vendor = 0x8086,
 	.device = 0x29c0,
 };
+
+
+static void fill_devicetree(void *unused)
+{
+	size_t devicetree_size;
+	void *devicetree_handoff = cbfs_map("devicetree_handoff", &devicetree_size);
+	struct device_tree *tree = fdt_unflatten(devicetree_handoff);
+	if (!tree) {
+		printk(BIOS_ERR, "Failed to unflatten FDT image!\n");
+		return;
+	}
+
+	fit_update_memory(tree);
+
+	/* convert the tree to a flat dt */
+	void *dt = cbmem_add(0xDEADBEEF, dt_flat_size(tree));
+	dt_flatten(tree, dt);
+	hexdump(dt, dt_flat_size(tree));
+}
+
+BOOT_STATE_INIT_ENTRY(BS_PAYLOAD_LOAD, BS_ON_EXIT, fill_devicetree, NULL);
