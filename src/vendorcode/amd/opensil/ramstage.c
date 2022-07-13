@@ -6,12 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-size_t xSimQueryMemoryRequirements(void);
-int xSimAssignMemory(void *BaseAddress, size_t MemorySize);
-int SilDebugSetup(void *HostDbgService);
-int InitializeAMDSi(void);
-
+#include <xSIM-api.h>
 
 static void testHostDebugService(size_t MsgLevel, const char *SilPrefix, const char *Message,
 				 const char *Function, size_t Line, ...)
