@@ -1,5 +1,20 @@
 ifeq ($(CONFIG_SOC_AMD_OPENSIL),y)
 
+ifeq ($(CONFIG_AMD_OPENSIL_USE_EXTERNAL_ARCHIVE),y)
+
+$(obj)/opensil.a: $(call strip_quotes,$(CONFIG_AMD_OPENSIL_BIN_PATH))
+	cp $< $@
+
+ramstage-libs += $(obj)/opensil.a
+
+opensil_dir := $(call strip_quotes,$(CONFIG_AMD_OPENSIL_HEADER_PATH))
+
+CPPFLAGS_ramstage += -I$(opensil_dir)/xUSL -I$(opensil_dir)/xUSL/Include -I$(opensil_dir)/xSIM -I$(opensil_dir)/xPRF
+
+ramstage-y += ramstage.c
+
+else
+
 classes-y += opensil
 opensil-y =
 opensil-generic-ccopts += -D__OPENSIL__
@@ -50,6 +65,9 @@ subdirs-y += ../../../../3rdparty/opensil/xUSL
 romstage-libs += $(obj)/opensil.a
 ramstage-libs += $(obj)/opensil.a
 
+romstage-libs += /home/arthur/src/OpenSIL/build/libopensil_zen4.a
+ramstage-libs += /home/arthur/src/OpenSIL/build/libopensil_zen4.a
+
 ramstage-y += ramstage.c
 endif
 
@@ -64,3 +82,4 @@ $$(call src-to-obj,$1,$$(1).nasm): $$(1).nasm $(obj)/config.h $(obj)/fmap_config
 	$(NASM) -felf -o $$$$@ $$$$@.cpp
 en$(EMPTY)def
 endef
+endif
