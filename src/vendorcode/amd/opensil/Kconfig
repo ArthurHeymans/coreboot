@@ -5,11 +5,11 @@ config AMD_OPENSIL_USE_EXTERNAL_ARCHIVE
 
 config AMD_OPENSIL_BIN_PATH
 	string "Path to the opensil binary" if AMD_OPENSIL_USE_EXTERNAL_ARCHIVE
-	default ""
+	default "$(obj)/opensil/libopensil_zen4.a" if !AMD_OPENSIL_USE_EXTERNAL_ARCHIVE
 
 config AMD_OPENSIL_HEADER_PATH
 	string "Path to the opensil base dir" if AMD_OPENSIL_USE_EXTERNAL_ARCHIVE
-	default ""
+	default "$(top)/3rdparty/opensil" if !AMD_OPENSIL_USE_EXTERNAL_ARCHIVE
 
 source "$(OPENSIL_DIR)/Kconfig"
 
