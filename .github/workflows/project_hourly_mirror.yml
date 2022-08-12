@@ -44,11 +44,10 @@ jobs:
       run: |
         cd /tmp
         rm -rf coreboot/
-        su - swjenci
-        git clone git@github.com:coreboot/coreboot.git
+        sudo -u swjenci -H sh -c "git clone git@github.com:coreboot/coreboot.git"
         cd coreboot
-        git branch
-        git remote add downstream git@github.com:AMD-OpenSIL/coreboot.git
-        git remote -v
-        git push -u downstream --all
-        git push -f -u downstream --tags
+        sudo -u swjenci -H sh -c "git branch"
+        sudo -u swjenci -H sh -c "git remote add downstream git@github.com:AMD-OpenSIL/coreboot.git"
+        sudo -u swjenci -H sh -c "git remote -v"
+        sudo -u swjenci -H sh -c "git push -u downstream --all"
+        sudo -u swjenci -H sh -c "git push -f -u downstream --tags"
