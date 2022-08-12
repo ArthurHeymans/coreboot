@@ -44,6 +44,7 @@ jobs:
       run: |
         cd /tmp
         rm -rf coreboot/
+        su - swjenci
         git clone git@github.com:coreboot/coreboot.git
         cd coreboot
         git branch
