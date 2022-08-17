@@ -112,7 +112,7 @@ config AMD_FWM_POSITION_INDEX
 	default 2 if BOARD_ROMSIZE_KB_2048
 	default 3 if BOARD_ROMSIZE_KB_4096
 	default 4 if BOARD_ROMSIZE_KB_8192
-	default 5 if BOARD_ROMSIZE_KB_16384
+	default 5 if BOARD_ROMSIZE_KB_16384 || BOARD_ROMSIZE_KB_32768
 	help
 	  Typically this is calculated by the ROM size, but there may
 	  be situations where you want to put the firmware directory
@@ -176,7 +176,7 @@ config HAVE_PSP_WHITELIST_FILE
 config PSP_WHITELIST_FILE
 	string "Debug whitelist file path"
 	depends on HAVE_PSP_WHITELIST_FILE
-	default "3rdparty/amd_blobs/genoa/PSP/wtl-gno.bin"
+	default "3rdparty/amd_blobs_internal/genoa/PSP/wtl-gno.bin"
 
 config	HAVE_SPL_FILE
 	bool
@@ -184,7 +184,7 @@ config	HAVE_SPL_FILE
 config SPL_TABLE_FILE
 	string "SPL table file"
 	depends on HAVE_SPL_FILE
-	default "3rdparty/amd_blobs/genoa/PSP/PspDirL10_Typex55_BLAntiRB.bin"
+	default "3rdparty/amd_blobs_internal/genoa/PSP/PspDirL10_Typex55_BLAntiRB.bin"
 
 config PSP_SOFTFUSE_BITS
 	string "PSP Soft Fuse bits to enable"
