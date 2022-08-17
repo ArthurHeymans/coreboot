@@ -10,9 +10,13 @@ else
 ifeq ($(CONFIG_ARCH_RAMSTAGE_X86_32),y)
 cpu_family_string="x86"
 cpu_string="i686"
+opensil_target_name=AMDopensil32
+is_32bit="true"
 else
 cpu_family_string="x86_64"
 cpu_string="x86_64"
+opensil_target_name=AMDopensil64
+is_32bit="false"
 endif
 
 
@@ -23,17 +27,18 @@ $(obj)/meson_crosscompile: $(dir)/meson_cross.template
 	    -e "s,##COREBOOT_DIR##,$(top)," \
 	    -e "s,##CPU_FAMILY##,$(cpu_family_string)," \
 	    -e "s,##CPU##,$(cpu_string)," \
+	    -e "s,##IS32BIT##,$(is_32bit)," \
 		$< > $@
 
 # make sure to always rerun meson
 PHONY += compile_opensil
 compile_opensil: $(obj)/meson_crosscompile $(obj)/config.h
 	-rm -rf $(obj)/opensil &> /dev/null
-	cd $(opensil_dir); meson --cross-file $(top)/$< $(top)/$(obj)/opensil
-	meson compile -C $(obj)/opensil opensil_zen4
+	cd $(opensil_dir); meson --cross-file $(top)/$< $(top)/$(obj)/opensil -Db_staticpic=false
+	meson compile -C $(obj)/opensil $(opensil_target_name)
 
 $(obj)/opensil.a: compile_opensil
-	cp $(obj)/opensil/libopensil_zen4.a $@
+	cp $(obj)/opensil/lib$(opensil_target_name).a $@
 
 endif
 

@@ -41,15 +41,16 @@ static void setup_opensil(void)
 	void *MemBuf = cbmem_add(CBMEM_ID_AMD_OPENSIL, MemReq);
 	if (!MemBuf)
 		die("%s: failed to alloc mem\n", __func__);
-	xSimAssignMemory(MemBuf, MemReq);
+	/* We run all opensil timepoints in the same stage so using TP1 as argument is fine. */
+	xSimAssignMemory(MemBuf, MemReq, SIL_TP1);
 	done = true;
 }
 
-static void tp1_opensil(void *unused)
+static void tp1_opensil(void *timepoint)
 {
 	setup_opensil();
 
 	InitializeAMDSi();
 }
 
-BOOT_STATE_INIT_ENTRY(BS_PRE_DEVICE, BS_ON_EXIT, tp1_opensil, NULL);
+BOOT_STATE_INIT_ENTRY(BS_PRE_DEVICE, BS_ON_EXIT, tp1_opensil, SIL_TP1);
