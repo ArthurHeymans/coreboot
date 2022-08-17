@@ -8,7 +8,7 @@
 #include <string.h>
 #include <xSIM-api.h>
 
-static void testHostDebugService(size_t MsgLevel, const char *SilPrefix, const char *Message,
+static void HostDebugService(size_t MsgLevel, const char *SilPrefix, const char *Message,
 				 const char *Function, size_t Line, ...)
 {
 	/* Format the Prefix */
@@ -29,15 +29,27 @@ static void testHostDebugService(size_t MsgLevel, const char *SilPrefix, const c
 	printk(BIOS_DEBUG, "L=%lu,%s%s", MsgLevel, fmt_str, fmt_msg);
 }
 
-static void test_opensil(void *unused)
+static void setup_opensil(void)
 {
-	size_t MemReq = xSimQueryMemoryRequirements();
-	void *MemBuf = cbmem_add(0xabababa, MemReq);
+	static bool done;
+
+	if (done)
+		return;
+
+	SilDebugSetup(HostDebugService);
+	const size_t MemReq = xSimQueryMemoryRequirements();
+	void *MemBuf = cbmem_add(CBMEM_ID_AMD_OPENSIL, MemReq);
 	if (!MemBuf)
 		die("%s: failed to alloc mem\n", __func__);
 	xSimAssignMemory(MemBuf, MemReq);
-	SilDebugSetup(testHostDebugService);
+	done = true;
+}
+
+static void tp1_opensil(void *unused)
+{
+	setup_opensil();
+
 	InitializeAMDSi();
 }
 
-BOOT_STATE_INIT_ENTRY(BS_PRE_DEVICE, BS_ON_EXIT, test_opensil, NULL);
+BOOT_STATE_INIT_ENTRY(BS_PRE_DEVICE, BS_ON_EXIT, tp1_opensil, NULL);
