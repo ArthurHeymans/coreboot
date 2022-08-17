@@ -45,11 +45,11 @@ static void HostDebugService(size_t MsgLevel, const char *SilPrefix, const char 
 				 const char *Function, size_t Line, ...)
 {
 	/* Format the Prefix */
-	char fmt_str[80];
+	char fmt_str[60];
 	snprintf(fmt_str, sizeof(fmt_str), SilPrefix, (uintptr_t)Function, Line, " ");
 
 	/* Write formatted data to buffed */
-	char fmt_msg[80];
+	char fmt_msg[120];
 	va_list args;
 	va_start(args, Line);
 	vsnprintf(fmt_msg, sizeof(fmt_msg), Message, args);
