@@ -215,4 +215,9 @@ config PSP_VERSTAGE_SIGNING_TOKEN
 	  Add psp_verstage signature token to the build & PSP Directory Table
 endmenu
 
+config SMM_TSEG_SIZE
+	hex
+	default 0x800000 if HAVE_SMI_HANDLER
+	default 0x0
+
 endif # SOC_AMD_GENOA

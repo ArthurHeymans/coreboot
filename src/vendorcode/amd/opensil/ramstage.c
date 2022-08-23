@@ -61,7 +61,7 @@ static void tp1_opensil(void *timepoint)
 {
 	setup_opensil();
 
-	const SIL_STATUS ret = InitializeAMDSi();
+	const SIL_STATUS ret = InitializeAMDSi(SIL_TP1);
 	SIL_STATUS_report("InitializeAMDSi", ret);
 }
 

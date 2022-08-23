@@ -13,6 +13,7 @@ c_args = ['-nostdinc',
           '-include', '##COREBOOT_DIR##/src/include/kconfig.h',
           '-include', '##COREBOOT_DIR##/build/config.h',
           '-include', '##COREBOOT_DIR##/src/commonlib/bsd/include/commonlib/bsd/compiler.h',
+          '-DHAS_STRING_H=1',
           '-D_PORTING_H_=1',
           '-Wno-builtin-declaration-mismatch',
           '-DAMD_SOC_F19M00=0', # hardcode for genoa for now

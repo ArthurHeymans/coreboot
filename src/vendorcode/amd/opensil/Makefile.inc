@@ -42,14 +42,19 @@ $(obj)/opensil.a: compile_opensil
 
 endif
 
+romstage-libs += $(obj)/opensil.a
 ramstage-libs += $(obj)/opensil.a
 
 opensil_dir := $(call strip_quotes,$(CONFIG_AMD_OPENSIL_HEADER_PATH))
 
 CPPFLAGS_ramstage += -I$(opensil_dir)/xUSL -I$(opensil_dir)/xUSL/Include -I$(opensil_dir)/xSIM -I$(opensil_dir)/xPRF
+CPPFLAGS_romstage += -I$(opensil_dir)/xUSL -I$(opensil_dir)/xUSL/Include -I$(opensil_dir)/xSIM -I$(opensil_dir)/xPRF
 
 ramstage-y += console.c
+romstage-y += console.c
+romstage-y += romstage.c
 ramstage-y += ramstage.c
-$(obj)/ramstage/vendorcode/amd/opensil/ramstage.o: CFLAGS_ramstage += -D_MSC_EXTENSIONS=0 -Wno-unknown-pragmas
+$(obj)/ramstage/vendorcode/amd/opensil/ramstage.o: CFLAGS_ramstage += -D_MSC_EXTENSIONS=0 -DHAS_STRING_H=1 -Wno-unknown-pragmas
+$(obj)/romstage/vendorcode/amd/opensil/romstage.o: CFLAGS_romstage += -D_MSC_EXTENSIONS=0 -DHAS_STRING_H=1 -Wno-unknown-pragmas
 
 endif
