@@ -264,6 +264,6 @@ apu/amdfw_b-position := $(AMD_FW_AB_POSITION)
 apu/amdfw_b-type := raw
 endif
 
-cpu_microcode_bins += $(wildcard ${FIRMWARE_LOCATION}/UcodePatch_*.bin)
+cpu_microcode_bins += $(wildcard ${FIRMWARE_LOCATION}/Typex66*UCodePatch.bin)
 
 endif
