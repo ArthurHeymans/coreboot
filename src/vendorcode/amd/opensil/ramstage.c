@@ -2,6 +2,8 @@
 
 #include <bootstate.h>
 #include <cbmem.h>
+#include <Sil-api.h>
+#include <SilCommon.h>
 #include <xSIM-api.h>
 #include <vendorcode/amd/opensil/console.h>
 

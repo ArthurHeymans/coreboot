@@ -11,6 +11,7 @@ config AMD_OPENSIL_HEADER_PATH
 	string "Path to the opensil base dir" if AMD_OPENSIL_USE_EXTERNAL_ARCHIVE
 	default "$(top)/3rdparty/opensil" if !AMD_OPENSIL_USE_EXTERNAL_ARCHIVE
 
-source "$(OPENSIL_DIR)/Kconfig"
+# TODO evaluate later on how to deal with opensil KConfig
+# source "$(OPENSIL_DIR)/Kconfig"
 
 endmenu

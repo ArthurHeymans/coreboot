@@ -47,8 +47,8 @@ ramstage-libs += $(obj)/opensil.a
 
 opensil_dir := $(call strip_quotes,$(CONFIG_AMD_OPENSIL_HEADER_PATH))
 
-CPPFLAGS_ramstage += -I$(opensil_dir)/xUSL -I$(opensil_dir)/xUSL/Include -I$(opensil_dir)/xSIM -I$(opensil_dir)/xPRF
-CPPFLAGS_romstage += -I$(opensil_dir)/xUSL -I$(opensil_dir)/xUSL/Include -I$(opensil_dir)/xSIM -I$(opensil_dir)/xPRF
+CPPFLAGS_ramstage += -I$(opensil_dir)/Include -I$(opensil_dir)/xUSL -I$(opensil_dir)/xUSL/Include -I$(opensil_dir)/xSIM -I$(opensil_dir)/xPRF
+CPPFLAGS_romstage += -I$(opensil_dir)/Include -I$(opensil_dir)/xUSL -I$(opensil_dir)/xUSL/Include -I$(opensil_dir)/xSIM -I$(opensil_dir)/xPRF
 
 ramstage-y += console.c
 romstage-y += console.c

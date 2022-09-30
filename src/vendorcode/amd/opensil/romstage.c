@@ -2,7 +2,7 @@
 
 #include <cbmem.h>
 #include <vendorcode/amd/opensil/console.h>
-#include <xSIM-api.h>
+#include <Sil-api.h>
 #include <xPRF-api.h>
 
 void *cbmem_top_chipset(void)
