@@ -90,11 +90,11 @@ config CPU_ADDR_BITS
 
 config ECAM_MMCONF_BASE_ADDRESS
 	hex
-	default 0xF8000000
+	default 0xE0000000
 
 config ECAM_MMCONF_BUS_NUMBER
 	int
-	default 64
+	default 256
 
 config CONSOLE_UART_BASE_ADDRESS
 	depends on CONSOLE_SERIAL && AMD_SOC_CONSOLE_UART
