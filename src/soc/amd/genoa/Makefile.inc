@@ -18,6 +18,7 @@ ramstage-y	+= chip.c
 ramstage-y	+= gpio.c
 ramstage-y	+= uart.c
 ramstage-y	+= device_fabric.c
+ramstage-y	+= cpu.c
 
 CPPFLAGS_common += -I$(src)/soc/amd/genoa/include
 MAINBOARD_BLOBS_DIR:=$(top)/3rdparty/blobs_internal/mainboard/$(MAINBOARDDIR)
@@ -257,7 +258,5 @@ apu/amdfw_b-file := $(obj)/amdfw_b.rom
 apu/amdfw_b-position := $(AMD_FW_AB_POSITION)
 apu/amdfw_b-type := raw
 endif
-
-cpu_microcode_bins += $(wildcard ${FIRMWARE_LOCATION}/Typex66*UCodePatch.bin)
 
 endif
