@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
 #include <amdblocks/amd_pci_mmconf.h>
+#include <amdblocks/cpu.h>
 #include <bootblock_common.h>
 #include <console/console.h>
 #include <cpu/x86/tsc.h>
@@ -9,6 +10,7 @@
 
 asmlinkage void bootblock_c_entry(uint64_t base_timestamp)
 {
+	early_cache_setup();
 	enable_pci_mmconf();
 
 	/*
