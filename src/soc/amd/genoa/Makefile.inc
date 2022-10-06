@@ -2,6 +2,8 @@
 
 ifeq ($(CONFIG_SOC_AMD_GENOA),y)
 
+all-y		+= mmap_boot.c
+
 bootblock-y	+= bootblock.c
 bootblock-y	+= gpio.c
 bootblock-y	+= early_fch.c
@@ -18,6 +20,10 @@ ramstage-y	+= uart.c
 
 CPPFLAGS_common += -I$(src)/soc/amd/genoa/include
 MAINBOARD_BLOBS_DIR:=$(top)/3rdparty/blobs_internal/mainboard/$(MAINBOARDDIR)
+
+ifeq ($(call int-gt, $(CONFIG_ROM_SIZE) 0x1000000), 1)
+CBFSTOOL_ADD_CMD_OPTIONS+= --mmap 0:0xff000000:0x1000000
+endif
 
 # ROMSIG Normally At ROMBASE + 0x20000
 # Overridden by CONFIG_AMD_FWM_POSITION_INDEX
