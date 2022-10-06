@@ -33,13 +33,7 @@ endif
 # |           |  PSPDIR ADDR  |  BIOSDIR ADDR  |
 # +-----------+---------------+----------------+
 
-$(if $(CONFIG_AMD_FWM_POSITION_INDEX), ,\
-     $(error Invalid AMD firmware position index. Check if the board sets a valid ROM size))
-
-GENOA_FWM_POSITION=$(call int-add, \
-	$(call int-subtract, 0xffffffff \
-	$(call int-shift-left, \
-	0x80000 $(CONFIG_AMD_FWM_POSITION_INDEX))) 0x20000 1)
+GENOA_FWM_POSITION=0xff020000
 
 # 0x40 accounts for the cbfs_file struct + filename + metadata structs, aligned to 64 bytes
 # Building the cbfs image will fail if the offset isn't large enough
