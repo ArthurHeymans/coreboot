@@ -10,19 +10,19 @@ void HostDebugService(size_t MsgLevel, const char *SilPrefix, const char *Messag
 				 const char *Function, size_t Line, ...)
 {
 	/* Format the Prefix */
-	char fmt_str[60];
-	snprintf(fmt_str, sizeof(fmt_str), SilPrefix, (uintptr_t)Function, Line, " ");
+	char prefix[60];
+	snprintf(prefix, sizeof(prefix), "%s:%s:%d:", SilPrefix, (uintptr_t)Function, Line);
 
 	/* Write formatted data to buffed */
-	char fmt_msg[120];
+	char msg[120];
 	va_list args;
 	va_start(args, Line);
-	vsnprintf(fmt_msg, sizeof(fmt_msg), Message, args);
+	vsnprintf(msg, sizeof(msg), Message, args);
 	va_end(args);
 
 	/*
 	 * Combine prefix & message to a coreboot message
 	 * TODO: translate opensil message levels to coreboot ones.
 	 */
-	printk(BIOS_DEBUG, "L=%lu,%s%s", MsgLevel, fmt_str, fmt_msg);
+	printk(BIOS_DEBUG, "L=%lu,%s%s", MsgLevel, prefix, msg);
 }
