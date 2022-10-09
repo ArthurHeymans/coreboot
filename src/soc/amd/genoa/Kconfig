@@ -30,6 +30,10 @@ config SOC_SPECIFIC_OPTIONS
 	select SOC_AMD_OPENSIL
 	select X86_CUSTOM_BOOTMEDIA
 
+config CHIPSET_DEVICETREE
+	string
+	default "soc/amd/genoa/chipset.cb"
+
 config EARLY_RESERVED_DRAM_BASE
 	hex
 	default 0x2000000
@@ -187,5 +191,10 @@ config SMM_TSEG_SIZE
 	hex
 	default 0x800000 if HAVE_SMI_HANDLER
 	default 0x0
+
+config HEAP_SIZE
+	hex
+	default 0x200000
+
 
 endif # SOC_AMD_GENOA
