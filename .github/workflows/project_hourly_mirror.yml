@@ -24,10 +24,10 @@
 # Pipeline for keeping mirrors up to date
 # **********************************************************************************
 
-name: "Coreboot Mirror"
+name: "coreboot Mirror"
 
 on:
-  # Trigger the Coreboot upstream mirroring to downstream on hourly basis
+  # Trigger the coreboot upstream mirroring to downstream on hourly basis
   schedule:
     # Runs daily
     - cron: '0 * * * *'
