@@ -186,7 +186,7 @@ struct device_operations genoa_pci_domain_ops = {
 	.read_resources	  = genoa_domain_read_resources,
 	.set_resources	  = pci_domain_set_resources,
 	.scan_bus	  = genoa_domain_scan_bus,
-#if CONFIG(HAVE_ACPI_TABLE)
+#if CONFIG(HAVE_ACPI_TABLES)
 	.acpi_name	  = soc_acpi_name,
 #endif
 };
