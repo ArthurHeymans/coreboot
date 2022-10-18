@@ -1,8 +1,37 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
 chip soc/amd/genoa
-
 	device domain 0x22 on
+		device ref iommu_0 on end
+		device ref rcec_0 on end
+		device ref gpp_bridge_0_a on
+			device ref xhci_0 on end
+			device ref mp0_0 on end
+			device ref acp_0 on end
+			device ref hda_0 on end
+		end
+		device ref smbus on end
+		device ref lpc_bridge on end
 	end
-
+	device domain 0x23 on
+		device ref iommu_1 on end
+		device ref rcec_1 on end
+	end
+	device domain 0x21 on
+		device ref iommu_2 on end
+		device ref rcec_2 on end
+		device ref gpp_bridge_2_a on
+			device ref xhci_2 on end
+			device ref mp0_2 on end
+			device ref acp_2 on end
+			device ref hda_2 on end
+		end
+	end
+	device ref i2c_4 on end
+	device ref i2c_5 on end
+	device ref i3c_0 on end
+	device ref i3c_1 on end
+	device ref i3c_2 on end
+	device ref i3c_3 on end
+	device ref uart_0 on end
 end
