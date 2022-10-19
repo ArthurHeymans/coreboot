@@ -7,9 +7,10 @@
 #include <SilCommon.h>
 #include <xSIM-api.h>
 #include <DF/RcManager-api.h>
-#include <vendorcode/amd/opensil/console.h>
+#include "console.h"
+#include "opensil.h"
 
-static void SIL_STATUS_report(const char *function, const SIL_STATUS status)
+void SIL_STATUS_report(const char *function, const SIL_STATUS status)
 {
 	const int log_level = status == SilPass ? BIOS_DEBUG : BIOS_ERR;
 	const char *error_string = "Unkown error";
