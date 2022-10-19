@@ -5,6 +5,8 @@
 #include <device/device.h>
 #include <stdlib.h>
 
+#include <vendorcode/amd/opensil/opensil.h>
+
 union df_cfg_base_address {
 	struct {
 		uint32_t re : 1;
@@ -179,6 +181,13 @@ static void genoa_domain_read_resources(struct device *dev)
 			res->flags = IORESOURCE_MEM | IORESOURCE_SUBTRACTIVE | IORESOURCE_ASSIGNED;
 		}
 	}
+
+	// We only want to add the DRAM memory map once
+	static bool done;
+	if (done)
+		return;
+
+	add_opensil_memmap(dev, 0);
 }
 
 

@@ -10,7 +10,7 @@
 #include "console.h"
 #include "opensil.h"
 
-void SIL_STATUS_report(const char *function, const SIL_STATUS status)
+void SIL_STATUS_report(const char *function, const int status)
 {
 	const int log_level = status == SilPass ? BIOS_DEBUG : BIOS_ERR;
 	const char *error_string = "Unkown error";
