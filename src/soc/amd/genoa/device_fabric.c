@@ -137,7 +137,6 @@ _Static_assert(sizeof(union df_mmio_ext_address) == sizeof(uint32_t));
 #define NB_MMIO_CTL(reg)  (D18F0_MMIO_ADDRESS_CTL + 16 * (reg))
 #define NB_MMIO_EXT(reg) (D18F0_MMIO_ADDRESS_EXT + 16 * (reg))
 
-
 static void genoa_domain_read_resources(struct device *dev)
 {
 	// IO
@@ -190,6 +189,11 @@ static void genoa_domain_read_resources(struct device *dev)
 	add_opensil_memmap(dev, 0);
 }
 
+static const char *soc_acpi_name(const struct device *dev)
+{
+	// TODO
+	return NULL;
+}
 
 struct device_operations genoa_pci_domain_ops = {
 	.read_resources	  = genoa_domain_read_resources,

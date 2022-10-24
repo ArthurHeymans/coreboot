@@ -8,6 +8,7 @@ config BOARD_SPECIFIC_OPTIONS
 	select SOC_AMD_GENOA
 	select MISSING_BOARD_RESET
 	select AMD_SOC_CONSOLE_UART
+	select HAVE_ACPI_TABLES
 
 config FMDFILE
 	default "src/mainboard/amd/onyx/board.fmd"

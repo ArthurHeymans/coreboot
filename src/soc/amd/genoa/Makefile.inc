@@ -14,6 +14,7 @@ romstage-y	+= romstage.c
 romstage-y	+= gpio.c
 romstage-y	+= uart.c
 
+ramstage-y	+= acpi.c
 ramstage-y	+= chip.c
 ramstage-y	+= gpio.c
 ramstage-y	+= uart.c
