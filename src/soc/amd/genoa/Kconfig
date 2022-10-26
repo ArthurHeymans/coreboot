@@ -36,7 +36,7 @@ config CHIPSET_DEVICETREE
 
 config EARLY_RESERVED_DRAM_BASE
 	hex
-	default 0x2000000
+	default 0x7000000
 	help
 	  This variable defines the base address of the DRAM which is reserved
 	  for usage by coreboot in early stages (i.e. before ramstage is up).
@@ -50,7 +50,7 @@ config EARLYRAM_BSP_STACK_SIZE
 
 config PSP_APOB_DRAM_ADDRESS
 	hex
-	default 0x2001000
+	default 0x7001000
 	help
 	  Location in DRAM where the PSP will copy the AGESA PSP Output
 	  Block.
@@ -75,7 +75,7 @@ config C_ENV_BOOTBLOCK_SIZE
 
 config ROMSTAGE_ADDR
 	hex
-	default 0x2040000
+	default 0x7040000
 	help
 	  Sets the address in DRAM where romstage should be loaded.
 
@@ -84,14 +84,6 @@ config ROMSTAGE_SIZE
 	default 0x80000
 	help
 	  Sets the size of DRAM allocation for romstage in linker script.
-
-config RAMBASE
-	hex
-	default 0x10000000
-
-config CPU_ADDR_BITS
-	int
-	default 48
 
 config ECAM_MMCONF_BASE_ADDRESS
 	hex
