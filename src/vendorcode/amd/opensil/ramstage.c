@@ -7,6 +7,7 @@
 #include <SilCommon.h>
 #include <xSIM-api.h>
 #include <DF/RcManager-api.h>
+#include <amdblocks/reset.h>
 #include "console.h"
 #include "opensil.h"
 
@@ -40,7 +41,6 @@ void SIL_STATUS_report(const char *function, const int status)
 			error_string = errors[i].string;
 	}
 	printk(log_level, "%s returned %d (%s)\n", function, status, error_string);
-
 }
 
 static DF4_FABRIC_IO_MANAGER io_rc_mgr;
@@ -94,6 +94,13 @@ static void tp1_opensil(void *timepoint)
 
 	const SIL_STATUS ret = InitializeAMDSi(SIL_TP1);
 	SIL_STATUS_report("InitializeAMDSi", ret);
+	if (ret == SilResetRequestColdImm || ret == SilResetRequestColdDef) {
+		printk(BIOS_INFO, "OpenSil requested a cold reset");
+		do_cold_reset();
+	} else if (ret == SilResetRequestWarmImm || ret == SilResetRequestWarmDef) {
+		printk(BIOS_INFO, "OpenSil requested a warm reset");
+		do_warm_reset();
+	}
 }
 
 BOOT_STATE_INIT_ENTRY(BS_PRE_DEVICE, BS_ON_EXIT, tp1_opensil, SIL_TP1);
