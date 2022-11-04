@@ -10,6 +10,7 @@
 #include <cpu/x86/mp.h>
 #include <cpu/x86/mtrr.h>
 #include <device/device.h>
+#include <soc/cpu.h>
 #include <soc/iomap.h>
 
 /* MP and SMM loading initialization. */
@@ -45,7 +46,9 @@ static struct device_operations cpu_dev_ops = {
 };
 
 static struct cpu_device_id cpu_table[] = {
-	{ X86_VENDOR_AMD, 0x00a10f10},
+	{ X86_VENDOR_AMD, GENOA_A0_CPUID},
+	{ X86_VENDOR_AMD, GENOA_A1_CPUID},
+	{ X86_VENDOR_AMD, GENOA_B0_CPUID},
 	{ 0, 0 },
 };
 
