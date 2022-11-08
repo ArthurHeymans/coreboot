@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
 #include <cbmem.h>
+#include <console/console.h>
 #include <vendorcode/amd/opensil/console.h>
-#include <Sil-api.h>
+#include <xSIM-api.h>
 #include <xPRF-api.h>
 
 void *cbmem_top_chipset(void)
