@@ -55,6 +55,8 @@ romstage-y += console.c
 romstage-y += romstage.c
 ramstage-y += ramstage.c
 ramstage-y += memmap.c
+ramstage-y += acpi.c
+$(obj)/ramstage/vendorcode/amd/opensil/acpi.o: CFLAGS_ramstage += -D_MSC_EXTENSIONS=0 -DHAS_STRING_H=1 -Wno-unknown-pragmas
 $(obj)/ramstage/vendorcode/amd/opensil/ramstage.o: CFLAGS_ramstage += -D_MSC_EXTENSIONS=0 -DHAS_STRING_H=1 -Wno-unknown-pragmas
 $(obj)/ramstage/vendorcode/amd/opensil/memmap.o: CFLAGS_ramstage += -D_MSC_EXTENSIONS=0 -DHAS_STRING_H=1 -Wno-unknown-pragmas
 $(obj)/romstage/vendorcode/amd/opensil/romstage.o: CFLAGS_romstage += -D_MSC_EXTENSIONS=0 -DHAS_STRING_H=1 -Wno-unknown-pragmas
