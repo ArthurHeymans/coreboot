@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
 #include <amdblocks/acpimmio.h>
+#include <amdblocks/aoac.h>
 #include <amdblocks/pmlib.h>
+#include <amdblocks/uart.h>
 #include <soc/southbridge.h>
 #include <soc/uart.h>
 

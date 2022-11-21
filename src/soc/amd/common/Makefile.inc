@@ -42,12 +42,10 @@ ifeq ($(CONFIG_RESET_VECTOR_IN_RAM),y)
 $(objcbfs)/bootblock.bin: $(obj)/amdfw.rom
 	cp $< $@
 
+# HACK. TODO fix upstream
 add_bootblock = \
 	$(CBFSTOOL) $(1) add -f $(2) -n apu/amdfw -t amdfw \
-	-b $(call int-add, \
-	$(call int-subtract, 0xffffffff \
-	$(call int-shift-left, \
-	0x80000 $(CONFIG_AMD_FWM_POSITION_INDEX))) 0x20000 1)
+	-b 0x20000 --mmap 0:0xff000000:0x1000000
 endif # ifeq ($(CONFIG_RESET_VECTOR_IN_RAM),y)
 
 ifeq ($(CONFIG_VBOOT_GSCVD),y)

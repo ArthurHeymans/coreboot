@@ -6,7 +6,7 @@
 #include <xSIM-api.h>
 #include <xPRF-api.h>
 
-void *cbmem_top_chipset(void)
+uintptr_t cbmem_top_chipset(void)
 {
 	SilDebugSetup(HostDebugService);
 	uintptr_t top_mem = xPrfGetLowUsableDramAddress();
@@ -18,5 +18,5 @@ void *cbmem_top_chipset(void)
 	 * This MSR has an 8M granularity.
 	 * TSEG also needs to be aligned to its size so account for potentially ill aligned TOP_MEM.
 	 */
-	return (void *)top_mem;
+	return top_mem;
 }

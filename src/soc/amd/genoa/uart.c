@@ -1,44 +1,46 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
+#include <device/mmio.h>
 #include <amdblocks/gpio.h>
 #include <amdblocks/uart.h>
-#include <device/mmio.h>
+#include <commonlib/helpers.h>
+#include <soc/aoac_defs.h>
 #include <soc/gpio.h>
+#include <soc/iomap.h>
 #include <soc/southbridge.h>
 #include <soc/uart.h>
 #include <types.h>
 
-static const struct {
-	uintptr_t base;
-	struct soc_amd_gpio mux[2];
-} uart_info[] = {
-	[0] = { APU_UART0_BASE, {
+static const struct soc_uart_ctrlr_info uart_info[] = {
+	[0] =	{ APU_UART0_BASE, FCH_AOAC_DEV_UART0, "FUR0", {
 			PAD_NF(GPIO_136, UART0_RXD, PULL_NONE),
 			PAD_NF(GPIO_138, UART0_TXD, PULL_NONE),
-	} },
-	[1] = { APU_UART1_BASE, {
+		} },
+	[1] =	{ APU_UART1_BASE, FCH_AOAC_DEV_UART1, "FUR1", {
 			PAD_NF(GPIO_141, UART1_RXD, PULL_NONE),
 			PAD_NF(GPIO_142, UART1_TXD, PULL_NONE),
-	} },
+		} },
+	[2] =	{ APU_UART2_BASE, FCH_AOAC_DEV_UART2, "FUR2", {
+			PAD_NF(GPIO_137, UART2_RXD, PULL_NONE),
+			PAD_NF(GPIO_135, UART2_TXD, PULL_NONE),
+		} },
+	/* [3] =	{ APU_UART3_BASE, FCH_AOAC_DEV_UART3, "FUR3", { */
+	/* 		PAD_NF(??, UART3_TXD, PULL_NONE), */
+	/* 		PAD_NF(??, UART3_RXD, PULL_NONE), */
+	/* 	} }, */
+	/* [4] =	{ APU_UART4_BASE, FCH_AOAC_DEV_UART4, "FUR4", { */
+	/* 		PAD_NF(??, UART4_TXD, PULL_NONE), */
+	/* 		PAD_NF(??, UART4_RXD, PULL_NONE), */
+	/* 	} }, */
 };
 
-uintptr_t get_uart_base(unsigned int idx)
+const struct soc_uart_ctrlr_info *soc_get_uart_ctrlr_info(size_t *num_ctrlrs)
 {
-	if (idx >= ARRAY_SIZE(uart_info))
-		return 0;
-
-	return uart_info[idx].base;
+	*num_ctrlrs = ARRAY_SIZE(uart_info);
+	return uart_info;
 }
 
 void clear_uart_legacy_config(void)
 {
 	write16((void *)FCH_LEGACY_UART_DECODE, 0);
-}
-
-void set_uart_config(unsigned int idx)
-{
-	if (idx >= ARRAY_SIZE(uart_info))
-		return;
-
-	gpio_configure_pads(uart_info[idx].mux, 2);
 }

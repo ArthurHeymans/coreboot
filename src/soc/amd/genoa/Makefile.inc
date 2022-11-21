@@ -5,7 +5,6 @@ ifeq ($(CONFIG_SOC_AMD_GENOA),y)
 all-y		+= mmap_boot.c
 all-y		+= reset.c
 
-bootblock-y	+= bootblock.c
 bootblock-y	+= gpio.c
 bootblock-y	+= early_fch.c
 bootblock-y	+= aoac.c
@@ -240,12 +239,6 @@ $(obj)/amdfw_b.rom: $(obj)/amdfw.rom
 		--anywhere \
 		--multilevel \
 		--output $@
-
-
-cbfs-files-y += apu/amdfw
-apu/amdfw-file := $(obj)/amdfw.rom
-apu/amdfw-position := $(GENOA_FWM_POSITION)
-apu/amdfw-type := raw
 
 ifeq ($(CONFIG_VBOOT_SLOTS_RW_AB)$(CONFIG_VBOOT_STARTS_BEFORE_BOOTBLOCK),yy)
 cbfs-files-y += apu/amdfw_a

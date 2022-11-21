@@ -17,5 +17,6 @@
 
 #define APU_UART0_BASE			0xfedc9000
 #define APU_UART1_BASE			0xfedca000
+#define APU_UART2_BASE			0xfedce000
 
 #endif /* AMD_GENOA_IOMAP_H */
