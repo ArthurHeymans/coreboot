@@ -4,12 +4,39 @@
 
 #include <cpu/x86/smm.h>
 #include <acpi/acpi.h>
+#include <acpi/acpigen.h>
+#include <amdblocks/acpi.h>
+#include <amdblocks/cppc.h>
+#include <amdblocks/cpu.h>
+#include <amdblocks/acpimmio.h>
+#include <amdblocks/ioapic.h>
+#include <arch/ioapic.h>
+#include <arch/smp/mpspec.h>
 #include <vendorcode/amd/opensil/opensil.h>
 #include <soc/acpi.h>
+#include <soc/iomap.h>
 
 unsigned long acpi_fill_madt(unsigned long current)
 {
-	// TODO
+	current = acpi_create_madt_lapics(current);
+
+	current += acpi_create_madt_lx2apic_nmi((acpi_madt_lx2apic_nmi_t *)current,
+		ACPI_MADT_LAPIC_NMI_ALL_PROCESSORS,
+		MP_IRQ_TRIGGER_EDGE | MP_IRQ_POLARITY_HIGH, 1);
+
+	/* FCH IOAPIC */
+	current += acpi_create_madt_ioapic_from_hw((acpi_madt_ioapic_t *)current, IO_APIC_ADDR);
+
+	/* TODO: IOHUBs IOAPIC */
+
+	current += acpi_create_madt_irqoverride((acpi_madt_irqoverride_t *)current,
+		MP_BUS_ISA, 0, 2,
+		MP_IRQ_TRIGGER_DEFAULT | MP_IRQ_POLARITY_DEFAULT);
+
+	current += acpi_create_madt_irqoverride((acpi_madt_irqoverride_t *)current,
+		MP_BUS_ISA, 9, 9,
+		MP_IRQ_TRIGGER_LEVEL | MP_IRQ_POLARITY_LOW);
+
 	return current;
 }
 
