@@ -34,7 +34,7 @@ $(obj)/meson_crosscompile: $(dir)/meson_cross.template
 PHONY += compile_opensil
 compile_opensil: $(obj)/meson_crosscompile $(obj)/config.h
 	-rm -rf $(obj)/opensil &> /dev/null
-	cd $(opensil_dir); meson --cross-file $(top)/$< $(top)/$(obj)/opensil -Db_staticpic=false
+	cd $(opensil_dir); meson --cross-file $(top)/$< $(top)/$(obj)/opensil -Db_staticpic=false -DPlatKcfg=Onyx_SilCfg
 	meson compile -C $(obj)/opensil $(opensil_target_name)
 
 $(obj)/opensil.a: compile_opensil

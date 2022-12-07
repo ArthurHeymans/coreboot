@@ -16,8 +16,6 @@ c_args = ['-nostdinc',
           '-DHAS_STRING_H=1',
           '-D_PORTING_H_=1',
           '-Wno-builtin-declaration-mismatch',
-          '-DAMD_SOC_F19M00=0', # hardcode for genoa for now
-          '-DAMD_SOC_F19M10=1'
          ]
 
 [host_machine]
