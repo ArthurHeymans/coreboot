@@ -20,6 +20,8 @@ ramstage-y	+= gpio.c
 ramstage-y	+= uart.c
 ramstage-y	+= device_fabric.c
 ramstage-y	+= cpu.c
+ramstage-y	+= fch.c
+ramstage-y	+= pcie_gpp.c
 
 CPPFLAGS_common += -I$(src)/soc/amd/genoa/include
 MAINBOARD_BLOBS_DIR:=$(top)/3rdparty/blobs_internal/mainboard/$(MAINBOARDDIR)
