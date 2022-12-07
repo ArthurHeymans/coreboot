@@ -3,6 +3,7 @@
 #ifndef AMD_GENOA_IOMAP_H
 #define AMD_GENOA_IOMAP_H
 
+#define SPI_BASE_ADDRESS		0xfec10000
 
 #define FLASH_BASE_ADDR			((0xffffffff - CONFIG_ROM_SIZE) + 1)
 
@@ -11,6 +12,8 @@
 /* I/O Ranges */
 #define ACPI_IO_BASE			0x0400
 #define  ACPI_CPU_CONTROL		(ACPI_IO_BASE + 0x10)
+
+#define GNB_IO_APIC_ADDR		0xfec01000
 
 /* FCH AL2AHB Registers */
 #define ALINK_AHB_ADDRESS		0xfedc0000
