@@ -10,11 +10,11 @@ Scope(\_SB) {
 
 	#include <soc/amd/common/acpi/osc.asl>
 
-	/* TODO: PIC/IO-APIC defs */
+	#include "pci_int_defs.asl"
 
 	#include <soc/amd/common/acpi/pci_int.asl>
 
-	/* TODO: mmio */
+	#include "mmio.asl"
 
 #define ROOT_BRIDGE(socket, bus) \
 	Device(S##socket##B##bus##) { \
