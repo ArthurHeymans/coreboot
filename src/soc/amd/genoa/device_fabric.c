@@ -5,6 +5,7 @@
 #include <device/device.h>
 #include <stdlib.h>
 
+#include <sys/types.h>
 #include <vendorcode/amd/opensil/opensil.h>
 
 union df_cfg_base_address {
@@ -189,9 +190,22 @@ static void genoa_domain_read_resources(struct device *dev)
 	add_opensil_memmap(dev, 0);
 }
 
-static const char *soc_acpi_name(const struct device *dev)
+static const char *df_acpi_name(const struct device *dev)
 {
-	// TODO
+	const struct {
+		uint8_t fabric_id;
+		const char *acpi_name;
+	} acpi_names[] = {
+		{ 0x22, "S0B0"},
+		{ 0x23, "S0B1"},
+		{ 0x21, "S0B2"},
+		{ 0x20, "S0B3"},
+	};
+
+	for (int i = 0; ARRAY_SIZE(acpi_names); i++)
+		if (acpi_names[i].fabric_id == dev->path.domain.domain)
+			return acpi_names[i].acpi_name;
+
 	return NULL;
 }
 
@@ -200,6 +214,6 @@ struct device_operations genoa_pci_domain_ops = {
 	.set_resources	  = pci_domain_set_resources,
 	.scan_bus	  = genoa_domain_scan_bus,
 #if CONFIG(HAVE_ACPI_TABLES)
-	.acpi_name	  = soc_acpi_name,
+	.acpi_name	  = df_acpi_name,
 #endif
 };
