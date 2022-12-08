@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
+#include <acpi/acpigen.h>
 #include <console/console.h>
 #include <device/pci_ops.h>
 #include <device/device.h>
@@ -48,14 +49,15 @@ static void genoa_domain_scan_bus(struct device *dev)
 	int i;
 	/* TODO check if this also works on multi CPU setups */
 	for (i = 0; i < 16; i++) {
-		union df_cfg_base_address base = { .raw = pci_read_config32(pcidev_on_root(0x18, 0), NB_CFG_BASE(i)) };
-		union df_cfg_limit_address limit = { .raw = pci_read_config32(pcidev_on_root(0x18, 0), NB_CFG_LIMIT(i)) };
-		if (limit.dst_fabric_id == dev->path.domain.domain &&
-		    base.we == 1 && base.re == 1) {
+		union df_cfg_base_address cfg_base = { .raw = pci_read_config32(pcidev_on_root(0x18, 0), NB_CFG_BASE(i)) };
+		union df_cfg_limit_address cfg_limit = { .raw = pci_read_config32(pcidev_on_root(0x18, 0), NB_CFG_LIMIT(i)) };
+		if (cfg_limit.dst_fabric_id == dev->path.domain.domain &&
+		    cfg_base.we == 1 && cfg_base.re == 1) {
 			printk(BIOS_DEBUG, "DestinationID 0x%x, Segment %d, BusBase %d, BusLimit %d WE %d, RE %d\n",
-		       limit.dst_fabric_id, base.segment_num, base.bus_num_base, limit.bus_num_limit,
-		       base.we, base.re);
-			bus = base.bus_num_base;
+		       cfg_limit.dst_fabric_id, cfg_base.segment_num, cfg_base.bus_num_base, cfg_limit.bus_num_limit,
+		       cfg_base.we, cfg_base.re);
+			bus = cfg_base.bus_num_base;
+			limit = cfg_limit.bus_num_limit;
 			break;
 		}
 	}
@@ -213,11 +215,87 @@ static const char *df_acpi_name(const struct device *dev)
 	return NULL;
 }
 
+static void df_fill_ssdt(const struct device *dev)
+{
+	const char *acpi_scope = acpi_device_path(dev);
+	printk(BIOS_DEBUG, "%s ACPI scope: '%s'\n", __FUNCTION__, acpi_scope);
+	acpigen_write_scope(acpi_device_path(dev));
+
+	acpigen_write_name("_CRS");
+	acpigen_write_resourcetemplate_header();
+
+	/* PCI busses */
+	printk(BIOS_DEBUG, "%s _CRS: adding busses [%x-%x)\n", __FUNCTION__,
+	       dev->link_list->secondary, dev->link_list->subordinate);
+	acpigen_resource_word(RSRC_TYPE_BUS, /* res_type */
+			      ADDR_SPACE_GENERAL_FLAG_MAX_FIXED
+			      | ADDR_SPACE_GENERAL_FLAG_MIN_FIXED
+			      | ADDR_SPACE_GENERAL_FLAG_DEC_POS, /* gen_flags */
+			      BUS_NUM_RANGE_RESOURCE_FLAG, /* type_flags */
+			      0, /* gran */
+			      dev->link_list->secondary, /* range_min */
+			      dev->link_list->subordinate, /* range_max */
+			      0x0, /* translation */
+			      dev->link_list->subordinate - dev->link_list->secondary + 1); /* length */
+
+	if (dev->link_list->secondary == 0)
+		/* ACPI 6.4.2.5 I/O Port Descriptor */
+		acpigen_write_io16(0xCF8, 0xCFF, 0x1, 0x8, 1);
+
+
+	struct resource *res;
+	for (res = dev->resource_list; res != NULL; res = res->next) {
+		if (!(res->flags & IORESOURCE_SUBTRACTIVE))
+			continue;
+		if (!(res->flags & IORESOURCE_ASSIGNED))
+			continue;
+		switch (res->flags & IORESOURCE_TYPE_MASK) {
+		case IORESOURCE_IO:
+			printk(BIOS_DEBUG, "%s _CRS: adding IO range [%llx-%llx)\n", __FUNCTION__,
+			       res->base, res->limit);
+			acpigen_resource_word(RSRC_TYPE_IO, /* res_type */
+					      ADDR_SPACE_GENERAL_FLAG_MAX_FIXED
+					      | ADDR_SPACE_GENERAL_FLAG_MIN_FIXED
+					      | ADDR_SPACE_GENERAL_FLAG_DEC_POS, /* gen_flags */
+					      IO_RSRC_FLAG_ENTIRE_RANGE, /* type_flags */
+					      0, /* gran */
+					      res->base, /* range_min */
+					      res->limit, /* range_max */
+					      0x0, /* translation */
+					      res->limit - res->base + 1); /* length */
+		        break;
+		case IORESOURCE_MEM:
+			printk(BIOS_DEBUG, "%s _CRS: adding MEM range [%llx-%llx)\n", __FUNCTION__,
+			       res->base, res->limit);
+			acpigen_resource_qword(RSRC_TYPE_MEM, /* res_type */
+					      ADDR_SPACE_GENERAL_FLAG_MAX_FIXED
+					      | ADDR_SPACE_GENERAL_FLAG_MIN_FIXED
+					      | ADDR_SPACE_GENERAL_FLAG_DEC_POS, /* gen_flags */
+					      MEM_RSRC_FLAG_MEM_READ_WRITE, /* type_flags */
+					      0, /* gran */
+					      res->base, /* range_min */
+					      res->limit, /* range_max */
+					      0x0, /* translation */
+					      res->limit - res->base + 1); /* length */
+			break;
+		default:
+			break;
+		}
+	}
+
+	/* TODO deal with VGA resources */
+
+	acpigen_write_resourcetemplate_footer();
+	/* Scope */
+	acpigen_pop_len();
+}
+
 struct device_operations genoa_pci_domain_ops = {
 	.read_resources	  = genoa_domain_read_resources,
 	.set_resources	  = pci_domain_set_resources,
 	.scan_bus	  = genoa_domain_scan_bus,
 #if CONFIG(HAVE_ACPI_TABLES)
 	.acpi_name	  = df_acpi_name,
+	.acpi_fill_ssdt   = df_fill_ssdt,
 #endif
 };
