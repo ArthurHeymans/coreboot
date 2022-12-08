@@ -44,7 +44,7 @@ _Static_assert(sizeof(union df_cfg_limit_address) == sizeof(uint32_t));
 /* OpenSIL has no API to output what resources have been allocated so simply read back registers */
 static void genoa_domain_scan_bus(struct device *dev)
 {
-	uint32_t bus;
+	uint8_t bus, limit;
 	int i;
 	/* TODO check if this also works on multi CPU setups */
 	for (i = 0; i < 16; i++) {
@@ -66,9 +66,13 @@ static void genoa_domain_scan_bus(struct device *dev)
 
 	// Set bus number
 	dev->link_list->secondary = bus;
+	/* secondary needs to be the same as subordinate before scan_bus. */
 	dev->link_list->subordinate = bus;
 
 	pci_domain_scan_bus(dev);
+
+	/* Scan bus will modify subordinate, so change it back for ACPI generation. */
+	dev->link_list->subordinate = limit;
 }
 
 union df_x86_io_base_address {
