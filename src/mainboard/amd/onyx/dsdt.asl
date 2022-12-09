@@ -13,16 +13,5 @@ DefinitionBlock (
 {	/* Start of ASL file */
 	#include <acpi/dsdt_top.asl>
 
-	/* TODO: Global NVS */
-
-	/* TODO: IRQ mapping */
-
-	/* System Bus */
-	Scope(\_SB) { /* Start \_SB scope */
-		/* global utility methods expected within the \_SB scope */
-		#include <arch/x86/acpi/globutil.asl>
-
-		/* TODO: Write and include SoC ASL */
-
-	} /* End \_SB scope */
+	#include <soc.asl>
 } /* End of ASL file */

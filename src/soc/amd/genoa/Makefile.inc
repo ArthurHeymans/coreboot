@@ -24,6 +24,7 @@ ramstage-y	+= fch.c
 ramstage-y	+= pcie_gpp.c
 
 CPPFLAGS_common += -I$(src)/soc/amd/genoa/include
+CPPFLAGS_common += -I$(src)/soc/amd/genoa/acpi
 MAINBOARD_BLOBS_DIR:=$(top)/3rdparty/blobs_internal/mainboard/$(MAINBOARDDIR)
 
 ifeq ($(call int-gt, $(CONFIG_ROM_SIZE) 0x1000000), 1)
