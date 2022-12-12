@@ -16,6 +16,10 @@ c_args = ['-nostdinc',
           '-DHAS_STRING_H=1',
           '-D_PORTING_H_=1',
           '-Wno-builtin-declaration-mismatch',
+          # opensil uses coreboot assert which uses printk which warns about unused-param
+          '-Wno-unused-parameter',
+          # ubiquitous problem in opensil
+          '-Wno-missing-field-initializers',
          ]
 
 [host_machine]
