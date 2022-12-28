@@ -15,6 +15,7 @@ c_args = ['-nostdinc',
           '-include', '##COREBOOT_DIR##/src/commonlib/bsd/include/commonlib/bsd/compiler.h',
           '-DHAS_STRING_H=1',
           '-D_PORTING_H_=1',
+          '-DSIL_DEBUG_ENABLE=##SIL_DEBUG_ENABLE##',
           '-Wno-builtin-declaration-mismatch',
           # opensil uses coreboot assert which uses printk which warns about unused-param
           '-Wno-unused-parameter',

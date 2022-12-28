@@ -9,6 +9,9 @@
 void HostDebugService(size_t MsgLevel, const char *SilPrefix, const char *Message,
 				 const char *Function, size_t Line, ...)
 {
+	if (!CONFIG(OPENSIL_DEBUG_OUTPUT))
+		return;
+
 	/* Format the Prefix */
 	char prefix[60];
 	snprintf(prefix, sizeof(prefix), "%s:%s:%d:", SilPrefix, (uintptr_t)Function, Line);

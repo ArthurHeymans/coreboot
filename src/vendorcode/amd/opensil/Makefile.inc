@@ -18,6 +18,11 @@ cpu_string="x86_64"
 opensil_target_name=AMDopensil64
 is_32bit="false"
 endif
+ifeq ($(CONFIG_OPENSIL_DEBUG_OUTPUT),y)
+sil_debug_enable="true"
+else
+sil_debug_enable="false"
+endif
 
 
 $(obj)/meson_crosscompile: $(dir)/meson_cross.template
@@ -28,6 +33,7 @@ $(obj)/meson_crosscompile: $(dir)/meson_cross.template
 	    -e "s,##CPU_FAMILY##,$(cpu_family_string)," \
 	    -e "s,##CPU##,$(cpu_string)," \
 	    -e "s,##IS32BIT##,$(is_32bit)," \
+	    -e "s,##SIL_DEBUG_ENABLE##,$(sil_debug_enable)," \
 		$< > $@
 
 # make sure to always rerun meson
