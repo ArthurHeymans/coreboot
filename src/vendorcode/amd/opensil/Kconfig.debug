@@ -14,4 +14,52 @@ config OPENSIL_DEBUG_PREFIX
 	  This prints the function name and line level in front of the
 	  actual message.
 
+config OPENSIL_DEBUG_APOB
+	bool "Enable APOB messages"
+	default n
+	help
+	  Enable printing APOB related messages.
+
+config OPENSIL_DEBUG_NBIO
+	bool "Enable NBIO messages"
+	default y
+	help
+	  Enable printing NBIO related messages.
+
+config OPENSIL_DEBUG_CCX
+	bool "Enable CCX messages"
+	default y
+	help
+	  Enable printing CCX related messages.
+
+config OPENSIL_DEBUG_SMU
+	bool "Enable SMU messages"
+	default y
+	help
+	  Enable printing SMU related messages.
+
+config OPENSIL_DEBUG_DF
+	bool "Enable DF messages"
+	default y
+	help
+	  Enable printing DF related messages.
+
+config OPENSIL_DEBUG_MEM
+	bool "Enable MEM messages"
+	default y
+	help
+	  Enable printing MEM related messages.
+
+config OPENSIL_DEBUG_FCH
+	bool "Enable FCH messages"
+	default y
+	help
+	  Enable printing FCH related messages.
+
+config OPENSIL_DEBUG_RAS
+	bool "Enable RAS messages"
+	default y
+	help
+	  Enable printing RAS related messages.
+
 endif
