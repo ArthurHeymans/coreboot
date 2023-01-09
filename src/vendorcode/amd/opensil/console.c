@@ -42,5 +42,5 @@ void HostDebugService(size_t MsgLevel, const char *SilPrefix, const char *Messag
 	va_end(args);
 
 	const int loglevel = translate_opensil_debug_level(MsgLevel);
-	printk(loglevel, "%s%s", prefix, msg);
+	printk(loglevel, "%s%s", CONFIG(OPENSIL_DEBUG_PREFIX) ? prefix : "", msg);
 }
