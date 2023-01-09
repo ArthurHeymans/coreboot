@@ -25,7 +25,7 @@ sil_debug_enable="false"
 endif
 
 
-$(obj)/meson_crosscompile: $(dir)/meson_cross.template
+$(obj)/meson_crosscompile: $(dir)/meson_cross.template $(obj)/config.h
 	sed -e "s,##COMPILER##,$(CC_ramstage)," \
 	    -e "s,##AR##,$(AR_ramstage)," \
 	    -e "s,##NASM##,$(NASM)," \
