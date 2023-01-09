@@ -14,7 +14,7 @@ void HostDebugService(size_t MsgLevel, const char *SilPrefix, const char *Messag
 
 	/* Format the Prefix */
 	char prefix[60];
-	snprintf(prefix, sizeof(prefix), "%s:%s:%d:", SilPrefix, (uintptr_t)Function, Line);
+	snprintf(prefix, sizeof(prefix), "%s%s:%d:", SilPrefix, (uintptr_t)Function, Line);
 
 	/* Write formatted data to buffed */
 	char msg[120];
