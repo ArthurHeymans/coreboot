@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
+#include <assert.h>
 #include <bootstate.h>
 #include <cbmem.h>
 #include <cpu/cpu.h>
@@ -7,7 +8,9 @@
 #include <SilCommon.h>
 #include <xSIM-api.h>
 #include <DF/RcManager-api.h>
+#include <FCH/Common/FchCommonCfg.h>
 #include <amdblocks/reset.h>
+#include <soc/soc_chip.h>
 #include "console.h"
 #include "opensil.h"
 
@@ -67,6 +70,40 @@ static void setup_rc_manager_default(void)
 	rc_mgr_input_block->EarlyBmcLinkLaneNum = 134;
 }
 
+static void configure_usb(void)
+{
+	/* Use a device that always ought to be present on the first domain */
+	struct device *dev = pcidev_on_root(0x18, 0);
+	assert(dev);
+	const config_t *soc_config = (config_t *)dev->chip_info;
+	assert(soc_config);
+	const struct soc_usb_config *usb = &soc_config->usb;
+
+	FCHUSB_INPUT_BLK *fch_usb_data = xSimFindStructure (SilId_FchUsb, 0);
+	fch_usb_data->Xhci0Enable = usb->xhci0_enable;
+	fch_usb_data->Xhci1Enable = usb->xhci1_enable;
+	fch_usb_data->Xhci2Enable = usb->xhci2_enable;
+	for (int i = 0; i < 2; i++) {
+		memcpy(&fch_usb_data->XhciOCpinSelect[i].Usb20OcPin, &usb->usb2_oc_pins[i],
+		       sizeof(fch_usb_data->XhciOCpinSelect[i].Usb20OcPin));
+		memcpy(&fch_usb_data->XhciOCpinSelect[i].Usb31OcPin, &usb->usb3_oc_pins[i],
+		       sizeof(fch_usb_data->XhciOCpinSelect[i].Usb31OcPin));
+	}
+	fch_usb_data->XhciOcPolarityCfgLow = usb->polarity_cfg_low;
+	fch_usb_data->Usb3PortForceGen1 = usb->usb3_force_gen1.raw;
+
+	//	memcpy(&fch_usb_data->OemUsbConfigurationTable, &usb_oem_data, sizeof(usb_oem_data));
+	fch_usb_data->OemUsbConfigurationTable.Usb31PhyEnable = usb->usb31_phy_enable;
+	if (usb->usb31_phy_enable)
+		memcpy(&fch_usb_data->OemUsbConfigurationTable.Usb31PhyPort, usb->usb31_phy,
+		       sizeof(fch_usb_data->OemUsbConfigurationTable.Usb31PhyPort));
+	fch_usb_data->OemUsbConfigurationTable.Usb31PhyEnable = usb->s1_usb31_phy_enable;
+	if (usb->s1_usb31_phy_enable)
+		memcpy(&fch_usb_data->OemUsbConfigurationTable.S1Usb31PhyPort, usb->s1_usb31_phy,
+		       sizeof(fch_usb_data->OemUsbConfigurationTable.S1Usb31PhyPort));
+
+}
+
 static void setup_opensil(void)
 {
 	static bool done;
@@ -86,6 +123,7 @@ static void setup_opensil(void)
 	done = true;
 
 	setup_rc_manager_default();
+	configure_usb();
 }
 
 static void tp1_opensil(void *timepoint)
