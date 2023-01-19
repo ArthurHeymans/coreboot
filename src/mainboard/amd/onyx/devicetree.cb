@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
 chip soc/amd/genoa
-	device domain 0x22 on end
-
 	# USB configuration
 	register "usb.xhci0_enable" = "1"
 	register "usb.xhci1_enable" = "1"
@@ -43,4 +41,127 @@ chip soc/amd/genoa
 			{0x00, 0x05, 0x07, 0x00, 0x00, 0x07, 0x01, 0x05, 0x00, 0x05, 0x00, 0x05},
 		}"
 
+	device domain 0x22 on
+		device ref gpp_bridge_0_0_a on
+			chip vendorcode/amd/opensil/mpio # P2
+				register "start_lane" = "48"
+				register "n_lanes" = "16"
+				register "gpio_group" = "1"
+				register "aspm" = "L1"
+				device generic 0 on end # dummy for configuring mpio
+			end
+		end
+		device ref gpp_bridge_0_0_b on
+			chip vendorcode/amd/opensil/mpio # G2
+				register "start_lane" = "112"
+				register "n_lanes" = "16"
+				register "gpio_group" = "1"
+				register "aspm" = "L1"
+				register "hotplug" = "ServerExpress"
+				device generic 0 on end # dummy for configuring mpio
+			end
+		end
+		device ref gpp_bridge_0_0_c on
+			chip vendorcode/amd/opensil/mpio
+				register "start_lane" = "128"
+				register "n_lanes" = "4"
+				register "gpio_group" = "1"
+				register "aspm" = "L1"
+				device generic 0 on end # dummy for configuring mpio
+			end
+		end
+	end
+
+	device domain 0x23 on
+		device ref gpp_bridge_1_0_a on
+			chip vendorcode/amd/opensil/mpio # P3
+				register "start_lane" = "16"
+				register "n_lanes" = "16"
+				register "gpio_group" = "1"
+				register "aspm" = "L1"
+				device generic 0 on end # dummy for configuring mpio
+			end
+		end
+		device ref gpp_bridge_1_0_b on
+			chip vendorcode/amd/opensil/mpio # G3
+				register "start_lane" = "80"
+				register "n_lanes" = "16"
+				register "gpio_group" = "1"
+				register "aspm" = "L1"
+				device generic 0 on end # dummy for configuring mpio
+			end
+		end
+	end
+
+	device domain 0x21 on
+		device ref gpp_bridge_2_0_a on
+			chip vendorcode/amd/opensil/mpio # P1
+				register "start_lane" = "32"
+				register "n_lanes" = "16"
+				register "gpio_group" = "1"
+				register "aspm" = "L1"
+				register "hotplug" = "ServerExpress"
+				device generic 0 on end # dummy for configuring mpio
+			end
+		end
+		device ref gpp_bridge_2_0_b on
+			chip vendorcode/amd/opensil/mpio # G1
+				register "start_lane" = "64"
+				register "n_lanes" = "16"
+				register "gpio_group" = "1"
+				register "aspm" = "L1"
+				device generic 0 on end # dummy for configuring mpio
+			end
+		end
+
+	end
+
+	device domain 0x20 on
+		device ref gpp_bridge_3_0_a on
+			chip vendorcode/amd/opensil/mpio # P0
+				register "start_lane" = "0"
+				register "n_lanes" = "16"
+				register "gpio_group" = "1"
+				register "aspm" = "L1"
+				device generic 0 on end # dummy for configuring mpio
+			end
+		end
+		device ref gpp_bridge_3_0_b on
+			chip vendorcode/amd/opensil/mpio # G0
+				register "start_lane" = "96"
+				register "n_lanes" = "16"
+				register "gpio_group" = "1"
+				register "aspm" = "L1"
+				device generic 0 on end # dummy for configuring mpio
+			end
+		end
+		device ref gpp_bridge_3_0_c on # WALF
+			chip vendorcode/amd/opensil/mpio
+				register "start_lane" = "132"
+				register "n_lanes" = "2"
+				register "gpio_group" = "1"
+				register "aspm" = "L1"
+				device generic 0 on end # dummy for configuring mpio
+			end
+		end
+		device ref gpp_bridge_3_1_c on # BMC
+			chip vendorcode/amd/opensil/mpio
+				register "start_lane" = "134"
+				register "n_lanes" = "1"
+				register "gpio_group" = "1"
+				register "aspm" = "L1"
+				register "bmc" = "1"
+				device generic 0 on end # dummy for configuring mpio
+			end
+		end
+		device ref gpp_bridge_3_2_c on # BMC
+			chip vendorcode/amd/opensil/mpio
+				register "start_lane" = "135"
+				register "n_lanes" = "1"
+				register "gpio_group" = "1"
+				register "aspm" = "L1"
+				device generic 0 on end # dummy for configuring mpio
+			end
+		end
+	end
 end

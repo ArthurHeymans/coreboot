@@ -66,8 +66,8 @@ static void setup_rc_manager_default(void)
 	rc_mgr_input_block->MmioSizePerRbForNonPciDevice = 1 * MiB;
 	rc_mgr_input_block->MmioAbove4GLimit = POWER_OF_2(cpu_phys_address_size());
 	rc_mgr_input_block->Above4GMmioSizePerRbForNonPciDevice = 0;
-	rc_mgr_input_block->BmcSocket = 0;
-	rc_mgr_input_block->EarlyBmcLinkLaneNum = 134;
+	//rc_mgr_input_block->BmcSocket = 0;
+	//rc_mgr_input_block->EarlyBmcLinkLaneNum = 134;
 }
 
 static void configure_usb(void)

@@ -67,4 +67,6 @@ $(obj)/ramstage/vendorcode/amd/opensil/ramstage.o: CFLAGS_ramstage += -D_MSC_EXT
 $(obj)/ramstage/vendorcode/amd/opensil/memmap.o: CFLAGS_ramstage += -D_MSC_EXTENSIONS=0 -DHAS_STRING_H=1 -Wno-unknown-pragmas
 $(obj)/romstage/vendorcode/amd/opensil/romstage.o: CFLAGS_romstage += -D_MSC_EXTENSIONS=0 -DHAS_STRING_H=1 -Wno-unknown-pragmas
 
+subdirs-y += mpio
+
 endif
