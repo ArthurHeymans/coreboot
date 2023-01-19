@@ -104,13 +104,8 @@ static void configure_usb(void)
 
 }
 
-static void setup_opensil(void)
+static void setup_opensil(void *unused)
 {
-	static bool done;
-
-	if (done)
-		return;
-
 	const SIL_STATUS debug_ret = SilDebugSetup(HostDebugService);
 	SIL_STATUS_report("SilDebugSetup", debug_ret);
 	const size_t MemReq = xSimQueryMemoryRequirements();
@@ -120,16 +115,16 @@ static void setup_opensil(void)
 	/* We run all opensil timepoints in the same stage so using TP1 as argument is fine. */
 	const SIL_STATUS assign_mem_ret = xSimAssignMemory(MemBuf, MemReq, SIL_TP1);
 	SIL_STATUS_report("xSimAssignMemory", assign_mem_ret);
-	done = true;
 
+	/* TODO: Move into DF chip */
 	setup_rc_manager_default();
 	configure_usb();
 }
 
+BOOT_STATE_INIT_ENTRY(BS_DEV_INIT_CHIPS, BS_ON_ENTRY, setup_opensil, NULL);
+
 static void tp1_opensil(void *timepoint)
 {
-	setup_opensil();
-
 	const SIL_STATUS ret = InitializeAMDSi(SIL_TP1);
 	SIL_STATUS_report("InitializeAMDSi", ret);
 	if (ret == SilResetRequestColdImm || ret == SilResetRequestColdDef) {
@@ -141,4 +136,4 @@ static void tp1_opensil(void *timepoint)
 	}
 }
 
-BOOT_STATE_INIT_ENTRY(BS_PRE_DEVICE, BS_ON_EXIT, tp1_opensil, SIL_TP1);
+BOOT_STATE_INIT_ENTRY(BS_DEV_INIT_CHIPS, BS_ON_EXIT, tp1_opensil, SIL_TP1);
