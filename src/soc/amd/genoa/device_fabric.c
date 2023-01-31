@@ -2,8 +2,10 @@
 
 #include <acpi/acpigen.h>
 #include <console/console.h>
+#include <device/pci_def.h>
 #include <device/pci_ops.h>
 #include <device/device.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 #include <sys/types.h>
@@ -196,6 +198,33 @@ static void genoa_domain_read_resources(struct device *dev)
 	add_opensil_memmap(dev, 0);
 }
 
+#define D18F0_VGA_EN 0xc08
+
+union df_vga_en {
+	struct {
+		uint32_t ve : 1;
+		uint32_t np : 1;
+		uint32_t cpu_dis : 1;
+		uint32_t _reserved0 : 1;
+		uint32_t dst_fabric_id : 12;
+		uint32_t _reserved1 : 16;
+	};
+	uint32_t raw;
+};
+_Static_assert(sizeof(union df_vga_en) == sizeof(uint32_t),
+	       "union df_vga_en: incorrect struct size ");
+
+static void genoa_domain_set_resources(struct device *dev)
+{
+	if (dev->link_list->bridge_ctrl & PCI_BRIDGE_CTL_VGA) {
+		printk(BIOS_DEBUG, "Setting VGA decoding for domain 0x%x\n", dev->path.domain.domain);
+		const union df_vga_en vga_en = { .ve = 1, .dst_fabric_id = dev->path.domain.domain, };
+		pci_write_config32(pcidev_on_root(0x18, 0), D18F0_VGA_EN, vga_en.raw);
+	}
+
+	pci_domain_set_resources(dev);
+}
+
 static const char *df_acpi_name(const struct device *dev)
 {
 	const struct {
@@ -292,7 +321,7 @@ static void df_fill_ssdt(const struct device *dev)
 
 struct device_operations genoa_pci_domain_ops = {
 	.read_resources	  = genoa_domain_read_resources,
-	.set_resources	  = pci_domain_set_resources,
+	.set_resources	  = genoa_domain_set_resources,
 	.scan_bus	  = genoa_domain_scan_bus,
 #if CONFIG(HAVE_ACPI_TABLES)
 	.acpi_name	  = df_acpi_name,
