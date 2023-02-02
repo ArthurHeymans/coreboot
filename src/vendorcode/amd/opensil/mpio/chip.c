@@ -9,7 +9,7 @@
 
 static void nbio_config(void)
 {
-	NBIOCLASS_INPUT_BLK *nbio_data = xSimFindStructure (SilId_NbioClass, 0);
+	NBIOCLASS_INPUT_BLK *nbio_data = SilFindStructure(SilId_NbioClass, 0);
 	nbio_data->CfgHdAudioEnable           = false;
 	nbio_data->EsmEnableAllRootPorts      = false;
 	nbio_data->EsmTargetSpeed             = 16;
@@ -106,17 +106,8 @@ static void mpio_global_config(MPIOCLASS_INPUT_BLK *mpio_data)
 	  // Is this needed? Ideally we only need to pass back the assigned value to the host.
 	  // mpio_data->AmdMCTPMasterID                = PcdGet16(PcdAmdMCTPMasterID);
 
-	mpio_data->ReportErrorsToRcec                  = 1;
-	mpio_data->CxlIoArbWeights                     = 0;
-	mpio_data->CxlCaMemArbWeights                  = 0;
-	mpio_data->CnliTokenAdvertisement              = 0;
-	mpio_data->AmdCxlProtocolErrorReporting        = 1;
 	mpio_data->SyncHeaderByPass                    = 1;
 	mpio_data->CxlTempGen5AdvertAltPtcl            = 0;
-	mpio_data->CxlCamemRxOptimization              = 0;
-	mpio_data->CxlTxOptimizeDirectOutEn            = 0;
-
-	mpio_data->AmdFabricCdma                       = 0;
 
 	/* TODO handle this differently on multisocket */
 	mpio_data->PcieTopologyData.PlatformData[0].Flags = DESCRIPTOR_TERMINATE_LIST;
@@ -126,11 +117,11 @@ static void mpio_global_config(MPIOCLASS_INPUT_BLK *mpio_data)
 
 static void setup_bmc_lanes(uint8_t lane, uint8_t socket)
 {
-	DF4_RCMGR_INPUT_BLK *rc_mgr_input_block = xSimFindStructure(SilId_RcManager,  0);
+	DF4_RCMGR_INPUT_BLK *rc_mgr_input_block = SilFindStructure(SilId_RcManager,  0);
 	rc_mgr_input_block->BmcSocket = socket;
 	rc_mgr_input_block->EarlyBmcLinkLaneNum = lane;
 
-	NBIOCLASS_INPUT_BLK *nbio_data = xSimFindStructure (SilId_NbioClass, 0);
+	NBIOCLASS_INPUT_BLK *nbio_data = SilFindStructure(SilId_NbioClass, 0);
 	nbio_data->EarlyBmcLinkSocket         = socket;
 	nbio_data->EarlyBmcLinkLaneNum        = lane;
 	nbio_data->EarlyBmcLinkDie            = 0; // TODO
@@ -179,7 +170,7 @@ static void per_device_config(MPIOCLASS_INPUT_BLK *mpio_data, struct device *dev
 
 static void mpio_config(void *const config)
 {
-	MPIOCLASS_INPUT_BLK *mpio_data = xSimFindStructure (SilId_MpioClass, 0);
+	MPIOCLASS_INPUT_BLK *mpio_data = SilFindStructure(SilId_MpioClass, 0);
 	mpio_global_config(mpio_data);
 	nbio_config();
 

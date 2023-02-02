@@ -46,14 +46,9 @@ void SIL_STATUS_report(const char *function, const int status)
 	printk(log_level, "%s returned %d (%s)\n", function, status, error_string);
 }
 
-static DF4_FABRIC_IO_MANAGER io_rc_mgr;
-static DF4_FABRIC_MMIO_MANAGER mmio_rc_mgr;
-
 static void setup_rc_manager_default(void)
 {
-	DF4_RCMGR_INPUT_BLK *rc_mgr_input_block = xSimFindStructure(SilId_RcManager,  0);
-	rc_mgr_input_block->IoRcMgr = &io_rc_mgr;
-	rc_mgr_input_block->MmioRcMgr = &mmio_rc_mgr;
+	DF4_RCMGR_INPUT_BLK *rc_mgr_input_block = SilFindStructure(SilId_RcManager,  0);
 	rc_mgr_input_block->SetRcBasedOnNv = false;
 
 	// Hacky: This should be done in opensil which knows about sockets and RbPerSocket. Not host
@@ -79,7 +74,7 @@ static void configure_usb(void)
 	assert(soc_config);
 	const struct soc_usb_config *usb = &soc_config->usb;
 
-	FCHUSB_INPUT_BLK *fch_usb_data = xSimFindStructure (SilId_FchUsb, 0);
+	FCHUSB_INPUT_BLK *fch_usb_data = SilFindStructure(SilId_FchUsb, 0);
 	fch_usb_data->Xhci0Enable = usb->xhci0_enable;
 	fch_usb_data->Xhci1Enable = usb->xhci1_enable;
 	fch_usb_data->Xhci2Enable = usb->xhci2_enable;
@@ -113,7 +108,7 @@ static void setup_opensil(void *unused)
 	if (!MemBuf)
 		die("%s: failed to alloc mem\n", __func__);
 	/* We run all opensil timepoints in the same stage so using TP1 as argument is fine. */
-	const SIL_STATUS assign_mem_ret = xSimAssignMemory(MemBuf, MemReq, SIL_TP1);
+	const SIL_STATUS assign_mem_ret = xSimAssignMemoryTp1(MemBuf, MemReq);
 	SIL_STATUS_report("xSimAssignMemory", assign_mem_ret);
 
 	/* TODO: Move into DF chip */
@@ -125,8 +120,8 @@ BOOT_STATE_INIT_ENTRY(BS_DEV_INIT_CHIPS, BS_ON_ENTRY, setup_opensil, NULL);
 
 static void tp1_opensil(void *timepoint)
 {
-	const SIL_STATUS ret = InitializeAMDSi(SIL_TP1);
-	SIL_STATUS_report("InitializeAMDSi", ret);
+	const SIL_STATUS ret = InitializeAMDSiTp1();
+	SIL_STATUS_report("InitializeAMDSi Tp1", ret);
 	if (ret == SilResetRequestColdImm || ret == SilResetRequestColdDef) {
 		printk(BIOS_INFO, "OpenSil requested a cold reset");
 		do_cold_reset();

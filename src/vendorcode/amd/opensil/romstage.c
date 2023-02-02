@@ -9,7 +9,7 @@
 uintptr_t cbmem_top_chipset(void)
 {
 	SilDebugSetup(HostDebugService);
-	uintptr_t top_mem = xPrfGetLowUsableDramAddress();
+	uintptr_t top_mem = xPrfGetLowUsableDramAddress(0);
 	printk(BIOS_DEBUG, "xPrfGetLowUsableDramAddress: 0x%lx\n", top_mem);
 	top_mem -= CONFIG_SMM_TSEG_SIZE;
 	if (CONFIG_SMM_TSEG_SIZE)

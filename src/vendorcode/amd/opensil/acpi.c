@@ -10,7 +10,7 @@
 
 void opensil_fill_fadt(acpi_fadt_t *fadt)
 {
-	FCHHWACPI_INPUT_BLK *blk = xSimFindStructure(SilId_FchHwAcpiP,  0);
+	FCHHWACPI_INPUT_BLK *blk = SilFindStructure(SilId_FchHwAcpiP,  0);
 
 	fadt->pm1a_evt_blk = blk->AcpiPm1EvtBlkAddr;
 	fadt->x_pm1a_evt_blk.addrl = blk->AcpiPm1EvtBlkAddr;

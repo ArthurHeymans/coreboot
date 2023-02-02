@@ -24,8 +24,24 @@ else
 sil_debug_enable="false"
 endif
 
+PYTHON?=python
 
-$(obj)/meson_crosscompile: $(dir)/meson_cross.template $(obj)/config.h
+OPENSIL_CONFIG=opensil_config
+
+bios_base=$(shell printf "%x" $(call int-subtract, $(CONFIG_ROMSTAGE_ADDR) $(CONFIG_C_ENV_BOOTBLOCK_SIZE)))
+bios_size=$(CONFIG_C_ENV_BOOTBLOCK_SIZE)
+
+$(obj)/$(OPENSIL_CONFIG): $(dir)/opensil_config.template
+	sed -e "s,##APOB_BASE##,$(CONFIG_PSP_APOB_DRAM_ADDRESS)," \
+	    -e "s,##BIOS_ENTRY_BASE##,$(bios_base)," \
+	    -e "s,##BIOS_ENTRY_SIZE##,$(CONFIG_C_ENV_BOOTBLOCK_SIZE) ," \
+		$< > $@
+
+
+$(obj)/$(OPENSIL_CONFIG).h: $(obj)/$(OPENSIL_CONFIG) $(obj)/config.h $(objutil)/kconfig/conf
+	cd $(opensil_dir); KCONFIG_CONFIG=$(top)/$(obj)/$(OPENSIL_CONFIG) KCONFIG_AUTOHEADER=$(top)/$@ $(PYTHON) util/kconfig/lib/genconfig.py Kconfig
+
+$(obj)/meson_crosscompile: $(dir)/meson_cross.template  $(obj)/config.h $(obj)/$(OPENSIL_CONFIG).h
 	sed -e "s,##COMPILER##,$(CC_ramstage)," \
 	    -e "s,##AR##,$(AR_ramstage)," \
 	    -e "s,##NASM##,$(NASM)," \
@@ -40,7 +56,7 @@ $(obj)/meson_crosscompile: $(dir)/meson_cross.template $(obj)/config.h
 PHONY += compile_opensil
 compile_opensil: $(obj)/meson_crosscompile $(obj)/config.h
 	-rm -rf $(obj)/opensil &> /dev/null
-	cd $(opensil_dir); meson --cross-file $(top)/$< $(top)/$(obj)/opensil -Db_staticpic=false -DPlatKcfg=Onyx_SilCfg
+	cd $(opensil_dir); meson --cross-file $(top)/$< $(top)/$(obj)/opensil -Db_staticpic=false -DPlatKcfgDir=$(top)/$(obj) -DPlatKcfg=$(OPENSIL_CONFIG)
 	meson compile -C $(obj)/opensil $(opensil_target_name)
 
 $(obj)/opensil.a: compile_opensil
@@ -66,6 +82,8 @@ $(obj)/ramstage/vendorcode/amd/opensil/acpi.o: CFLAGS_ramstage += -D_MSC_EXTENSI
 $(obj)/ramstage/vendorcode/amd/opensil/ramstage.o: CFLAGS_ramstage += -D_MSC_EXTENSIONS=0 -DHAS_STRING_H=1 -Wno-unknown-pragmas
 $(obj)/ramstage/vendorcode/amd/opensil/memmap.o: CFLAGS_ramstage += -D_MSC_EXTENSIONS=0 -DHAS_STRING_H=1 -Wno-unknown-pragmas
 $(obj)/romstage/vendorcode/amd/opensil/romstage.o: CFLAGS_romstage += -D_MSC_EXTENSIONS=0 -DHAS_STRING_H=1 -Wno-unknown-pragmas
+$(obj)/romstage/vendorcode/amd/opensil/console.o: CFLAGS_romstage += -D_MSC_EXTENSIONS=0 -DHAS_STRING_H=1 -Wno-unknown-pragmas
+$(obj)/ramstage/vendorcode/amd/opensil/console.o: CFLAGS_ramstage += -D_MSC_EXTENSIONS=0 -DHAS_STRING_H=1 -Wno-unknown-pragmas
 
 subdirs-y += mpio
 
