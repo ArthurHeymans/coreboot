@@ -134,7 +134,10 @@ void add_opensil_memmap(struct device *dev, int idx)
 			continue;
 		lowest_upper_hole_base = MIN(lowest_upper_hole_base, hole_info[hole].Base);
 		highest_upper_hole_end = MAX(highest_upper_hole_end, hole_info[hole].Base + hole_info[hole].Size);
-		reserved_ram_range(dev, idx++, hole_info[hole].Base, hole_info[hole].Size);
+		if (hole_info[hole].Type == UMA)
+			mmio_range(dev, idx++, hole_info[hole].Base, hole_info[hole].Size);
+		else
+			reserved_ram_range(dev, idx++, hole_info[hole].Base, hole_info[hole].Size);
 	}
 
 	ram_from_to(dev, idx++, 0x100000000, lowest_upper_hole_base);
