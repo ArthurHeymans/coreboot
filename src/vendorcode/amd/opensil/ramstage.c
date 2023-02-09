@@ -99,6 +99,19 @@ static void configure_usb(void)
 
 }
 
+#define NUM_SATA_CONTROLLERS 4
+/* TODO: move to chip configuration */
+static void configure_sata(void)
+{
+	FCHSATA_INPUT_BLK *fch_sata_data = SilFindStructure(SilId_FchSata, 0);
+	for (int i = 0; i < NUM_SATA_CONTROLLERS; i++) {
+		fch_sata_data[i].SataEnable = true;
+		fch_sata_data[i].SataMsiEnable = true;
+		fch_sata_data[i].SataClass = SataAhci;
+		/* TODO: check and set remaining SATA PCD values */
+	}
+}
+
 static void setup_opensil(void *unused)
 {
 	const SIL_STATUS debug_ret = SilDebugSetup(HostDebugService);
@@ -114,6 +127,7 @@ static void setup_opensil(void *unused)
 	/* TODO: Move into DF chip */
 	setup_rc_manager_default();
 	configure_usb();
+	configure_sata();
 }
 
 BOOT_STATE_INIT_ENTRY(BS_DEV_INIT_CHIPS, BS_ON_ENTRY, setup_opensil, NULL);
