@@ -130,6 +130,7 @@ static void setup_bmc_lanes(uint8_t lane, uint8_t socket)
 static void per_device_config(MPIOCLASS_INPUT_BLK *mpio_data, struct device *dev,
 			      struct vendorcode_amd_opensil_mpio_config *const config)
 {
+	static uint32_t slot_num;
 	const uint32_t df_id = dev->bus->dev->path.domain.domain;
 	const uint32_t devfn = dev->path.pci.devfn;
 	printk(BIOS_DEBUG, "Setting MPIO port for DF_ID 0x%x, PCI %d:%d\n",
@@ -160,7 +161,8 @@ static void per_device_config(MPIOCLASS_INPUT_BLK *mpio_data, struct device *dev
 							config->aspm_l1_2,
 							config->clock_pm),
 	};
-	port.Port.AlwaysExpose = 1,
+	port.Port.AlwaysExpose = 1;
+	port.Port.SlotNum = ++slot_num;
 	mpio_data->PcieTopologyData.PortList[mpio_port] = port;
 	/* Update TERMINATE list */
 	if (mpio_port > 0)
