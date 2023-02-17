@@ -9,6 +9,7 @@
 #include <xSIM-api.h>
 #include <DF/RcManager-api.h>
 #include <FCH/Common/FchCommonCfg.h>
+#include <FCH/Common/FchCore/FchSata/FchSata.h>
 #include <amdblocks/reset.h>
 #include <soc/soc_chip.h>
 #include "console.h"
@@ -104,11 +105,17 @@ static void configure_usb(void)
 static void configure_sata(void)
 {
 	FCHSATA_INPUT_BLK *fch_sata_data = SilFindStructure(SilId_FchSata, 0);
+	FCH_SATA2 *fch_sata_defaults = GetFchSataData();
 	for (int i = 0; i < NUM_SATA_CONTROLLERS; i++) {
-		fch_sata_data[i].SataEnable = true;
+		fch_sata_data[i] = fch_sata_defaults[i];
+		fch_sata_data[i].SataSetMaxGen2 = false;
 		fch_sata_data[i].SataMsiEnable = true;
-		fch_sata_data[i].SataClass = SataAhci;
-		/* TODO: check and set remaining SATA PCD values */
+		fch_sata_data[i].SataEspPort = 0xFF;
+		fch_sata_data[i].SataRasSupport = true;
+		fch_sata_data[i].SataDevSlpPort1Num = 1;
+		fch_sata_data[i].SataMsiEnable = true;
+		fch_sata_data[i].SataControllerAutoShutdown = true;
+		fch_sata_data[i].SataRxPolarity = 0xFF;
 	}
 }
 
