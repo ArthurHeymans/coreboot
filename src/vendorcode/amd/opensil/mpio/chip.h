@@ -16,6 +16,11 @@
  * P5 -> [132-136]
  */
 
+enum mpio_type {
+	PCIE,
+	SATA,
+};
+
 /* Sync with PCIE_HOTPLUG_TYPE */
 enum mpio_hotplug {
 	HotplugDisabled,                                    ///< Hotplug disable
@@ -46,6 +51,7 @@ enum pcie_asmp {
 };
 
 struct vendorcode_amd_opensil_mpio_config {
+	enum mpio_type type;
 	uint8_t start_lane;
 	uint8_t n_lanes;
 	uint8_t gpio_group;

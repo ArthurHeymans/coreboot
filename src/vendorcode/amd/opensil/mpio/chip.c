@@ -144,13 +144,16 @@ static void per_device_config(MPIOCLASS_INPUT_BLK *mpio_data, struct device *dev
 	}
 
 	static int mpio_port = 0;
-	MPIO_PORT_DESCRIPTOR port = {
-		.Flags = DESCRIPTOR_TERMINATE_LIST,
-		.EngineData = MPIO_ENGINE_DATA_INITIALIZER(MpioPcieEngine, config->start_lane,
-							   config->start_lane + config->n_lanes - 1,
-							   config->hotplug == HotplugDisabled ? 0 : 1,
-							   config->gpio_group),
-		.Port = MPIO_PORT_DATA_INITIALIZER_PCIE(MpioPortEnabled,
+	MPIO_PORT_DESCRIPTOR port = { .Flags = DESCRIPTOR_TERMINATE_LIST };
+	if (config->type == PCIE) {
+		const MPIO_ENGINE_DATA engine_data =
+			MPIO_ENGINE_DATA_INITIALIZER(MpioPcieEngine, config->start_lane,
+						     config->start_lane + config->n_lanes - 1,
+						     config->hotplug == HotplugDisabled ? 0 : 1,
+						     config->gpio_group);
+		port.EngineData = engine_data;
+		const MPIO_PORT_DATA port_data =
+			MPIO_PORT_DATA_INITIALIZER_PCIE(MpioPortEnabled,
 							PCI_SLOT(devfn),
 							PCI_FUNC(devfn),
 							config->hotplug,
@@ -159,8 +162,19 @@ static void per_device_config(MPIOCLASS_INPUT_BLK *mpio_data, struct device *dev
 							config->aspm,
 							config->aspm_l1_1,
 							config->aspm_l1_2,
-							config->clock_pm),
-	};
+							config->clock_pm);
+		port.Port = port_data;
+	} else if (config->type == SATA) {
+		const MPIO_ENGINE_DATA engine_data =
+			MPIO_ENGINE_DATA_INITIALIZER(MpioSATAEngine, config->start_lane,
+						     config->start_lane + config->n_lanes - 1,
+						     0, // meaningless field
+						     config->gpio_group);
+		port.EngineData = engine_data;
+		const MPIO_PORT_DATA port_data = { .PortPresent = 1 };
+		port.Port = port_data;
+
+	}
 	port.Port.AlwaysExpose = 1;
 	port.Port.SlotNum = ++slot_num;
 	mpio_data->PcieTopologyData.PortList[mpio_port] = port;
