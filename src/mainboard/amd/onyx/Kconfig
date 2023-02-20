@@ -37,4 +37,30 @@ config UART_FOR_CONSOLE
 	default 0 if USE_ONBORAD_UART
 	default 1 if USE_BMC_SOL
 
+choice
+	prompt "Backplanes"
+	default AMD_ONYX_BACKPLANES_ALL_PCIE
+	help
+	  The Onyx board has multiple backplanes option. Select the one matching your board.
+
+config AMD_ONYX_BACKPLANES_ALL_PCIE
+	bool "PCIe backplanes on P and G links"
+
+config AMD_ONYX_BACKPLANES_PLINK_SATA
+	bool "SATA lanes on P links"
+
+config AMD_ONYX_BACKPLANES_GLINK_SATA
+	bool "SATA lanes on G links"
+
+config AMD_ONYX_BACKPLANES_ALL_SATA
+	bool "SATA lanes on G and P links"
+
+endchoice
+
+config DEVICETREE
+	default "devicetree_all_pcie.cb" if AMD_ONYX_BACKPLANES_ALL_PCIE
+	default "devicetree_sata_p_link.cb" if AMD_ONYX_BACKPLANES_PLINK_SATA
+	default "devicetree_sata_g_link.cb" if AMD_ONYX_BACKPLANES_GLINK_SATA
+	default "devicetree_all_sata.cb" if AMD_ONYX_BACKPLANES_ALL_SATA
+
 endif # BOARD_AMD_ONYX
