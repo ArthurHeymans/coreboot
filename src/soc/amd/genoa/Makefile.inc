@@ -39,7 +39,7 @@ endif
 # |           |  PSPDIR ADDR  |  BIOSDIR ADDR  |
 # +-----------+---------------+----------------+
 
-GENOA_FWM_POSITION=0xff020000
+GENOA_FWM_POSITION=0x20000
 
 # 0x40 accounts for the cbfs_file struct + filename + metadata structs, aligned to 64 bytes
 # Building the cbfs image will fail if the offset isn't large enough
@@ -168,10 +168,6 @@ OPT_PSP_SOFTFUSE=$(call add_opt_prefix, $(PSP_SOFTFUSE), --soft-fuse)
 OPT_WHITELIST_FILE=$(call add_opt_prefix, $(PSP_WHITELIST_FILE), --whitelist)
 OPT_SPL_TABLE_FILE=$(call add_opt_prefix, $(SPL_TABLE_FILE), --spl-table)
 
-# Add all the files listed in the config file
-POUND_SIGN=$(call strip_quotes, "\#")
-DEP_FILES= $(patsubst %,$(FIRMWARE_LOCATION)/%, $(shell sed -e /^$(POUND_SIGN)/d -e /*/d -e /^FIRMWARE_LOCATION/d $(CONFIG_AMDFW_CONFIG_FILE) | awk '{print $$2}' ))
-
 AMDFW_COMMON_ARGS=$(OPT_PSP_APCB_FILES) \
 		$(OPT_APOB_ADDR) \
 		$(OPT_PSP_BIOSBIN_FILE) \
@@ -180,8 +176,6 @@ AMDFW_COMMON_ARGS=$(OPT_PSP_APCB_FILES) \
 		$(OPT_PSP_SOFTFUSE) \
 		$(OPT_PSP_LOAD_MP2_FW) \
 		--use-pspsecureos \
-		--load-s0i3 \
-		--combo-capable \
 		$(OPT_TOKEN_UNLOCK) \
 		$(OPT_WHITELIST_FILE) \
 		$(OPT_SPL_TABLE_FILE) \
@@ -191,8 +185,7 @@ AMDFW_COMMON_ARGS=$(OPT_PSP_APCB_FILES) \
 		$(OPT_EFS_SPI_SPEED) \
 		$(OPT_EFS_SPI_MICRON_FLAG) \
 		--config $(CONFIG_AMDFW_CONFIG_FILE) \
-		--soc-name "Cezanne" \
-		--flashsize $(CONFIG_ROM_SIZE)
+		--flashsize 0x1000000
 
 $(obj)/amdfw.rom:	$(call strip_quotes, $(PSP_BIOSBIN_FILE)) \
 			$(PSP_VERSTAGE_FILE) \
