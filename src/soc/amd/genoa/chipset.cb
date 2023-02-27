@@ -2,7 +2,7 @@
 
 chip soc/amd/genoa
 	device cpu_cluster 0 on
-		ops genoa_cpu_bus_ops
+		ops amd_cpu_bus_ops
 	end
 
 	# USB configuration

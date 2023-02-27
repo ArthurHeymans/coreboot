@@ -56,12 +56,3 @@ static const struct cpu_driver model_19 __cpu_driver = {
 	.ops      = &cpu_dev_ops,
 	.id_table = cpu_table,
 };
-
-struct device_operations genoa_cpu_bus_ops = {
-	.read_resources	  = noop_read_resources,
-	.set_resources	  = noop_set_resources,
-	.init		  = mp_cpu_bus_init,
-#if CONFIG(HAVE_ACPI_TABLES)
-	.acpi_fill_ssdt   = generate_cpu_entries,
-#endif
-};
