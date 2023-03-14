@@ -46,6 +46,7 @@ enum cb_err send_smu_message(enum smu_message_id message_id, struct smu_payload 
 		return CB_ERR;
 
 	/* clear response register */
+	smn_read32(SMN_SMU_MESG_RESP);
 	smn_write32(SMN_SMU_MESG_RESP, 0);
 
 	/* populate arguments */

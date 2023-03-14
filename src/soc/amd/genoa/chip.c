@@ -5,8 +5,6 @@
 
 static void soc_init(void *chip_info)
 {
-	// TODO fch_init(chip_info);
-
 	// IDEA: Call opensil from here instead of using a hook?
 }
 

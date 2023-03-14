@@ -23,6 +23,12 @@ ramstage-y	+= cpu.c
 ramstage-y	+= fch.c
 ramstage-y	+= pcie_gpp.c
 
+smm-y += smihandler.c
+ifeq ($(CONFIG_DEBUG_SMI),y)
+smm-y += uart.c
+endif
+
+
 CPPFLAGS_common += -I$(src)/soc/amd/genoa/include
 CPPFLAGS_common += -I$(src)/soc/amd/genoa/acpi
 MAINBOARD_BLOBS_DIR:=$(top)/3rdparty/blobs_internal/mainboard/$(MAINBOARDDIR)

@@ -9,6 +9,7 @@
 #include <amdblocks/cppc.h>
 #include <amdblocks/cpu.h>
 #include <amdblocks/ioapic.h>
+#include <amdblocks/smu.h>
 #include <arch/ioapic.h>
 #include <arch/smp/mpspec.h>
 #include <cpu/amd/msr.h>
@@ -318,4 +319,24 @@ void generate_cpu_entries(const struct device *device)
 	}
 
 	acpigen_write_processor_package("PPKG", 0, logical_cores);
+
+	/* struct smu_payload payload = {}; */
+	/* /\* enum cb_err ret = send_smu_message(0x39, &payload); *\/ */
+	/* /\* printk(BIOS_DEBUG, "CPP value return %d\n", ret); *\/ */
+	/* /\* hexdump(&payload, sizeof(payload)); *\/ */
+
+	/* memset(&payload, 0, sizeof(payload)); */
+	/* enum cb_err ret = send_smu_message(0x3a, &payload); */
+	/* printk(BIOS_DEBUG, "CPP value return %d\n", ret); */
+	/* hexdump(&payload, sizeof(payload)); */
+
+	/* /\* memset(&payload, 0, sizeof(payload)); *\/ */
+	/* /\* ret = send_smu_message(0x3f, &payload); *\/ */
+	/* /\* printk(BIOS_DEBUG, "CPP value return %d\n", ret); *\/ */
+	/* /\* hexdump(&payload, sizeof(payload)); *\/ */
+
+	/* memset(&payload, 0, sizeof(payload)); */
+	/* ret = send_smu_message(0x40, &payload); */
+	/* printk(BIOS_DEBUG, "CPP value return %d\n", ret); */
+	/* hexdump(&payload, sizeof(payload)); */
 }

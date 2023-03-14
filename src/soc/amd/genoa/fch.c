@@ -128,7 +128,7 @@ const struct irq_idx_name *sb_get_apic_reg_association(size_t *size)
 	return irq_association;
 }
 
-static void set_pci_irqs(void *unused)
+static void set_pci_irqs(void)
 {
 	/* Write PCI_INTR regs 0xC00/0xC01 */
 	write_pci_int_table();
@@ -140,8 +140,22 @@ static void set_pci_irqs(void *unused)
 	write_pci_cfg_irqs();
 }
 
+static void fch_init_acpi_ports(void)
+{
+	/* TODO: are other ports needed too ? */
+	pm_write16(PM_ACPI_SMI_CMD, APM_CNT);
+	configure_smi(SMITYPE_SMI_CMD_PORT, SMI_MODE_SMI);
+}
+
+static void fch_init(void *unused)
+{
+	set_pci_irqs();
+	fch_init_acpi_ports();
+}
+
+
 /*
  * Hook this function into the PCI state machine
  * on entry into BS_DEV_ENABLE.
  */
-BOOT_STATE_INIT_ENTRY(BS_DEV_ENABLE, BS_ON_ENTRY, set_pci_irqs, NULL);
+BOOT_STATE_INIT_ENTRY(BS_DEV_ENABLE, BS_ON_ENTRY, fch_init, NULL);
