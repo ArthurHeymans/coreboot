@@ -34,8 +34,7 @@ void mp_init_cpus(struct bus *cpu_bus)
 
 static void model_19_init(struct device *dev)
 {
-	// Not yet implemented, but enable once it is.
-	//check_mca();
+	check_mca();
 	set_cstate_io_addr();
 
 	amd_update_microcode_from_cbfs();

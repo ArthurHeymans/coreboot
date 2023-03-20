@@ -22,6 +22,7 @@ ramstage-y	+= device_fabric.c
 ramstage-y	+= cpu.c
 ramstage-y	+= fch.c
 ramstage-y	+= pcie_gpp.c
+ramstage-y	+= mca.c
 
 smm-y += smihandler.c
 ifeq ($(CONFIG_DEBUG_SMI),y)
