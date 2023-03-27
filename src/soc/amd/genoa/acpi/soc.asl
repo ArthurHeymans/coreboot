@@ -1,7 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
-/* TODO: Global NVS */
-
 Scope(\_SB) {
 	/* global utility methods expected within the \_SB scope */
 	#include <arch/x86/acpi/globutil.asl>
