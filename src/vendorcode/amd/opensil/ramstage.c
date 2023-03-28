@@ -7,8 +7,9 @@
 #include <Sil-api.h>
 #include <SilCommon.h>
 #include <xSIM-api.h>
-#include <DF/RcManager-api.h>
+#include <RcMgr/Df4/RcManager4-api.h>
 #include <FCH/Common/FchCommonCfg.h>
+#include <FCH/FchUsb-api.h>
 #include <FCH/Common/FchCore/FchSata/FchSata.h>
 #include <amdblocks/reset.h>
 #include <soc/soc_chip.h>

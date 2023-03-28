@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
-#include <DF/RcManager-api.h>
-#include <MPIO/MpioClass-api.h>
-#include <MPIO/MpioStructs.h>
+#include <RcMgr/Df4/RcManager4-api.h>
+#include <Mpio/MpioClass-api.h>
+#include <Mpio/Common/MpioStructs.h>
 #include <device/device.h>
 #include <device/pci_def.h>
 #include "chip.h"
