@@ -39,7 +39,6 @@ CBFSTOOL_ADD_CMD_OPTIONS+= --mmap 0:0xff000000:0x1000000
 endif
 
 # ROMSIG Normally At ROMBASE + 0x20000
-# Overridden by CONFIG_AMD_FWM_POSITION_INDEX
 # +-----------+---------------+----------------+------------+
 # |0x55AA55AA |               |                |            |
 # +-----------+---------------+----------------+------------+
@@ -47,18 +46,6 @@ endif
 # +-----------+---------------+----------------+
 
 GENOA_FWM_POSITION=0x20000
-
-# 0x40 accounts for the cbfs_file struct + filename + metadata structs, aligned to 64 bytes
-# Building the cbfs image will fail if the offset isn't large enough
-AMD_FW_AB_POSITION := 0x40
-
-GENOA_FW_A_POSITION=$(call int-add, \
-	$(shell awk '$$2 == "FMAP_SECTION_FW_MAIN_A_START" {print $$3}' $(obj)/fmap_config.h) \
-	$(AMD_FW_AB_POSITION))
-
-GENOA_FW_B_POSITION=$(call int-add, \
-	$(shell awk '$$2 == "FMAP_SECTION_FW_MAIN_B_START" {print $$3}' $(obj)/fmap_config.h) \
-	$(AMD_FW_AB_POSITION))
 #
 # PSP Directory Table items
 #
@@ -123,18 +110,6 @@ PSP_ELF_FILE=$(objcbfs)/bootblock.elf
 PSP_BIOSBIN_SIZE=$(shell $(READELF_bootblock) -l $(PSP_ELF_FILE) | grep LOAD | awk '{print $$5}')
 PSP_BIOSBIN_DEST=$(shell $(READELF_bootblock) -l $(PSP_ELF_FILE) | grep LOAD | awk '{print $$3}')
 
-ifeq ($(CONFIG_VBOOT_STARTS_BEFORE_BOOTBLOCK),y)
-# type = 0x6B - PSP Shared memory location
-ifneq ($(CONFIG_PSP_SHAREDMEM_SIZE),0x0)
-PSP_SHAREDMEM_SIZE=$(CONFIG_PSP_SHAREDMEM_SIZE)
-PSP_SHAREDMEM_BASE=$(shell awk '$$3 == "_psp_sharedmem_dram" {printf "0x" $$1}' $(objcbfs)/bootblock.map)
-endif
-
-# type = 0x52 - PSP Bootloader Userspace Application (verstage)
-PSP_VERSTAGE_FILE=$(call strip_quotes,$(CONFIG_PSP_VERSTAGE_FILE))
-PSP_VERSTAGE_SIG_FILE=$(call strip_quotes,$(CONFIG_PSP_VERSTAGE_SIGNING_TOKEN))
-endif # CONFIG_VBOOT_STARTS_BEFORE_BOOTBLOCK
-
 # Helper function to return a value with given bit set
 # Soft Fuse type = 0xb - See #55758 (NDA) for bit definitions.
 set-bit=$(call int-shift-left, 1 $(call _toint,$1))
@@ -148,9 +123,6 @@ PSP_SOFTFUSE=$(shell A=$(call int-add, \
 
 add_opt_prefix=$(if $(call strip_quotes, $(1)), $(2) $(call strip_quotes, $(1)), )
 
-OPT_VERSTAGE_FILE=$(call add_opt_prefix, $(PSP_VERSTAGE_FILE), --verstage)
-OPT_VERSTAGE_SIG_FILE=$(call add_opt_prefix, $(PSP_VERSTAGE_SIG_FILE), --verstage_sig)
-
 OPT_PSP_APCB_FILES= $(if $(APCB_SOURCES), --instance 0 --apcb $(APCB_SOURCES)) \
                     $(if $(APCB_SOURCES1), --instance 1 --apcb $(APCB_SOURCES1)) \
                     $(if $(APCB_SOURCES_RECOVERY), --instance 10 --apcb $(APCB_SOURCES_RECOVERY)) \
@@ -163,10 +135,6 @@ OPT_PSP_BIOSBIN_FILE=$(call add_opt_prefix, $(PSP_BIOSBIN_FILE), --bios-bin)
 OPT_PSP_BIOSBIN_DEST=$(call add_opt_prefix, $(PSP_BIOSBIN_DEST), --bios-bin-dest)
 OPT_PSP_BIOSBIN_SIZE=$(call add_opt_prefix, $(PSP_BIOSBIN_SIZE), --bios-uncomp-size)
 
-OPT_PSP_SHAREDMEM_BASE=$(call add_opt_prefix, $(PSP_SHAREDMEM_BASE), --sharedmem)
-OPT_PSP_SHAREDMEM_SIZE=$(call add_opt_prefix, $(PSP_SHAREDMEM_SIZE), --sharedmem-size)
-OPT_APOB_NV_SIZE=$(call add_opt_prefix, $(APOB_NV_SIZE), --apob-nv-size)
-OPT_APOB_NV_BASE=$(call add_opt_prefix, $(APOB_NV_BASE),--apob-nv-base)
 OPT_EFS_SPI_READ_MODE=$(call add_opt_prefix, $(CONFIG_EFS_SPI_READ_MODE), --spi-read-mode)
 OPT_EFS_SPI_SPEED=$(call add_opt_prefix, $(CONFIG_EFS_SPI_SPEED), --spi-speed)
 OPT_EFS_SPI_MICRON_FLAG=$(call add_opt_prefix, $(CONFIG_EFS_SPI_MICRON_FLAG), --spi-micron-flag)
@@ -186,8 +154,6 @@ AMDFW_COMMON_ARGS=$(OPT_PSP_APCB_FILES) \
 		$(OPT_TOKEN_UNLOCK) \
 		$(OPT_WHITELIST_FILE) \
 		$(OPT_SPL_TABLE_FILE) \
-		$(OPT_PSP_SHAREDMEM_BASE) \
-		$(OPT_PSP_SHAREDMEM_SIZE) \
 		$(OPT_EFS_SPI_READ_MODE) \
 		$(OPT_EFS_SPI_SPEED) \
 		$(OPT_EFS_SPI_MICRON_FLAG) \
@@ -195,8 +161,6 @@ AMDFW_COMMON_ARGS=$(OPT_PSP_APCB_FILES) \
 		--flashsize 0x1000000
 
 $(obj)/amdfw.rom:	$(call strip_quotes, $(PSP_BIOSBIN_FILE)) \
-			$(PSP_VERSTAGE_FILE) \
-			$(PSP_VERSTAGE_SIG_FILE) \
 			$$(PSP_APCB_FILES) \
 			$(DEP_FILES) \
 			$(AMDFWTOOL) \
@@ -207,8 +171,6 @@ $(obj)/amdfw.rom:	$(call strip_quotes, $(PSP_BIOSBIN_FILE)) \
 	@printf "    AMDFWTOOL  $(subst $(obj)/,,$(@))\n"
 	$(AMDFWTOOL) \
 		$(AMDFW_COMMON_ARGS) \
-		$(OPT_VERSTAGE_FILE) \
-		$(OPT_VERSTAGE_SIG_FILE) \
 		--location $(shell printf "%#x" $(GENOA_FWM_POSITION)) \
 		--multilevel \
 		--output $@
@@ -218,43 +180,5 @@ $(PSP_BIOSBIN_FILE): $(PSP_ELF_FILE) $(AMDCOMPRESS)
 	@printf "    AMDCOMPRS  $(subst $(obj)/,,$(@))\n"
 	$(AMDCOMPRESS) --infile $(PSP_ELF_FILE) --outfile $@ --compress \
 		--maxsize $(PSP_BIOSBIN_SIZE)
-
-$(obj)/amdfw_a.rom: $(obj)/amdfw.rom
-	rm -f $@
-	@printf "    AMDFWTOOL  $(subst $(obj)/,,$(@))\n"
-	$(AMDFWTOOL) \
-		$(AMDFW_COMMON_ARGS) \
-		$(OPT_APOB_NV_SIZE) \
-		$(OPT_APOB_NV_BASE) \
-		--location $(shell printf "%#x" $(GENOA_FW_A_POSITION)) \
-		--anywhere \
-		--multilevel \
-		--output $@
-
-$(obj)/amdfw_b.rom: $(obj)/amdfw.rom
-	rm -f $@
-	@printf "    AMDFWTOOL  $(subst $(obj)/,,$(@))\n"
-	$(AMDFWTOOL) \
-		$(AMDFW_COMMON_ARGS) \
-		$(OPT_APOB_NV_SIZE) \
-		$(OPT_APOB_NV_BASE) \
-		--location $(shell printf "%#x" $(GENOA_FW_B_POSITION)) \
-		--anywhere \
-		--multilevel \
-		--output $@
-
-ifeq ($(CONFIG_VBOOT_SLOTS_RW_AB)$(CONFIG_VBOOT_STARTS_BEFORE_BOOTBLOCK),yy)
-cbfs-files-y += apu/amdfw_a
-apu/amdfw_a-file := $(obj)/amdfw_a.rom
-# Ensure this ends up at the beginning of the FW_MAIN_A fmap region
-apu/amdfw_a-position := $(AMD_FW_AB_POSITION)
-apu/amdfw_a-type := raw
-
-cbfs-files-y += apu/amdfw_b
-apu/amdfw_b-file := $(obj)/amdfw_b.rom
-# Ensure this ends up at the beginning of the FW_MAIN_B fmap region
-apu/amdfw_b-position := $(AMD_FW_AB_POSITION)
-apu/amdfw_b-type := raw
-endif
 
 endif
