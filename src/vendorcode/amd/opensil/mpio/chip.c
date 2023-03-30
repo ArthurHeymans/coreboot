@@ -7,26 +7,6 @@
 #include <device/pci_def.h>
 #include "chip.h"
 
-static void nbio_config(void)
-{
-	NBIOCLASS_DATA_BLOCK *nbio_data = SilFindStructure(SilId_NbioClass, 0);
-	NBIOCLASS_INPUT_BLK *input = &nbio_data->NbioInputBlk;
-	input->CfgHdAudioEnable           = false;
-	input->EsmEnableAllRootPorts      = false;
-	input->EsmTargetSpeed             = 16;
-	input->CfgRxMarginPersistenceMode = 1;
-	input->CfgDxioFrequencyVetting    = false;
-	input->CfgSkipPspMessage          = 1;
-	input->CfgEarlyTrainTwoPcieLinks  = false;
-	input->EarlyBmcLinkTraining       = true;
-	input->EarlyBmcLinkSocket         = 0;
-	input->EarlyBmcLinkLaneNum        = 134;
-	input->EarlyBmcLinkDie            = 0;
-	input->EdpcEnable                 = 0;
-	input->PcieAerReportMechanism     = 2;
-	input->SevSnpSupport              = false;
-}
-
 static void mpio_global_config(MPIOCLASS_INPUT_BLK *mpio_data)
 {
 	mpio_data->CfgDxioClockGating                  = 1;
@@ -121,11 +101,6 @@ static void setup_bmc_lanes(uint8_t lane, uint8_t socket)
 	DF4_RCMGR_INPUT_BLK *rc_mgr_input_block = SilFindStructure(SilId_RcManager,  0);
 	rc_mgr_input_block->BmcSocket = socket;
 	rc_mgr_input_block->EarlyBmcLinkLaneNum = lane;
-
-	NBIOCLASS_INPUT_BLK *nbio_data = SilFindStructure(SilId_NbioClass, 0);
-	nbio_data->EarlyBmcLinkSocket         = socket;
-	nbio_data->EarlyBmcLinkLaneNum        = lane;
-	nbio_data->EarlyBmcLinkDie            = 0; // TODO
 }
 
 static void per_device_config(MPIOCLASS_INPUT_BLK *mpio_data, struct device *dev,
@@ -189,7 +164,6 @@ static void mpio_config(void *const config)
 {
 	MPIOCLASS_INPUT_BLK *mpio_data = SilFindStructure(SilId_MpioClass, 0);
 	mpio_global_config(mpio_data);
-	nbio_config();
 
 	/* Find all devices with this chip */
 	for (struct device *dev = &dev_root; dev; dev = dev->next)

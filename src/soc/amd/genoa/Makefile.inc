@@ -107,8 +107,8 @@ PSP_APOB_BASE=$(CONFIG_PSP_APOB_DRAM_ADDRESS)
 # type = 0x62
 PSP_BIOSBIN_FILE=$(obj)/amd_biospsp.img
 PSP_ELF_FILE=$(objcbfs)/bootblock.elf
-PSP_BIOSBIN_SIZE=$(shell $(READELF_bootblock) -l $(PSP_ELF_FILE) | grep LOAD | awk '{print $$5}')
-PSP_BIOSBIN_DEST=$(shell $(READELF_bootblock) -l $(PSP_ELF_FILE) | grep LOAD | awk '{print $$3}')
+PSP_BIOSBIN_SIZE=$(shell $(READELF_bootblock) -Wl $(PSP_ELF_FILE) | grep LOAD | awk '{print $$5}')
+PSP_BIOSBIN_DEST=$(shell $(READELF_bootblock) -Wl $(PSP_ELF_FILE) | grep LOAD | awk '{print $$3}')
 
 # Helper function to return a value with given bit set
 # Soft Fuse type = 0xb - See #55758 (NDA) for bit definitions.
