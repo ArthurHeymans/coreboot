@@ -9,21 +9,22 @@
 
 static void nbio_config(void)
 {
-	NBIOCLASS_INPUT_BLK *nbio_data = SilFindStructure(SilId_NbioClass, 0);
-	nbio_data->CfgHdAudioEnable           = false;
-	nbio_data->EsmEnableAllRootPorts      = false;
-	nbio_data->EsmTargetSpeed             = 16;
-	nbio_data->CfgRxMarginPersistenceMode = 1;
-	nbio_data->CfgDxioFrequencyVetting    = false;
-	nbio_data->CfgSkipPspMessage          = 1;
-	nbio_data->CfgEarlyTrainTwoPcieLinks  = false;
-	nbio_data->EarlyBmcLinkTraining       = true;
-	nbio_data->EarlyBmcLinkSocket         = 0;
-	nbio_data->EarlyBmcLinkLaneNum        = 134;
-	nbio_data->EarlyBmcLinkDie            = 0;
-	nbio_data->EdpcEnable                 = 0;
-	nbio_data->PcieAerReportMechanism     = 2;
-	nbio_data->SevSnpSupport              = false;
+	NBIOCLASS_DATA_BLOCK *nbio_data = SilFindStructure(SilId_NbioClass, 0);
+	NBIOCLASS_INPUT_BLK *input = &nbio_data->NbioInputBlk;
+	input->CfgHdAudioEnable           = false;
+	input->EsmEnableAllRootPorts      = false;
+	input->EsmTargetSpeed             = 16;
+	input->CfgRxMarginPersistenceMode = 1;
+	input->CfgDxioFrequencyVetting    = false;
+	input->CfgSkipPspMessage          = 1;
+	input->CfgEarlyTrainTwoPcieLinks  = false;
+	input->EarlyBmcLinkTraining       = true;
+	input->EarlyBmcLinkSocket         = 0;
+	input->EarlyBmcLinkLaneNum        = 134;
+	input->EarlyBmcLinkDie            = 0;
+	input->EdpcEnable                 = 0;
+	input->PcieAerReportMechanism     = 2;
+	input->SevSnpSupport              = false;
 }
 
 static void mpio_global_config(MPIOCLASS_INPUT_BLK *mpio_data)
