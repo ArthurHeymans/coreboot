@@ -16,7 +16,7 @@ chip soc/amd/genoa
 	device domain 0x22 on # Match device fabric ID
 		ops genoa_pci_domain_ops
 		device pci 00.0 alias gnb_0 on end
-		device pci 00.2 alias iommu_0 on end
+		device pci 00.2 alias iommu_0 on ops amd_iommu_ops end
 		device pci 00.3 alias rcec_0 on end
 
 		device pci 01.0 on end # Dummy Host Bridge, do not disable
@@ -84,7 +84,7 @@ chip soc/amd/genoa
 	device domain 0x23 on # Match device fabric ID
 		ops genoa_pci_domain_ops
 		device pci 00.0 alias gnb_1 on end
-		device pci 00.2 alias iommu_1 on end
+		device pci 00.2 alias iommu_1 on ops amd_iommu_ops end
 		device pci 00.3 alias rcec_1 on end
 
 		device pci 01.0 on end # Dummy Host Bridge, do not disable
@@ -125,7 +125,7 @@ chip soc/amd/genoa
 	device domain 0x21 on # Match device fabric ID
 		ops genoa_pci_domain_ops
 		device pci 00.0 alias gnb_2 on end
-		device pci 00.2 alias iommu_2 on end
+		device pci 00.2 alias iommu_2 on ops amd_iommu_ops end
 		device pci 00.3 alias rcec_2 on end
 
 		device pci 01.0 on end # Dummy Host Bridge, do not disable
@@ -166,7 +166,7 @@ chip soc/amd/genoa
 	device domain 0x20 on # Match device fabric ID
 		ops genoa_pci_domain_ops
 		device pci 00.0 alias gnb_3 on end
-		device pci 00.2 alias iommu_3 on end
+		device pci 00.2 alias iommu_3 on ops amd_iommu_ops end
 		device pci 00.3 alias rcec_3 on end
 
 		device pci 01.0 on end # Dummy Host Bridge, do not disable
