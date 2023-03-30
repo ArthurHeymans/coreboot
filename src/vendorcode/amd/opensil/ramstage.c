@@ -60,7 +60,7 @@ static void setup_rc_manager_default(void)
 	// This should be moved to opensil. It has functions for this already.
 	rc_mgr_input_block->PciExpressBaseAddress = CONFIG_ECAM_MMCONF_BASE_ADDRESS;
 	rc_mgr_input_block->BottomMmioReservedForPrimaryRb = 4ull * GiB - 32 * MiB;
-	rc_mgr_input_block->MmioSizePerRbForNonPciDevice = 1 * MiB;
+	rc_mgr_input_block->MmioSizePerRbForNonPciDevice = 16 * MiB;
 	rc_mgr_input_block->MmioAbove4GLimit = POWER_OF_2(cpu_phys_address_size());
 	rc_mgr_input_block->Above4GMmioSizePerRbForNonPciDevice = 0;
 	//rc_mgr_input_block->BmcSocket = 0;
