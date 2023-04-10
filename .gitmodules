@@ -5,7 +5,7 @@
 	ignore = dirty
 [submodule "3rdparty/blobs_internal"]
 	path = 3rdparty/blobs_internal
-	url = git@github.com:AMD-OpenSIL/blobs.git
+	url = https://github.com/AMD-OpenSIL/blobs.git
 	update = none
 	ignore = dirty
 [submodule "util/nvidia-cbootimage"]
@@ -51,12 +51,12 @@
 	ignore = dirty
 [submodule "3rdparty/amd_blobs_internal"]
 	path = 3rdparty/amd_blobs_internal
-	url = git@github.com:AMD-OpenSIL/amd_blobs.git
+	url = https://github.com/AMD-OpenSIL/amd_blobs.git
 	update = none
 	ignore = dirty
 [submodule "3rdparty/opensil"]
 	path = 3rdparty/opensil
-	url = git@github.com:AMD-OpenSIL/OpenSIL.git
+	url = https://github.com/AMD-OpenSIL/OpenSIL.git
 [submodule "3rdparty/cmocka"]
 	path = 3rdparty/cmocka
 	url = https://github.com/coreboot/cmocka.git
