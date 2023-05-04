@@ -34,7 +34,7 @@ concurrency:
 
 jobs:
   Coreboot_Build:
-    uses: AMD-OpenSIL/ivv-workflows-openSIL/.github/workflows/project_coreboot_build.yml
+    uses: AMD-OpenSIL/ivv-workflows-openSIL/.github/workflows/project_coreboot_build.yml@main
     with:
       prRepo: ${{ github.repository }}
       prBranch: ${{ github.event.pull_request.head.ref }}
