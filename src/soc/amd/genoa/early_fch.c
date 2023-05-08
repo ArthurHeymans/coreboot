@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
+#include <amdblocks/espi.h>
+#include <amdblocks/lpc.h>
 #include <amdblocks/acpimmio.h>
 #include <amdblocks/aoac.h>
 #include <amdblocks/pmlib.h>
@@ -25,6 +27,8 @@ void fch_pre_init(void)
 
 	if (CONFIG(AMD_SOC_CONSOLE_UART))
 		set_uart_config(CONFIG_UART_FOR_CONSOLE);
+
+	configure_espi_with_mb_hook();
 
 }
 

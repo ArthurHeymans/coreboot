@@ -3,6 +3,7 @@
 #ifndef __GENOA_CHIP_H__
 #define __GENOA_CHIP_H__
 
+#include <amdblocks/chip.h>
 #include <stdint.h>
 
 struct usb31_phy_settings {
@@ -58,6 +59,7 @@ struct soc_usb_config {
 };
 
 struct soc_amd_genoa_config {
+	struct soc_amd_common_config common_config;
 	struct soc_usb_config usb;
 
 };
