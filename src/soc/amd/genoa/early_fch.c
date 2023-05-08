@@ -14,6 +14,8 @@ void fch_pre_init(void)
 	   the GPIO registers. */
 	enable_acpimmio_decode_pm04();
 
+	fch_enable_cf9_io();
+
 	enable_aoac_devices();
 	/*
 	 * On reset Range_0 defaults to enabled. We want to start with a clean
