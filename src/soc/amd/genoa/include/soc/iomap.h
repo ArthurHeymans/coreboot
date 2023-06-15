@@ -11,7 +11,7 @@
 
 /* I/O Ranges */
 #define ACPI_IO_BASE			0x0400
-#define  ACPI_CPU_CONTROL		(ACPI_IO_BASE + 0x10)
+#define  ACPI_CSTATE_CONTROL		(ACPI_IO_BASE + 0x10)
 
 #define GNB_IO_APIC_ADDR		0xfec01000
 

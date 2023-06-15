@@ -37,7 +37,7 @@ static void model_19_init(struct device *dev)
 	check_mca();
 	set_cstate_io_addr();
 
-	amd_update_microcode_from_cbfs();
+	amd_apply_microcode_patch();
 }
 
 static struct device_operations cpu_dev_ops = {

@@ -5,8 +5,10 @@
 #include <console/console.h>
 #include <cbmem.h>
 #include <cpu/x86/smm.h>
+#if CONFIG(PLATFORM_USES_FSP2_0)
 #include <fsp/util.h>
 #include <FspGuids.h>
+#endif
 #include <memrange.h>
 #include <types.h>
 
@@ -33,6 +35,7 @@ const struct memmap_early_dram *memmap_get_early_dram_usage(void)
 	return e;
 }
 
+#if CONFIG(PLATFORM_USES_FSP2_0)
 static void fsp_smm_region(uintptr_t *start, size_t *size)
 {
 	static uintptr_t smm_start;
@@ -55,6 +58,9 @@ static void fsp_smm_region(uintptr_t *start, size_t *size)
 	*start = smm_start;
 	*size = smm_size;
 }
+#else
+static void fsp_smm_region(uintptr_t *start, size_t *size){}
+#endif
 
 void smm_region(uintptr_t *start, size_t *size)
 {

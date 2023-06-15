@@ -9,10 +9,6 @@
 
 #define ACPI_SCI_IRQ 9
 
-#define RTC_DATE_ALARM		0x0d
-#define RTC_ALT_CENTURY		0x32
-#define RTC_CENTURY		0x48
-
 #define MCE_ERR_POLL_MS_INTERVAL	1000
 #define HEST_PCIE_RP_AER_DESC_TYPE	6
 #define HEST_GHES_DESC_TYPE		9
