@@ -48,6 +48,10 @@ config SOC_SPECIFIC_OPTIONS
 	select SOC_RAS_ELOG
 	select HAVE_EXP_X86_64_SUPPORT
 
+# default to 64b
+config USE_EXP_X86_64_SUPPORT
+	default y
+
 config CHIPSET_DEVICETREE
 	string
 	default "soc/amd/genoa/chipset.cb"
