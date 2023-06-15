@@ -291,6 +291,15 @@ static void genoa_domain_set_resources(struct device *dev)
 	}
 
 	pci_domain_set_resources(dev);
+
+	/* Enable IOAPIC memory decoding */
+	struct resource *res = probe_resource(dev, IOMMU_IOAPIC_IDX);
+	if (res) {
+		const uint32_t iohc = get_iohcmisc_smnbase(dev);
+		uint32_t ioapic_base = smn_read32(iohc | IOHC_IOAPIC_BASE_ADDR_LO);
+		ioapic_base |= (1 << 0);
+		smn_write32(iohc | IOHC_IOAPIC_BASE_ADDR_LO, ioapic_base);
+	}
 }
 
 static const char *df_acpi_name(const struct device *dev)
