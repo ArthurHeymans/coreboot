@@ -8,6 +8,7 @@
 #include <amdblocks/acpimmio.h>
 #include <amdblocks/cppc.h>
 #include <amdblocks/cpu.h>
+#include <amdblocks/data_fabric.h>
 #include <amdblocks/ioapic.h>
 #include <amdblocks/smu.h>
 #include <arch/ioapic.h>
@@ -21,9 +22,18 @@
 #include <soc/msr.h>
 #include <vendorcode/amd/opensil/opensil.h>
 
+/* TODO: this can go in a common place */
 unsigned long acpi_fill_madt(unsigned long current)
 {
-	/* TODO: IOHUBs IOAPIC */
+	struct device *dev = NULL;
+	while ((dev = dev_find_path(dev, DEVICE_PATH_DOMAIN)) != NULL) {
+		struct resource *res = probe_resource(dev, IOMMU_IOAPIC_IDX);
+		if (!res)
+			continue;
+
+		current += acpi_create_madt_ioapic_from_hw((acpi_madt_ioapic_t *)current,
+						   res->base);
+	}
 
 	return current;
 }
