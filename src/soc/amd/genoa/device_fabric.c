@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
 #include <acpi/acpigen.h>
+#include <amdblocks/data_fabric.h>
+#include <amdblocks/smn.h>
 #include <console/console.h>
 #include <device/pci_def.h>
 #include <device/pci_ops.h>
@@ -8,7 +10,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#include <sys/types.h>
 #include <vendorcode/amd/opensil/opensil.h>
 
 union df_cfg_base_address {
@@ -146,6 +147,46 @@ _Static_assert(sizeof(union df_mmio_ext_address) == sizeof(uint32_t));
 #define NB_MMIO_CTL(reg)  (D18F0_MMIO_ADDRESS_CTL + 16 * (reg))
 #define NB_MMIO_EXT(reg) (D18F0_MMIO_ADDRESS_EXT + 16 * (reg))
 
+static uint32_t get_iohcmisc_smnbase(const struct device *dev)
+{
+	switch (dev->path.domain.domain) {
+	case 0x22: return 0x13c10000;
+	case 0x23: return 0x13b10000;
+	case 0x21: return 0x13e10000;
+	case 0x20: return 0x13d10000;
+	default:
+		printk(BIOS_ERR, "Invalid IOHC device 0x%x\n", dev->path.domain.domain);
+		return 0;
+	}
+}
+
+static uint64_t iohc_read64(const uint32_t iohc_base, const uint32_t reg)
+{
+	return smn_read32(iohc_base | reg) | (uint64_t)smn_read32(iohc_base | (reg + 4));
+}
+
+#define IOHC_CCP_BASE_ADDR_LO 0x2d8
+#define IOHC_CCP_BASE_ADDR_HI 0x2dc
+
+#define IOHC_PSP_BASE_ADDR_LO 0x2e0
+#define IOHC_PSP_BASE_ADDR_HI 0x2e4
+
+#define IOHC_SMU_BASE_ADDR_LO 0x2e8
+#define IOHC_SMU_BASE_ADDR_HI 0x2ec
+
+#define IOHC_IOAPIC_BASE_ADDR_LO 0x2f0
+#define IOHC_IOAPIC_BASE_ADDR_HI 0x2f4
+
+#define IOHC_DBG_BASE_ADDR_LO 0x2f8
+#define IOHC_DBG_BASE_ADDR_HI 0x2fc
+
+#define IOHC_FASTREG_BASE_ADDR_LO 0x300
+#define IOHC_FASTREG_BASE_ADDR_HI 0x304
+
+#define IOHC_FASTREGCNTL_BASE_ADDR_LO 0x308
+#define IOHC_FASTREGCNTL_BASE_ADDR_HI 0x30c
+
+
 static void genoa_domain_read_resources(struct device *dev)
 {
 	// IO
@@ -190,12 +231,39 @@ static void genoa_domain_read_resources(struct device *dev)
 		}
 	}
 
+	int idx = 0;
 	// We only want to add the DRAM memory map once
-	static bool done;
-	if (done)
-		return;
+	if (dev->link_list->secondary == 0) {
+		idx = add_opensil_memmap(dev, idx);
+	}
 
-	add_opensil_memmap(dev, 0);
+	// non-PCI resources
+	const struct non_pci_resources {
+		const char *name;
+		uint32_t smn_base;
+		uint32_t idx;
+		uint64_t mask;
+		uint64_t size;
+	} non_pci_res[] =
+		{ { "CCP MMIO APERTURE", IOHC_CCP_BASE_ADDR_LO, 0, ~0xfffffull, 1 * MiB },
+		  { "MP0 Public Mailbox", IOHC_PSP_BASE_ADDR_LO, 0, ~0xfffffull, 1 * MiB },
+		  { "MP1 Public Mailbox", IOHC_SMU_BASE_ADDR_LO, 0, ~0xfffffull, 1 * MiB },
+		  { "IOAPIC MMIO Registers", IOHC_IOAPIC_BASE_ADDR_LO, IOMMU_IOAPIC_IDX, ~0xffull, 4 * KiB },
+		  { "Debug/UMC Registers", IOHC_DBG_BASE_ADDR_LO, 0, ~0xfffffull, 1 * MiB },
+		  { "PM_MPDMA MMIO APERTURE", IOHC_FASTREG_BASE_ADDR_LO, 0, ~0xfffffull, 1 * MiB },
+		  { "SMN MMIO Control Registers", IOHC_FASTREGCNTL_BASE_ADDR_LO, 0, ~0xfffffull, 4 * KiB }, };
+
+	const uint32_t iohc = get_iohcmisc_smnbase(dev);
+	for (int i = 0; i < ARRAY_SIZE(non_pci_res); i++) {
+		const uint64_t reg64 = iohc_read64(iohc, non_pci_res[i].smn_base);
+		printk(BIOS_DEBUG, "%s: %s %016llx\n", __func__, non_pci_res[i].name, reg64);
+		const uint64_t base = reg64 & non_pci_res[i].mask;
+		if (!base)
+			continue;
+
+		mmio_range(dev, non_pci_res[i].idx == 0 ? idx++ : non_pci_res[i].idx, base,
+				   non_pci_res[i].size);
+	}
 }
 
 #define D18F0_VGA_EN 0xc08

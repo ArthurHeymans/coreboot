@@ -6,8 +6,8 @@
 #include <acpi/acpi.h>
 
 void SIL_STATUS_report(const char *function, const int status);
-// Add the memory map to dev, starting at index idx
-void add_opensil_memmap(struct device *dev, int idx);
+// Add the memory map to dev, starting at index idx, returns last use idx
+int add_opensil_memmap(struct device *dev, int idx);
 // Fill in FADT from opensil
 void opensil_fill_fadt(acpi_fadt_t *fadt);
 

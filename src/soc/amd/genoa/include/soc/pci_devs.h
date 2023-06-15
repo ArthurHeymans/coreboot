@@ -13,4 +13,31 @@
 #define GNB_DEVFN		PCI_DEVFN(GNB_DEV, GNB_FUNC)
 #define SOC_GNB_DEV		_SOC_DEV(GNB_DEV, GNB_FUNC)
 
+/* Data Fabric functions */
+#define DF_DEV			0x18
+
+#define DF_F0_DEVFN		PCI_DEVFN(DF_DEV, 0)
+#define SOC_DF_F0_DEV		_SOC_DEV(DF_DEV, 0)
+
+#define DF_F1_DEVFN		PCI_DEVFN(DF_DEV, 1)
+#define SOC_DF_F1_DEV		_SOC_DEV(DF_DEV, 1)
+
+#define DF_F2_DEVFN		PCI_DEVFN(DF_DEV, 2)
+#define SOC_DF_F2_DEV		_SOC_DEV(DF_DEV, 2)
+
+#define DF_F3_DEVFN		PCI_DEVFN(DF_DEV, 3)
+#define SOC_DF_F3_DEV		_SOC_DEV(DF_DEV, 3)
+
+#define DF_F4_DEVFN		PCI_DEVFN(DF_DEV, 4)
+#define SOC_DF_F4_DEV		_SOC_DEV(DF_DEV, 4)
+
+#define DF_F5_DEVFN		PCI_DEVFN(DF_DEV, 5)
+#define SOC_DF_F5_DEV		_SOC_DEV(DF_DEV, 5)
+
+#define DF_F6_DEVFN		PCI_DEVFN(DF_DEV, 6)
+#define SOC_DF_F6_DEV		_SOC_DEV(DF_DEV, 6)
+
+#define DF_F7_DEVFN		PCI_DEVFN(DF_DEV, 7)
+#define SOC_DF_F7_DEV		_SOC_DEV(DF_DEV, 7)
+
 #endif

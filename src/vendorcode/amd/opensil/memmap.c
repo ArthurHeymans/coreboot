@@ -84,7 +84,7 @@ static void print_memory_holes(void *unused)
 BOOT_STATE_INIT_ENTRY(BS_DEV_RESOURCES, BS_ON_ENTRY, print_memory_holes, NULL);
 
 // This assumes holes are allocated
-void add_opensil_memmap(struct device *dev, int idx)
+int add_opensil_memmap(struct device *dev, int idx)
 {
 	ram_from_to(dev, idx++, 0, 0xa0000);
 	mmio_from_to(dev, idx++, 0xa0000, 0xc0000); // legacy VGA
@@ -118,13 +118,13 @@ void add_opensil_memmap(struct device *dev, int idx)
 
 	// Check if we're done
 	if (top_of_mem <= 0x100000000)
-		return;
+		return idx;
 
 	// Holes in upper DRAM
 	// This assumes all the holes in upper DRAM are continuous
 	get_hole_info();
 	if (hole_info == NULL)
-		return;
+		return idx;
 	uint64_t lowest_upper_hole_base = top_of_mem;
 	uint64_t highest_upper_hole_end = 0x100000000;
 	for (int hole = 0; hole < n_holes; hole++) {
@@ -146,4 +146,5 @@ void add_opensil_memmap(struct device *dev, int idx)
 	if (top_of_mem > highest_upper_hole_end)
 		ram_from_to(dev, idx++, highest_upper_hole_end, top_of_mem);
 
+	return idx;
 }
