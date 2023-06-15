@@ -3,6 +3,7 @@
 #include <acpi/acpigen.h>
 #include <amdblocks/data_fabric.h>
 #include <amdblocks/smn.h>
+#include <arch/ioapic.h>
 #include <console/console.h>
 #include <device/pci_def.h>
 #include <device/pci_ops.h>
@@ -396,10 +397,20 @@ static void df_fill_ssdt(const struct device *dev)
 	acpigen_pop_len();
 }
 
+static void genoa_domain_init(struct device *dev)
+{
+	struct resource *res = probe_resource(dev, IOMMU_IOAPIC_IDX);
+	if (!res)
+		return;
+
+	register_new_ioapic((void *)(uintptr_t)res->base);
+}
+
 struct device_operations genoa_pci_domain_ops = {
 	.read_resources	  = genoa_domain_read_resources,
 	.set_resources	  = genoa_domain_set_resources,
 	.scan_bus	  = genoa_domain_scan_bus,
+	.init		  = genoa_domain_init,
 #if CONFIG(HAVE_ACPI_TABLES)
 	.acpi_name	  = df_acpi_name,
 	.acpi_fill_ssdt   = df_fill_ssdt,
