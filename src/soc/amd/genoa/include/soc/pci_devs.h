@@ -13,6 +13,12 @@
 #define GNB_DEVFN		PCI_DEVFN(GNB_DEV, GNB_FUNC)
 #define SOC_GNB_DEV		_SOC_DEV(GNB_DEV, GNB_FUNC)
 
+/* SMBUS */
+#define SMBUS_DEV		0x14
+#define SMBUS_FUNC		0
+#define SMBUS_DEVFN		PCI_DEVFN(SMBUS_DEV, SMBUS_FUNC)
+#define SOC_SMBUS_DEV		_SOC_DEV(SMBUS_DEV, SMBUS_FUNC)
+
 /* Data Fabric functions */
 #define DF_DEV			0x18
 

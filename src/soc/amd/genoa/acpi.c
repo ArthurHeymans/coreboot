@@ -127,14 +127,23 @@ static unsigned long acpi_fill_hest(acpi_hest_t *hest)
 	return header->length;
 }
 
-unsigned long hest_create(const struct device *device, unsigned long current, struct acpi_rsdp *rsdp)
+unsigned long opensil_acpi_write_tables(const struct device *device, unsigned long current, struct acpi_rsdp *rsdp)
 {
 	acpi_hest_t *hest;
-	current = ALIGN_UP(current, 8);
+	current = acpi_align_current(current);
 	hest = (acpi_hest_t *)current;
 	acpi_write_hest(hest, acpi_fill_hest);
 	acpi_add_table(rsdp, (void *)current);
 	current += hest->header.length;
+
+	/* IVRS */
+	acpi_ivrs_t *ivrs;
+	current = acpi_align_current(current);
+	ivrs = (acpi_ivrs_t *)current;
+	acpi_create_ivrs(ivrs, acpi_fill_ivrs);
+	current += ivrs->header.length;
+	acpi_add_table(rsdp, ivrs);
+
 	return current;
 }
 

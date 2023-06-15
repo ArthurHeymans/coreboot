@@ -40,6 +40,6 @@ typedef struct ghes_record {
 	u32 err_sts_blk_len;
 } __packed ghes_record_t;
 
-unsigned long hest_create(const struct device *device, unsigned long current, struct acpi_rsdp *rsdp);
+unsigned long opensil_acpi_write_tables(const struct device *device, unsigned long current, struct acpi_rsdp *rsdp);
 
 #endif /* AMD_GENOA_ACPI_H */

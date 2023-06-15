@@ -7,7 +7,7 @@
 static void soc_init(void *chip_info)
 {
 	// IDEA: Call opensil from here instead of using a hook?
-	default_dev_ops_root.write_acpi_tables = hest_create;
+	default_dev_ops_root.write_acpi_tables = opensil_acpi_write_tables;
 }
 
 static void soc_final(void *chip_info)
