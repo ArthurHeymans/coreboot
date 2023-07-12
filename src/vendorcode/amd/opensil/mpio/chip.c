@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
-#include <RcMgr/Df4/RcManager4-api.h>
+#include <RcMgr/DfX/RcManager4-api.h>
+#include <NBIO/NbioClass-api.h>
 #include <Mpio/MpioClass-api.h>
 #include <Mpio/Common/MpioStructs.h>
 #include <device/device.h>
@@ -98,7 +99,7 @@ static void mpio_global_config(MPIOCLASS_INPUT_BLK *mpio_data)
 
 static void setup_bmc_lanes(uint8_t lane, uint8_t socket)
 {
-	DF4_RCMGR_INPUT_BLK *rc_mgr_input_block = SilFindStructure(SilId_RcManager,  0);
+	DFX_RCMGR_INPUT_BLK *rc_mgr_input_block = SilFindStructure(SilId_RcManager,  0);
 	rc_mgr_input_block->BmcSocket = socket;
 	rc_mgr_input_block->EarlyBmcLinkLaneNum = lane;
 }

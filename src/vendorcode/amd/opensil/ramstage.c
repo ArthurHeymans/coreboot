@@ -7,9 +7,9 @@
 #include <Sil-api.h>
 #include <SilCommon.h>
 #include <xSIM-api.h>
-#include <RcMgr/Df4/RcManager4-api.h>
+#include <RcMgr/DfX/RcManager4-api.h>
 #include <FCH/Common/FchCommonCfg.h>
-#include <FCH/FchUsb-api.h>
+//#include <FCH/FchUsb-api.h>
 #include <FCH/Common/FchCore/FchSata/FchSata.h>
 #include <amdblocks/reset.h>
 #include <soc/soc_chip.h>
@@ -50,7 +50,7 @@ void SIL_STATUS_report(const char *function, const int status)
 
 static void setup_rc_manager_default(void)
 {
-	DF4_RCMGR_INPUT_BLK *rc_mgr_input_block = SilFindStructure(SilId_RcManager,  0);
+	DFX_RCMGR_INPUT_BLK *rc_mgr_input_block = SilFindStructure(SilId_RcManager,  0);
 	rc_mgr_input_block->SetRcBasedOnNv = false;
 
 	// Hacky: This should be done in opensil which knows about sockets and RbPerSocket. Not host
@@ -63,8 +63,8 @@ static void setup_rc_manager_default(void)
 	rc_mgr_input_block->MmioSizePerRbForNonPciDevice = 16 * MiB;
 	rc_mgr_input_block->MmioAbove4GLimit = POWER_OF_2(cpu_phys_address_size());
 	rc_mgr_input_block->Above4GMmioSizePerRbForNonPciDevice = 0;
-	//rc_mgr_input_block->BmcSocket = 0;
-	//rc_mgr_input_block->EarlyBmcLinkLaneNum = 134;
+	rc_mgr_input_block->BmcSocket = 0;
+	rc_mgr_input_block->EarlyBmcLinkLaneNum = 134;
 }
 
 static void configure_usb(void)
@@ -142,7 +142,7 @@ BOOT_STATE_INIT_ENTRY(BS_DEV_INIT_CHIPS, BS_ON_ENTRY, setup_opensil, NULL);
 
 static void tp1_opensil(void *timepoint)
 {
-	const SIL_STATUS ret = InitializeAMDSiTp1();
+	const SIL_STATUS ret = InitializeSiTp1();
 	SIL_STATUS_report("InitializeAMDSi Tp1", ret);
 	if (ret == SilResetRequestColdImm || ret == SilResetRequestColdDef) {
 		printk(BIOS_INFO, "OpenSil requested a cold reset");
