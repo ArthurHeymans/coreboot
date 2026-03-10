@@ -37,34 +37,53 @@ is
             Ports    => ports,
             Max_Pipe => Primary);
 
-         if configs (Primary).Port /= Disabled then
-            HW.GFX.GMA.Power_Up_VGA;
-            vga_io_init;
-            vga_textmode_init;
+         -- Find the first active pipe. On i945, LVDS_Needs_Pipe_B
+         -- causes LVDS to be swapped from Primary to Secondary,
+         -- so we cannot assume Primary always has a display.
+         declare
+            First_Pipe : Pipe_Index := Primary;
+            Has_Display : Boolean := False;
+         begin
+            for i in Pipe_Index loop
+               if configs (i).Port /= Disabled then
+                  First_Pipe := i;
+                  Has_Display := True;
+                  exit;
+               end if;
+            end loop;
 
-            -- override probed framebuffer config
-            configs (Primary).Framebuffer.Width    := 640;
-            configs (Primary).Framebuffer.Height   := 400;
-            configs (Primary).Framebuffer.Offset   :=
-               VGA_PLANE_FRAMEBUFFER_OFFSET;
+            if Has_Display then
+               HW.GFX.GMA.Power_Up_VGA;
+               vga_io_init;
+               vga_textmode_init;
 
-            pragma Debug (HW.GFX.GMA.Dump_Configs (configs));
-            HW.GFX.GMA.Update_Outputs (configs);
+               -- override probed framebuffer config
+               configs (First_Pipe).Framebuffer.Width    := 640;
+               configs (First_Pipe).Framebuffer.Height   := 400;
+               configs (First_Pipe).Framebuffer.Offset   :=
+                  VGA_PLANE_FRAMEBUFFER_OFFSET;
 
-            lightup_ok := 1;
-         end if;
+               pragma Debug (HW.GFX.GMA.Dump_Configs (configs));
+               HW.GFX.GMA.Update_Outputs (configs);
+
+               lightup_ok := 1;
+            end if;
+         end;
       end if;
    end gfxinit;
 
    procedure gfxstop
    is
    begin
-      if configs (Primary).Port /= Disabled then
-         for i in Pipe_Index loop
-            configs (i).Port := Disabled;
-         end loop;
-         HW.GFX.GMA.Update_Outputs (configs);
-      end if;
+      for i in Pipe_Index loop
+         if configs (i).Port /= Disabled then
+            for j in Pipe_Index loop
+               configs (j).Port := Disabled;
+            end loop;
+            HW.GFX.GMA.Update_Outputs (configs);
+            exit;
+         end if;
+      end loop;
    end gfxstop;
 
 end GMA.GFX_Init;

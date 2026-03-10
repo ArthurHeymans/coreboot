@@ -13,6 +13,7 @@
 #include <edid.h>
 #include <drivers/intel/gma/edid.h>
 #include <drivers/intel/gma/i915.h>
+#include <drivers/intel/gma/libgfxinit.h>
 #include <drivers/intel/gma/opregion.h>
 #include <string.h>
 #include <pc80/vga.h>
@@ -671,22 +672,61 @@ static void gma_func0_init(struct device *dev)
 	if (!CONFIG(NO_GFX_INIT))
 		pci_or_config16(dev, PCI_COMMAND, PCI_COMMAND_MASTER);
 
-	if (CONFIG(MAINBOARD_DO_NATIVE_VGA_INIT)) {
-		int vga_disable = (pci_read_config16(dev, GGC) & 2) >> 1;
-		if (acpi_is_wakeup_s3()) {
-			printk(BIOS_INFO,
-				"Skipping native VGA initialization when resuming from ACPI S3.\n");
-		} else {
-			if (vga_disable) {
+	if (!CONFIG(MAINBOARD_USE_LIBGFXINIT)) {
+		if (CONFIG(MAINBOARD_DO_NATIVE_VGA_INIT)) {
+			int vga_disable = (pci_read_config16(dev, GGC) & 2) >> 1;
+			if (acpi_is_wakeup_s3()) {
 				printk(BIOS_INFO,
-				       "IGD is not decoding legacy VGA MEM and IO: skipping NATIVE graphic init\n");
+					"Skipping native VGA initialization when resuming from ACPI S3.\n");
 			} else {
-				gma_ngi(dev);
+				if (vga_disable) {
+					printk(BIOS_INFO,
+					       "IGD is not decoding legacy VGA MEM and IO: skipping NATIVE graphic init\n");
+				} else {
+					gma_ngi(dev);
+				}
 			}
+		} else {
+			/* PCI Init, will run VBIOS */
+			pci_dev_init(dev);
 		}
-	} else {
-		/* PCI Init, will run VBIOS */
-		pci_dev_init(dev);
+	}
+
+	if (CONFIG(MAINBOARD_USE_LIBGFXINIT) && !acpi_is_wakeup_s3()) {
+		struct northbridge_intel_i945_config *conf = dev->chip_info;
+		int vga_disable = (pci_read_config16(dev, GGC) & 2) >> 1;
+		if (vga_disable) {
+			printk(BIOS_INFO,
+			       "IGD is not decoding legacy VGA MEM and IO: skipping NATIVE graphic init\n");
+		} else {
+			int lightup_ok;
+			void *mmiobase;
+			mmiobase = (void *)(uintptr_t)dev->resource_list[0].base;
+
+			/*
+			 * The i945 display engine translates framebuffer
+			 * addresses through the GTT. PGETBL_CTL must be
+			 * programmed to tell the hardware where the GTT
+			 * resides in physical memory.  libgfxinit writes
+			 * GTT entries via BAR3 but never programs
+			 * PGETBL_CTL itself (on G45+ the GTT is at a
+			 * fixed offset within BAR0, so no separate
+			 * enable register is needed).
+			 */
+			gtt_setup(mmiobase);
+
+			if (CONFIG(NORTHBRIDGE_INTEL_SUBTYPE_I945GM))
+				panel_setup(mmiobase, dev);
+
+			gma_gfxinit(&lightup_ok);
+			if (lightup_ok)
+				gfx_set_init_done(1);
+			/* Linux relies on VBT for panel info. */
+			if (CONFIG(NORTHBRIDGE_INTEL_SUBTYPE_I945GM))
+				generate_fake_intel_oprom(&conf->gfx, dev, "$VBT CALISTOGA");
+			if (CONFIG(NORTHBRIDGE_INTEL_SUBTYPE_I945GC))
+				generate_fake_intel_oprom(&conf->gfx, dev, "$VBT LAKEPORT-G");
+		}
 	}
 }
 

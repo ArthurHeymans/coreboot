@@ -62,73 +62,88 @@ is
          ports := Mainboard.ports;
          HW.GFX.GMA.Display_Probing.Scan_Ports (configs, ports);
 
-         if configs (Primary).Port /= Disabled then
+         -- Find the first active pipe. On i945, LVDS_Needs_Pipe_B
+         -- causes LVDS to be swapped from Primary to Secondary,
+         -- so we cannot assume Primary always has a display.
+         declare
+            First_Pipe : Pipe_Index := Primary;
+            Has_Display : Boolean := False;
+         begin
             for i in Pipe_Index loop
-               exit when configs (i).Port = Disabled;
-
-               min_h := pos32'min (min_h, configs (i).Mode.H_Visible);
-               min_v := pos32'min (min_v, configs (i).Mode.V_Visible);
+               if configs (i).Port /= Disabled then
+                  if not Has_Display then
+                     First_Pipe := i;
+                     Has_Display := True;
+                  end if;
+                  min_h := pos32'min (min_h, configs (i).Mode.H_Visible);
+                  min_v := pos32'min (min_v, configs (i).Mode.V_Visible);
+               end if;
             end loop;
 
-            fb := configs (Primary).Framebuffer;
-            Screen_Rotation (fb.Rotation);
+            if Has_Display then
+               fb := configs (First_Pipe).Framebuffer;
+               Screen_Rotation (fb.Rotation);
 
-            if fb.Rotation = Rotated_90 or fb.Rotation = Rotated_270 then
-               fb.Width    := Width_Type (min_v);
-               fb.Height   := Height_Type (min_h);
-               fb.Stride   := Div_Round_Up (fb.Width, 32) * 32;
-               fb.V_Stride := Div_Round_Up (fb.Height, 32) * 32;
-               fb.Tiling   := Y_Tiled;
-               fb.Offset   := word32 (GTT_Rotation_Offset) * GTT_Page_Size;
-            else
-               fb.Width    := Width_Type (min_h);
-               fb.Height   := Height_Type (min_v);
-               fb.Stride   := Div_Round_Up (fb.Width, 16) * 16;
-               fb.V_Stride := fb.Height;
-            end if;
+               if fb.Rotation = Rotated_90 or fb.Rotation = Rotated_270 then
+                  fb.Width    := Width_Type (min_v);
+                  fb.Height   := Height_Type (min_h);
+                  fb.Stride   := Div_Round_Up (fb.Width, 32) * 32;
+                  fb.V_Stride := Div_Round_Up (fb.Height, 32) * 32;
+                  fb.Tiling   := Y_Tiled;
+                  fb.Offset   := word32 (GTT_Rotation_Offset) * GTT_Page_Size;
+               else
+                  fb.Width    := Width_Type (min_h);
+                  fb.Height   := Height_Type (min_v);
+                  fb.Stride   := Div_Round_Up (fb.Width, 16) * 16;
+                  fb.V_Stride := fb.Height;
+               end if;
 
-            for i in Pipe_Index loop
-               exit when configs (i).Port = Disabled;
+               for i in Pipe_Index loop
+                  if configs (i).Port /= Disabled then
+                     configs (i).Framebuffer := fb;
+                  end if;
+               end loop;
 
-               configs (i).Framebuffer := fb;
-            end loop;
+               pragma Debug (HW.GFX.GMA.Dump_Configs (configs));
 
-            pragma Debug (HW.GFX.GMA.Dump_Configs (configs));
+               HW.GFX.GMA.Setup_Default_FB
+                 (FB       => fb,
+                  Clear    => true,
+                  Success  => success);
 
-            HW.GFX.GMA.Setup_Default_FB
-              (FB       => fb,
-               Clear    => true,
-               Success  => success);
+               if success then
+                  HW.GFX.GMA.Update_Outputs (configs);
 
-            if success then
-               HW.GFX.GMA.Update_Outputs (configs);
-
-               HW.GFX.GMA.Map_Linear_FB (linear_fb_addr, fb);
-               if linear_fb_addr /= 0 then
-                  fbinfo := C_Fb_Add_Framebuffer_Info_Simple
-                     (fb_addr        => Interfaces.C.size_t (linear_fb_addr),
-                      x_resolution   => word32 (fb.Width),
-                      y_resolution   => word32 (fb.Height),
-                      bytes_per_line => word32 (fb.Stride) * 4,
-                      bits_per_pixel => 32);
-                  if fbinfo /= 0 then
-                     lightup_ok := 1;
+                  HW.GFX.GMA.Map_Linear_FB (linear_fb_addr, fb);
+                  if linear_fb_addr /= 0 then
+                     fbinfo := C_Fb_Add_Framebuffer_Info_Simple
+                        (fb_addr        => Interfaces.C.size_t (linear_fb_addr),
+                         x_resolution   => word32 (fb.Width),
+                         y_resolution   => word32 (fb.Height),
+                         bytes_per_line => word32 (fb.Stride) * 4,
+                         bits_per_pixel => 32);
+                     if fbinfo /= 0 then
+                        lightup_ok := 1;
+                     end if;
                   end if;
                end if;
             end if;
-         end if;
+         end;
       end if;
    end gfxinit;
 
    procedure gfxstop
    is
    begin
-      if configs (Primary).Port /= Disabled then
-         for i in Pipe_Index loop
-            configs (i).Port := Disabled;
-         end loop;
-         HW.GFX.GMA.Update_Outputs (configs);
-      end if;
+      for i in Pipe_Index loop
+         if configs (i).Port /= Disabled then
+            for j in Pipe_Index loop
+               configs (j).Port := Disabled;
+            end loop;
+            HW.GFX.GMA.Update_Outputs (configs);
+            exit;
+         end if;
+      end loop;
    end gfxstop;
 
 end GMA.GFX_Init;
