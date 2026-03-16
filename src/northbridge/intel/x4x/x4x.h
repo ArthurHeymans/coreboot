@@ -120,6 +120,20 @@
 #define DMICESTS	0x1d0	/* 32bit */
 
 /*
+ * MCHBAR PEG/DMI controller (offset 0x4000)
+ */
+
+#define PEG_AFE_CLK0	0x4b68	/* 32bit - PEG AFE clock config 0 */
+#define PEG_AFE_CLK1	0x4b6c	/* 32bit - PEG AFE clock config 1 */
+
+#define PEG_AFECFG	0x4c8c	/* 32bit - PEG AFE/speed config */
+
+#define PEG_SBISTATUS	0x4f14	/* 32bit - PEG SBI status */
+
+#define PEG_SBIR	0x4130	/* 32bit - PEG SBI request */
+#define PEG_SBID	0x4160	/* 32bit - PEG SBI data */
+
+/*
  * EPBAR
  */
 

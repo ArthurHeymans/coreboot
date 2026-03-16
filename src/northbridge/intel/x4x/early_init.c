@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
 #include <stdint.h>
+#include <commonlib/helpers.h>
+#include <delay.h>
+#include <device/pci_def.h>
 #include <device/pci_ops.h>
 #if CONFIG(SOUTHBRIDGE_INTEL_I82801GX)
 #include <southbridge/intel/i82801gx/i82801gx.h> /* DEFAULT_PMBASE */
@@ -10,6 +13,8 @@
 #include <option.h>
 #include "x4x.h"
 #include <console/console.h>
+
+#define X4X_POLL_TIMEOUT_US 10000
 
 void x4x_early_init(void)
 {
@@ -53,8 +58,164 @@ void x4x_early_init(void)
 	}
 }
 
+#define PEG_DEV PCI_DEV(0, 1, 0)
+#define PEG_LINK_RETRAIN_TIMEOUT_US 100000
+
+/*
+ * PEG link training based on vendor BIOS DMI/PEG PEIM.
+ *
+ * The vendor does explicit PEG link training with retry logic,
+ * link speed negotiation (Gen1/Gen2), and PHY/AFE tuning.
+ * Without this, coreboot relies on PCIe auto-enumeration and
+ * silicon defaults.
+ */
+
+/* PEG PCIe capability offsets (capability base at D1:F0+0xa0) */
+#define PEG_PCIE_CAP	0xa0
+#define PEG_LCAP	(PEG_PCIE_CAP + PCI_EXP_LNKCAP)
+#define PEG_LCTL	(PEG_PCIE_CAP + PCI_EXP_LNKCTL)
+#define PEG_LSTS	(PEG_PCIE_CAP + PCI_EXP_LNKSTA)
+#define PEG_LCTL2	(PEG_PCIE_CAP + 0x30)
+
+static void peg_link_speed_config(u8 target_speed)
+{
+	u32 reg32;
+
+	/*
+	 * Vendor sequence: snapshot AFECFG, toggle bit 9 (speed change
+	 * trigger), reconfigure speed/de-emphasis, then write back with
+	 * bit 9 clear. The 16-bit write sets bit 9 in hardware briefly;
+	 * the final 32-bit write completes the sequence with it cleared.
+	 */
+	reg32 = mchbar_read32(PEG_AFECFG);
+
+	/* Set bit 9 to initiate speed change */
+	mchbar_write16(PEG_AFECFG, (reg32 & 0xffff) | (1 << 9));
+
+	/* Configure speed and de-emphasis settings */
+	reg32 &= ~0x30;	/* clear bits [5:4] */
+	reg32 |= 0x20;		/* set bit 5 (Gen2 de-emphasis) */
+
+	if (target_speed >= 2) {
+		/* Gen2 */
+		reg32 = (reg32 & ~0x0b) | 0x05;
+		reg32 = (reg32 & ~0x000f0000) | 0x00040000;
+	} else {
+		/* Gen1 */
+		reg32 = (reg32 & ~0x0c) | 0x04;
+		reg32 = (reg32 & ~0x000f0000) | 0x00030000;
+	}
+
+	/* Write back with bit 9 clear to complete speed change */
+	reg32 &= ~(1 << 9);
+	mchbar_write32(PEG_AFECFG, reg32);
+}
+
+static void peg_link_setup(void)
+{
+	/* Set PEG AFE clock distribution */
+	mchbar_write32(PEG_AFE_CLK0, 0xbd000000);
+	mchbar_write32(PEG_AFE_CLK1, 0x000000bd);
+}
+
+static int peg_link_wait(int timeout_us)
+{
+	/* Wait for link training to complete (bit 11 = 1 while training) */
+	while (timeout_us-- > 0) {
+		if (!(pci_read_config16(PEG_DEV, PEG_LSTS) & PCI_EXP_LNKSTA_LT))
+			return 0; /* Link training complete */
+		udelay(1);
+	}
+	return -1; /* Timeout */
+}
+
+static void init_peg(void)
+{
+	u32 deven;
+	u16 lsts, lcap;
+	u8 max_speed, current_speed, current_width;
+
+	/* Check if PEG port is enabled */
+	deven = pci_read_config32(HOST_BRIDGE, D0F0_DEVEN);
+	if (!(deven & D1EN))
+		return;
+
+	/* MCHBAR PEG controller init: set bits [17:16] */
+	mchbar_setbits32(0x4030, 3 << 16);
+
+	printk(BIOS_DEBUG, "PEG: starting link training\n");
+
+	/* Read link capabilities */
+	lcap = pci_read_config16(PEG_DEV, PEG_LCAP);
+	max_speed = lcap & PCI_EXP_LNKCAP_MLS;
+
+	/* Set link speed target */
+	if (max_speed >= 2) {
+		/* Device supports Gen2 */
+		pci_update_config16(PEG_DEV, PEG_LCTL2, ~0xf, 2);
+	}
+
+	/* Retrain link */
+	pci_or_config16(PEG_DEV, PEG_LCTL, PCI_EXP_LNKCTL_RL);
+
+	/* Wait for link training */
+	if (peg_link_wait(PEG_LINK_RETRAIN_TIMEOUT_US) < 0) {
+		printk(BIOS_WARNING, "PEG: link training timeout\n");
+		/* Try Gen1 fallback */
+		pci_update_config16(PEG_DEV, PEG_LCTL2, ~0xf, 1);
+		pci_or_config16(PEG_DEV, PEG_LCTL, PCI_EXP_LNKCTL_RL);
+		if (peg_link_wait(PEG_LINK_RETRAIN_TIMEOUT_US) < 0) {
+			printk(BIOS_ERR, "PEG: link training failed\n");
+			return;
+		}
+	}
+
+	/* Read current link status */
+	lsts = pci_read_config16(PEG_DEV, PEG_LSTS);
+	current_speed = lsts & 0xf;
+	current_width = (lsts >> 4) & 0x3f;
+	if (!current_speed || !current_width) {
+		printk(BIOS_DEBUG, "PEG: no active link\n");
+		return;
+	}
+
+	printk(BIOS_DEBUG, "PEG: link up, Gen%d x%d\n", current_speed, current_width);
+
+	/* Configure AFE for the negotiated speed */
+	peg_link_speed_config(current_speed);
+
+	/* Set up PEG clocking */
+	peg_link_setup();
+
+	/* Run SBI (sideband interface) sequence if ready */
+	if (mchbar_read32(PEG_SBISTATUS) & (1 << 8)) {
+		/* SBI sequence: clear bit 1, clear data, set bit 0, poll, set bit 1 */
+		mchbar_clrbits32(PEG_SBIR, 0x2);
+		mchbar_clrbits32(PEG_SBID, 0x888);
+		mchbar_setbits32(PEG_SBIR, 1);
+
+		/* Poll SBI completion (bit 0 clear) */
+		int timeout = 10000;
+		while ((mchbar_read32(PEG_SBIR) & 1) && timeout-- > 0)
+			udelay(1);
+		if (timeout <= 0)
+			printk(BIOS_WARNING, "PEG: SBI command timeout\n");
+
+		mchbar_clrbits32(PEG_SBID, 0x888);
+		mchbar_setbits32(PEG_SBIR, 0x2);
+	}
+
+	printk(BIOS_DEBUG, "Done PEG init\n");
+}
+
 static void init_egress(void)
 {
+	static const u32 vc1_portarb[] = {
+		0x01000001, 0x00040000, 0x00001000, 0x00000040,
+		0x01000001, 0x00040000, 0x00001000, 0x00000040,
+	};
+	unsigned int i;
+	int timeout;
 	u32 reg32;
 
 	/* VC0: TC0 only */
@@ -87,14 +248,8 @@ static void init_egress(void)
 	epbar_write32(EPVC1RCTL, reg32);
 
 	/* Init VC1 port arbitration table */
-	epbar_write32(EP_PORTARB(0), 0x001000001);
-	epbar_write32(EP_PORTARB(1), 0x000040000);
-	epbar_write32(EP_PORTARB(2), 0x000001000);
-	epbar_write32(EP_PORTARB(3), 0x000000040);
-	epbar_write32(EP_PORTARB(4), 0x001000001);
-	epbar_write32(EP_PORTARB(5), 0x000040000);
-	epbar_write32(EP_PORTARB(6), 0x000001000);
-	epbar_write32(EP_PORTARB(7), 0x000000040);
+	for (i = 0; i < ARRAY_SIZE(vc1_portarb); i++)
+		epbar_write32(EP_PORTARB(i), vc1_portarb[i]);
 
 	/* Load table */
 	reg32 = epbar_read32(EPVC1RCTL) | (1 << 16);
@@ -103,24 +258,51 @@ static void init_egress(void)
 	epbar_write32(EPVC1RCTL, reg32);
 
 	/* Wait for table load */
-	while ((epbar_read8(EPVC1RSTS) & (1 << 0)) != 0)
+	timeout = X4X_POLL_TIMEOUT_US;
+	while ((epbar_read8(EPVC1RSTS) & (1 << 0)) != 0 && timeout-- > 0)
 		;
+	if (timeout <= 0)
+		printk(BIOS_WARNING, "Egress VC1 table load timeout\n");
 
 	/* VC1: enable */
 	epbar_setbits32(EPVC1RCTL, 1 << 31);
 
 	/* Wait for VC1 */
-	while ((epbar_read8(EPVC1RSTS) & (1 << 1)) != 0)
+	timeout = X4X_POLL_TIMEOUT_US;
+	while ((epbar_read8(EPVC1RSTS) & (1 << 1)) != 0 && timeout-- > 0)
 		;
+	if (timeout <= 0)
+		printk(BIOS_WARNING, "Egress VC1 negotiation timeout\n");
 
 	printk(BIOS_DEBUG, "Done Egress Port\n");
 }
 
 static void init_dmi(void)
 {
+	int timeout;
 	u32 reg32;
 
-	/* Assume IGD present */
+	/* VCp: enable with ID 6 and TC mapping for ME traffic */
+	dmibar_write32(DMIVCPRCTL, 0x86000000);
+
+	/* DMI link config: bits[23:16] = 0x40 */
+	dmibar_clrsetbits32(0x1b0, 0xff << 16, 0x40 << 16);
+
+	/* Wait for DMI VCp negotiation */
+	timeout = X4X_POLL_TIMEOUT_US;
+	while ((dmibar_read8(DMIVCPRSTS) & VCPNP) && timeout-- > 0)
+		udelay(1);
+	if (timeout <= 0)
+		printk(BIOS_WARNING, "DMI VCp negotiation timeout\n");
+
+	/* Clear DMIBAR+0x204 bits [11:10] */
+	dmibar_clrbits32(0x204, 3 << 10);
+
+	/* DMI link config: clear bit 13, set bit 12 */
+	dmibar_clrsetbits32(0x0f0, 1 << 13, 1 << 12);
+
+	/* Set bit 0 of DMI link config */
+	dmibar_setbits32(0x1b0, 1);
 
 	/* Clear error status */
 	dmibar_write32(DMIUESTS, 0xffffffff);
@@ -183,12 +365,18 @@ static void init_dmi(void)
 	RCBA32(0x20) |= 1 << 31;
 
 	/* Wait for VC1 */
-	while ((RCBA8(0x26) & (1 << 1)) != 0)
+	timeout = X4X_POLL_TIMEOUT_US;
+	while ((RCBA8(0x26) & (1 << 1)) != 0 && timeout-- > 0)
 		;
+	if (timeout <= 0)
+		printk(BIOS_WARNING, "RCBA VC1 negotiation timeout\n");
 
 	/* Wait for table load */
-	while ((RCBA8(0x26) & (1 << 0)) != 0)
+	timeout = X4X_POLL_TIMEOUT_US;
+	while ((RCBA8(0x26) & (1 << 0)) != 0 && timeout-- > 0)
 		;
+	if (timeout <= 0)
+		printk(BIOS_WARNING, "RCBA VC1 table load timeout\n");
 
 	/* ASPM on DMI link */
 	RCBA16(0x1a8) &= ~0x3;
@@ -201,8 +389,11 @@ static void init_dmi(void)
 	/* Set up VC1 max time */
 	RCBA32(0x1c) = (RCBA32(0x1c) & ~0x7f0000) | 0x120000;
 
-	while ((dmibar_read32(DMIVC1RSTS) & VC1NP) != 0)
+	timeout = X4X_POLL_TIMEOUT_US;
+	while ((dmibar_read32(DMIVC1RSTS) & VC1NP) != 0 && timeout-- > 0)
 		;
+	if (timeout <= 0)
+		printk(BIOS_WARNING, "DMI VC1 negotiation timeout\n");
 	printk(BIOS_DEBUG, "Done DMI setup\n");
 
 	/* ASPM on DMI */
@@ -218,4 +409,5 @@ void x4x_late_init(void)
 {
 	init_egress();
 	init_dmi();
+	init_peg();
 }
