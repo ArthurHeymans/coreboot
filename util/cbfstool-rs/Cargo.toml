@@ -1,0 +1,44 @@
+[package]
+name = "cbfstool-rs"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-2.0-only"
+description = "Experimental Rust library and CLI for reading and manipulating coreboot CBFS images"
+publish = false
+
+[lib]
+name = "cbfstool_rs"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cbfstool-rs"
+path = "src/bin/cbfstool/main.rs"
+required-features = ["cli", "compression"]
+
+[features]
+default = ["cli", "compression", "elf"]
+cli = ["dep:clap", "dep:serde", "dep:serde_json", "vboot"]
+compression = ["dep:flate2", "dep:lz4_flex", "dep:lzma-rs", "dep:rust-zstd"]
+elf = ["dep:object"]
+vboot = ["dep:sha1", "dep:sha2"]
+
+[dependencies]
+clap = { version = "4.6", features = ["derive"], optional = true }
+flate2 = { version = "1.0", optional = true }
+lz4_flex = { version = "0.13", features = ["frame"], optional = true }
+lzma-rs = { version = "0.3", optional = true }
+object = { version = "0.39", default-features = false, features = ["read_core", "elf"], optional = true }
+rust-zstd = { version = "0.1", default-features = false, optional = true }
+serde = { version = "1.0", features = ["derive"], optional = true }
+serde_json = { version = "1.0", optional = true }
+sha1 = { version = "0.10", optional = true }
+sha2 = { version = "0.10", optional = true }
+zerocopy = { version = "0.8", features = ["derive"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+panic = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
