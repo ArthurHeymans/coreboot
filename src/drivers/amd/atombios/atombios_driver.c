@@ -62,6 +62,9 @@
 #define ATOM_CMD_ENABLE_DISP_POWER_GATING CMD_IDX(EnableDispPowerGating)
 #define ATOM_CMD_DIG_ENCODER_CTRL	CMD_IDX(DIGxEncoderControl)
 #define ATOM_CMD_DIG1_XMTR_CTRL	CMD_IDX(DIG1TransmitterControl)
+#define ATOM_CMD_DAC1_ENCODER_CTRL	CMD_IDX(DAC1EncoderControl)
+#define ATOM_CMD_DAC2_ENCODER_CTRL	CMD_IDX(DAC2EncoderControl)
+#define ATOM_CMD_DAC_LOAD_DETECT	CMD_IDX(DAC_LoadDetection)
 #define ATOM_CMD_PROCESS_I2C		CMD_IDX(ProcessI2cChannelTransaction)
 #define ATOM_CMD_PROCESS_AUX		CMD_IDX(ProcessAuxChannelTransaction)
 
@@ -144,15 +147,17 @@
 /* ---- Display path info discovered from ATOM tables ---- */
 
 struct atombios_display_path {
-	uint8_t  connector_type;	/* DRM_MODE_CONNECTOR_* style */
+	uint8_t  connector_type;	/* 1=HDMI, 2=DP/eDP, 3=DVI, 4=VGA, 5=DVI-I */
 	uint8_t  encoder_obj_id;	/* ENCODER_OBJECT_ID_* */
 	uint8_t  encoder_type;		/* GRAPH_OBJECT_ENUM_ID */
 	uint8_t  i2c_line;		/* I2C line number for DDC */
 	uint8_t  hpd_id;		/* HPD pin ID (1-6, 0=none) */
-	uint8_t  dig_encoder;		/* DIG index (0=DIG1, ...) */
-	uint8_t  phy_id;		/* UNIPHY ID (0=A, 1=B, ...) */
+	uint8_t  dig_encoder;		/* DIG index (0=DIG1, ...) for digital */
+	uint8_t  phy_id;		/* UNIPHY ID (0=A, 1=B, ...) for digital */
 	uint8_t  encoder_mode;		/* ATOM_ENCODER_MODE_* */
 	uint16_t connector_obj_id;	/* Full connector object ID */
+	uint8_t  is_dac;		/* 1 if DAC encoder (VGA/CRT), 0 if DIG */
+	uint8_t  dac_type;		/* ATOM_DAC_A or ATOM_DAC_B */
 };
 
 /* Forward declarations for functions used by DP link training */
@@ -895,6 +900,74 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 				  sizeof(args) / sizeof(uint32_t));
 }
 
+/* ---- DAC Encoder Control (VGA/CRT) ---- */
+
+/*
+ * Enable or disable a DAC encoder for CRT/VGA output.
+ *
+ * This calls DAC1EncoderControl or DAC2EncoderControl depending on which
+ * DAC is associated with the display path. The DAC standard is always
+ * ATOM_DAC1_PS2 (VGA/PC monitor).
+ */
+static int atombios_dac_encoder_setup(struct atom_context *ctx,
+				      const struct atombios_display_path *path,
+				      uint16_t pixel_clock_10khz,
+				      uint8_t action)
+{
+	DAC_ENCODER_CONTROL_PARAMETERS args;
+	int index;
+
+	memset(&args, 0, sizeof(args));
+
+	if (path->dac_type == ATOM_DAC_A)
+		index = ATOM_CMD_DAC1_ENCODER_CTRL;
+	else
+		index = ATOM_CMD_DAC2_ENCODER_CTRL;
+
+	args.usPixelClock = pixel_clock_10khz;
+	args.ucDacStandard = ATOM_DAC1_PS2;
+	args.ucAction = action;
+
+	printk(BIOS_DEBUG, "ATOMBIOS: DAC%c encoder %s (clock=%d*10kHz)\n",
+	       path->dac_type == ATOM_DAC_A ? 'A' : 'B',
+	       action == ATOM_ENABLE ? "enable" : "disable",
+	       pixel_clock_10khz);
+
+	return atom_execute_table(ctx, index, (uint32_t *)&args,
+				  sizeof(args) / sizeof(uint32_t));
+}
+
+/* ---- DAC Load Detection (VGA/CRT) ---- */
+
+/*
+ * Perform DAC load detection to check if a CRT/VGA display is connected.
+ *
+ * This calls the DAC_LoadDetection ATOM command table, which physically
+ * drives the DAC outputs and measures the load. A connected CRT monitor
+ * presents a resistive load that the DAC can detect.
+ *
+ * Returns 0 on success (table executed), -1 on failure.
+ * The actual detection result is in the BIOS scratch registers.
+ */
+static int atombios_dac_load_detect(struct atom_context *ctx,
+				    const struct atombios_display_path *path)
+{
+	DAC_LOAD_DETECTION_PS_ALLOCATION args;
+
+	memset(&args, 0, sizeof(args));
+
+	args.sDacload.ucDacType = path->dac_type;
+	args.sDacload.usDeviceID = ATOM_DEVICE_CRT1_SUPPORT;
+	args.sDacload.ucMisc = 0;
+
+	printk(BIOS_DEBUG, "ATOMBIOS: DAC%c load detection\n",
+	       path->dac_type == ATOM_DAC_A ? 'A' : 'B');
+
+	return atom_execute_table(ctx, ATOM_CMD_DAC_LOAD_DETECT,
+				  (uint32_t *)&args,
+				  sizeof(args) / sizeof(uint32_t));
+}
+
 /* ---- Display path discovery from ATOM object tables ---- */
 
 /*
@@ -998,7 +1071,7 @@ static int atombios_discover_display_paths(struct atom_context *ctx,
 			enc_id = (enc_obj_id >> 8) & 0xF;
 			paths[count].encoder_obj_id = enc_id;
 
-			/* Determine DIG encoder and PHY from encoder object */
+			/* Determine encoder type from encoder object ID */
 			switch (enc_id) {
 			case ENCODER_OBJECT_ID_INTERNAL_UNIPHY:
 				paths[count].dig_encoder = 0; /* DIG1 */
@@ -1016,26 +1089,43 @@ static int atombios_discover_display_paths(struct atom_context *ctx,
 				paths[count].dig_encoder = 6; /* DIG7 */
 				paths[count].phy_id = 6;      /* UNIPHY_G */
 				break;
+			case ENCODER_OBJECT_ID_INTERNAL_KLDSCP_DAC1:
+				paths[count].is_dac = 1;
+				paths[count].dac_type = ATOM_DAC_A;
+				paths[count].encoder_mode = ATOM_ENCODER_MODE_CRT;
+				break;
+			case ENCODER_OBJECT_ID_INTERNAL_KLDSCP_DAC2:
+				paths[count].is_dac = 1;
+				paths[count].dac_type = ATOM_DAC_B;
+				paths[count].encoder_mode = ATOM_ENCODER_MODE_CRT;
+				break;
 			default:
 				paths[count].dig_encoder = 0;
 				paths[count].phy_id = 0;
 				break;
 			}
 
-			/* Check link B (ENUM_ID_2) */
-			if (((enc_obj_id >> 4) & 0xF) == 2) {
+			/* For DIG encoders, check link B (ENUM_ID_2) */
+			if (!paths[count].is_dac &&
+			    ((enc_obj_id >> 4) & 0xF) == 2) {
 				paths[count].dig_encoder += 1;
 				paths[count].phy_id += 1;
 			}
 			break; /* use first encoder found */
 		}
 
-		printk(BIOS_INFO,
-		       "ATOMBIOS: path %d: conn=0x%04x type=%d enc_id=%d dig=%d phy=%d mode=%d\n",
-		       count, conn_obj_id, paths[count].connector_type,
-		       paths[count].encoder_obj_id,
-		       paths[count].dig_encoder, paths[count].phy_id,
-		       paths[count].encoder_mode);
+		if (paths[count].is_dac)
+			printk(BIOS_INFO,
+			       "ATOMBIOS: path %d: conn=0x%04x type=%d DAC-%c mode=CRT\n",
+			       count, conn_obj_id, paths[count].connector_type,
+			       paths[count].dac_type == ATOM_DAC_A ? 'A' : 'B');
+		else
+			printk(BIOS_INFO,
+			       "ATOMBIOS: path %d: conn=0x%04x type=%d enc=%d dig=%d phy=%d mode=%d\n",
+			       count, conn_obj_id, paths[count].connector_type,
+			       paths[count].encoder_obj_id,
+			       paths[count].dig_encoder, paths[count].phy_id,
+			       paths[count].encoder_mode);
 
 		count++;
 		path_offset += disp_path->usSize;
@@ -1276,21 +1366,32 @@ static int atombios_select_crtc_source(struct atom_context *ctx,
 
 	memset(&args, 0, sizeof(args));
 
-	/* Map dig_encoder index to ASIC_INT_DIG*_ENCODER_ID */
-	switch (path->dig_encoder) {
-	case 0: enc_id = ASIC_INT_DIG1_ENCODER_ID; break;
-	case 1: enc_id = ASIC_INT_DIG2_ENCODER_ID; break;
-	case 2: enc_id = ASIC_INT_DIG3_ENCODER_ID; break;
-	case 3: enc_id = ASIC_INT_DIG4_ENCODER_ID; break;
-	case 4: enc_id = ASIC_INT_DIG5_ENCODER_ID; break;
-	case 5: enc_id = ASIC_INT_DIG6_ENCODER_ID; break;
-	default: enc_id = ASIC_INT_DIG7_ENCODER_ID; break;
+	/* Map encoder to the hardware encoder ID */
+	if (path->is_dac) {
+		enc_id = (path->dac_type == ATOM_DAC_A)
+			 ? ASIC_INT_DAC1_ENCODER_ID
+			 : ASIC_INT_DAC2_ENCODER_ID;
+	} else {
+		switch (path->dig_encoder) {
+		case 0: enc_id = ASIC_INT_DIG1_ENCODER_ID; break;
+		case 1: enc_id = ASIC_INT_DIG2_ENCODER_ID; break;
+		case 2: enc_id = ASIC_INT_DIG3_ENCODER_ID; break;
+		case 3: enc_id = ASIC_INT_DIG4_ENCODER_ID; break;
+		case 4: enc_id = ASIC_INT_DIG5_ENCODER_ID; break;
+		case 5: enc_id = ASIC_INT_DIG6_ENCODER_ID; break;
+		default: enc_id = ASIC_INT_DIG7_ENCODER_ID; break;
+		}
 	}
 
 	switch (crev) {
 	case 1:
 		args.v1.ucCRTC = crtc_id;
-		args.v1.ucDevice = ATOM_DEVICE_DFP1_INDEX;
+		if (path->is_dac)
+			args.v1.ucDevice = (path->dac_type == ATOM_DAC_A)
+					   ? ATOM_DEVICE_CRT1_INDEX
+					   : ATOM_DEVICE_CRT2_INDEX;
+		else
+			args.v1.ucDevice = ATOM_DEVICE_DFP1_INDEX;
 		break;
 	case 2:
 	default:
@@ -1301,8 +1402,9 @@ static int atombios_select_crtc_source(struct atom_context *ctx,
 	}
 
 	printk(BIOS_DEBUG,
-	       "ATOMBIOS: select CRTC %d -> encoder %d (enc_id=0x%02x mode=%d)\n",
-	       crtc_id, path->dig_encoder, enc_id, path->encoder_mode);
+	       "ATOMBIOS: select CRTC %d -> enc_id=0x%02x mode=%d%s\n",
+	       crtc_id, enc_id, path->encoder_mode,
+	       path->is_dac ? " (DAC)" : "");
 
 	return atom_execute_table(ctx, ATOM_CMD_SELECT_CRTC_SOURCE,
 				  (uint32_t *)&args,
@@ -1459,8 +1561,8 @@ static void atombios_init(struct device *dev)
 
 	/*
 	 * Try to read EDID on each path to find a connected display.
-	 * Prefer HDMI/DVI over DP (DP needs link training which is more
-	 * complex). Fall back to defaults if no EDID is found.
+	 * For VGA/CRT paths, also try DAC load detection since some
+	 * CRT monitors may not support DDC/EDID.
 	 */
 	for (i = 0; i < num_paths; i++) {
 		if (paths[i].connector_type == 0)
@@ -1476,11 +1578,21 @@ static void atombios_init(struct device *dev)
 				break;
 			}
 		}
+
+		/* For VGA/CRT without EDID, try DAC load detection */
+		if (paths[i].is_dac) {
+			atombios_dac_load_detect(ctx, &paths[i]);
+			/* If load detected, use this path with default mode */
+			printk(BIOS_INFO,
+			       "ATOMBIOS: DAC load detection on path %d (VGA/CRT)\n", i);
+			active_path = i;
+			break;
+		}
 	}
 
 	if (active_path < 0) {
 		printk(BIOS_WARNING,
-		       "ATOMBIOS: no connected display found via EDID\n");
+		       "ATOMBIOS: no connected display found via EDID or DAC detect\n");
 		goto use_defaults;
 	}
 
@@ -1514,93 +1626,107 @@ do_modeset:
 	/* Step 1: Power up display pipe */
 	atombios_disp_power_gating(ctx, crtc_id, 0);
 
-	/*
-	 * Step 2: For eDP, power on the panel first.
-	 * The panel must be powered before link training.
-	 */
-	if (active_path >= 0 &&
-	    paths[active_path].encoder_mode == ATOM_ENCODER_MODE_DP &&
-	    paths[active_path].connector_type == 2) {
-		/* Check if this is eDP (connector obj contains eDP ID) */
-		uint8_t conn_id = (paths[active_path].connector_obj_id >> 8) & 0xF;
-		if (conn_id == CONNECTOR_OBJECT_ID_eDP) {
-			atombios_edp_panel_power(ctx, &paths[active_path], 1);
-			mdelay(200); /* Wait for panel to power up */
-		}
-	}
+	if (active_path >= 0 && paths[active_path].is_dac) {
+		/*
+		 * VGA/CRT output path: DAC encoder.
+		 * Simpler than digital -- no transmitter PHY or link training.
+		 */
+		printk(BIOS_INFO, "ATOMBIOS: VGA/CRT output via DAC-%c\n",
+		       paths[active_path].dac_type == ATOM_DAC_A ? 'A' : 'B');
 
-	/*
-	 * Step 3: Initialize transmitter PHY.
-	 * The INIT action tells the PHY which connector it serves.
-	 */
-	if (active_path >= 0) {
-		printk(BIOS_INFO, "ATOMBIOS: initializing transmitter PHY %d...\n",
-		       paths[active_path].phy_id);
-		atombios_transmitter_control(ctx, &paths[active_path],
-					     pixel_clock_10khz,
-					     ATOM_TRANSMITTER_ACTION_INIT);
-	}
-
-	/*
-	 * Step 4: Configure DIG encoder for the target mode.
-	 */
-	if (active_path >= 0) {
-		printk(BIOS_INFO, "ATOMBIOS: configuring DIG encoder %d...\n",
-		       paths[active_path].dig_encoder);
-		atombios_dig_encoder_setup(ctx, &paths[active_path],
-					   pixel_clock_10khz,
-					   ATOM_ENCODER_CMD_SETUP,
-					   PANEL_8BIT_PER_COLOR);
-	}
-
-	/* Step 5: Route CRTC to encoder */
-	if (active_path >= 0) {
-		printk(BIOS_INFO, "ATOMBIOS: routing CRTC %d -> DIG %d...\n",
-		       crtc_id, paths[active_path].dig_encoder);
+		/* Route CRTC to DAC encoder */
 		atombios_select_crtc_source(ctx, &paths[active_path], crtc_id);
-	}
 
-	/* Step 6: Program pixel clock PLL */
-	if (active_path >= 0) {
-		printk(BIOS_INFO, "ATOMBIOS: programming pixel clock...\n");
+		/* Program pixel clock */
 		atombios_set_pixel_clock(ctx, &paths[active_path],
 					 pixel_clock_10khz, crtc_id);
+
+		/* Program CRTC timing */
+		printk(BIOS_INFO, "ATOMBIOS: programming CRTC timing...\n");
+		atombios_set_crtc_dtd_timing(ctx, &mode, crtc_id);
+
+		/* Enable CRTC */
+		atombios_enable_crtc(ctx, crtc_id, 1);
+
+		/* Enable DAC encoder */
+		atombios_dac_encoder_setup(ctx, &paths[active_path],
+					   pixel_clock_10khz, ATOM_ENABLE);
+
+		/* Unblank */
+		atombios_blank_crtc(ctx, crtc_id, 0);
+	} else {
+		/*
+		 * Digital output path: DIG encoder + UNIPHY transmitter.
+		 */
+
+		/* For eDP, power on the panel first */
+		if (active_path >= 0 &&
+		    paths[active_path].encoder_mode == ATOM_ENCODER_MODE_DP) {
+			uint8_t conn_id = (paths[active_path].connector_obj_id >> 8) & 0xF;
+			if (conn_id == CONNECTOR_OBJECT_ID_eDP) {
+				atombios_edp_panel_power(ctx, &paths[active_path], 1);
+				mdelay(200);
+			}
+		}
+
+		/* Initialize transmitter PHY */
+		if (active_path >= 0) {
+			printk(BIOS_INFO, "ATOMBIOS: initializing transmitter PHY %d...\n",
+			       paths[active_path].phy_id);
+			atombios_transmitter_control(ctx, &paths[active_path],
+						     pixel_clock_10khz,
+						     ATOM_TRANSMITTER_ACTION_INIT);
+		}
+
+		/* Configure DIG encoder */
+		if (active_path >= 0) {
+			printk(BIOS_INFO, "ATOMBIOS: configuring DIG encoder %d...\n",
+			       paths[active_path].dig_encoder);
+			atombios_dig_encoder_setup(ctx, &paths[active_path],
+						   pixel_clock_10khz,
+						   ATOM_ENCODER_CMD_SETUP,
+						   PANEL_8BIT_PER_COLOR);
+		}
+
+		/* Route CRTC to encoder */
+		if (active_path >= 0)
+			atombios_select_crtc_source(ctx, &paths[active_path], crtc_id);
+
+		/* Program pixel clock PLL */
+		if (active_path >= 0)
+			atombios_set_pixel_clock(ctx, &paths[active_path],
+						 pixel_clock_10khz, crtc_id);
+
+		/* Program CRTC timing */
+		printk(BIOS_INFO, "ATOMBIOS: programming CRTC timing...\n");
+		atombios_set_crtc_dtd_timing(ctx, &mode, crtc_id);
+
+		/* Enable CRTC */
+		atombios_enable_crtc(ctx, crtc_id, 1);
+
+		/* Enable transmitter */
+		if (active_path >= 0) {
+			printk(BIOS_INFO, "ATOMBIOS: enabling transmitter...\n");
+			atombios_transmitter_control(ctx, &paths[active_path],
+						     pixel_clock_10khz,
+						     ATOM_TRANSMITTER_ACTION_ENABLE);
+		}
+
+		/* DP link training */
+		if (active_path >= 0 &&
+		    paths[active_path].encoder_mode == ATOM_ENCODER_MODE_DP) {
+			printk(BIOS_INFO, "ATOMBIOS: starting DP link training...\n");
+			if (atombios_dp_link_train(ctx, &paths[active_path],
+						   pixel_clock_10khz,
+						   paths[active_path].i2c_line,
+						   paths[active_path].hpd_id))
+				printk(BIOS_WARNING,
+				       "ATOMBIOS: DP link training failed\n");
+		}
+
+		/* Unblank */
+		atombios_blank_crtc(ctx, crtc_id, 0);
 	}
-
-	/* Step 7: Program CRTC timing */
-	printk(BIOS_INFO, "ATOMBIOS: programming CRTC timing...\n");
-	atombios_set_crtc_dtd_timing(ctx, &mode, crtc_id);
-
-	/* Step 8: Enable CRTC */
-	atombios_enable_crtc(ctx, crtc_id, 1);
-
-	/* Step 9: Enable transmitter (drive the physical link) */
-	if (active_path >= 0) {
-		printk(BIOS_INFO, "ATOMBIOS: enabling transmitter...\n");
-		atombios_transmitter_control(ctx, &paths[active_path],
-					     pixel_clock_10khz,
-					     ATOM_TRANSMITTER_ACTION_ENABLE);
-	}
-
-	/*
-	 * Step 10: For DP/eDP, perform link training.
-	 * This negotiates link rate and lane count with the sink,
-	 * runs clock recovery and channel equalization, then enables
-	 * video output.
-	 */
-	if (active_path >= 0 &&
-	    paths[active_path].encoder_mode == ATOM_ENCODER_MODE_DP) {
-		printk(BIOS_INFO, "ATOMBIOS: starting DP link training...\n");
-		if (atombios_dp_link_train(ctx, &paths[active_path],
-					   pixel_clock_10khz,
-					   paths[active_path].i2c_line,
-					   paths[active_path].hpd_id))
-			printk(BIOS_WARNING,
-			       "ATOMBIOS: DP link training failed, display may not work\n");
-	}
-
-	/* Step 11: Unblank */
-	atombios_blank_crtc(ctx, crtc_id, 0);
 
 	/* Register framebuffer with coreboot */
 	fb_add_framebuffer_info(fb_bar,
