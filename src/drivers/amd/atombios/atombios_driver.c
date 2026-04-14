@@ -27,6 +27,7 @@
 
 #include "atom.h"
 #include "atom-bits.h"
+#include "atomfirmware.h"
 
 /*
  * AMD GPU MMIO BAR indices:
@@ -45,28 +46,112 @@
 #define DEFAULT_BPP	32
 #define BYTES_PER_PIXEL	(DEFAULT_BPP / 8)
 
-/* ATOM command table indices */
-#define CMD_IDX(field) \
+/*
+ * ATOM command and data table indices.
+ *
+ * The master command/data table layout differs between atombios.h (v1,
+ * pre-Vega) and atomfirmware.h (v2, Vega+). The ATOM bytecode interpreter
+ * is format-agnostic, but command table indices differ because the v2
+ * master table has a different field order.
+ *
+ * We detect the format at runtime from the master table header revision
+ * and store the resolved indices in an atombios_cmd_table_idx struct.
+ */
+
+/* v1 index: offsetof into ATOM_MASTER_LIST_OF_COMMAND_TABLES */
+#define CMD_IDX_V1(field) \
 	(offsetof(ATOM_MASTER_LIST_OF_COMMAND_TABLES, field) / sizeof(USHORT))
 
-/* ATOM data table indices */
-#define DATA_IDX(field) \
+/* v2 index: offsetof into atom_master_list_of_command_functions_v2_1 */
+#define CMD_IDX_V2(field) \
+	(offsetof(struct atom_master_list_of_command_functions_v2_1, field) / sizeof(uint16_t))
+
+/* v1 data index: offsetof into ATOM_MASTER_LIST_OF_DATA_TABLES */
+#define DATA_IDX_V1(field) \
 	(offsetof(ATOM_MASTER_LIST_OF_DATA_TABLES, field) / sizeof(USHORT))
 
-#define ATOM_CMD_ASIC_INIT		CMD_IDX(ASIC_Init)
-#define ATOM_CMD_SET_PIXEL_CLOCK	CMD_IDX(SetPixelClock)
-#define ATOM_CMD_SET_CRTC_USING_DTD	CMD_IDX(SetCRTC_UsingDTDTiming)
-#define ATOM_CMD_ENABLE_CRTC		CMD_IDX(EnableCRTC)
-#define ATOM_CMD_BLANK_CRTC		CMD_IDX(BlankCRTC)
-#define ATOM_CMD_SELECT_CRTC_SOURCE	CMD_IDX(SelectCRTC_Source)
-#define ATOM_CMD_ENABLE_DISP_POWER_GATING CMD_IDX(EnableDispPowerGating)
-#define ATOM_CMD_DIG_ENCODER_CTRL	CMD_IDX(DIGxEncoderControl)
-#define ATOM_CMD_DIG1_XMTR_CTRL	CMD_IDX(DIG1TransmitterControl)
-#define ATOM_CMD_DAC1_ENCODER_CTRL	CMD_IDX(DAC1EncoderControl)
-#define ATOM_CMD_DAC2_ENCODER_CTRL	CMD_IDX(DAC2EncoderControl)
-#define ATOM_CMD_DAC_LOAD_DETECT	CMD_IDX(DAC_LoadDetection)
-#define ATOM_CMD_PROCESS_I2C		CMD_IDX(ProcessI2cChannelTransaction)
-#define ATOM_CMD_PROCESS_AUX		CMD_IDX(ProcessAuxChannelTransaction)
+/* v2 data index: offsetof into atom_master_list_of_data_tables_v2_1 */
+#define DATA_IDX_V2(field) \
+	(offsetof(struct atom_master_list_of_data_tables_v2_1, field) / sizeof(uint16_t))
+
+struct atombios_cmd_indices {
+	int asic_init;
+	int set_pixel_clock;
+	int set_crtc_using_dtd;
+	int enable_crtc;
+	int blank_crtc;
+	int select_crtc_source;
+	int enable_disp_power_gating;
+	int dig_encoder_ctrl;
+	int dig1_xmtr_ctrl;
+	int dac1_encoder_ctrl;	/* -1 if not available (v2) */
+	int dac2_encoder_ctrl;	/* -1 if not available (v2) */
+	int dac_load_detect;	/* -1 if not available (v2) */
+	int process_i2c;
+	int process_aux;
+	int data_object_header;
+	int data_gpio_i2c;
+	bool is_v2;
+};
+
+static void atombios_init_cmd_indices_v1(struct atombios_cmd_indices *idx)
+{
+	idx->is_v2 = false;
+	idx->asic_init              = CMD_IDX_V1(ASIC_Init);
+	idx->set_pixel_clock        = CMD_IDX_V1(SetPixelClock);
+	idx->set_crtc_using_dtd     = CMD_IDX_V1(SetCRTC_UsingDTDTiming);
+	idx->enable_crtc            = CMD_IDX_V1(EnableCRTC);
+	idx->blank_crtc             = CMD_IDX_V1(BlankCRTC);
+	idx->select_crtc_source     = CMD_IDX_V1(SelectCRTC_Source);
+	idx->enable_disp_power_gating = CMD_IDX_V1(EnableDispPowerGating);
+	idx->dig_encoder_ctrl       = CMD_IDX_V1(DIGxEncoderControl);
+	idx->dig1_xmtr_ctrl         = CMD_IDX_V1(DIG1TransmitterControl);
+	idx->dac1_encoder_ctrl      = CMD_IDX_V1(DAC1EncoderControl);
+	idx->dac2_encoder_ctrl      = CMD_IDX_V1(DAC2EncoderControl);
+	idx->dac_load_detect        = CMD_IDX_V1(DAC_LoadDetection);
+	idx->process_i2c            = CMD_IDX_V1(ProcessI2cChannelTransaction);
+	idx->process_aux            = CMD_IDX_V1(ProcessAuxChannelTransaction);
+	idx->data_object_header     = DATA_IDX_V1(Object_Header);
+	idx->data_gpio_i2c          = DATA_IDX_V1(GPIO_I2C_Info);
+}
+
+static void atombios_init_cmd_indices_v2(struct atombios_cmd_indices *idx)
+{
+	idx->is_v2 = true;
+	idx->asic_init              = CMD_IDX_V2(asic_init);
+	idx->set_pixel_clock        = CMD_IDX_V2(setpixelclock);
+	idx->set_crtc_using_dtd     = CMD_IDX_V2(setcrtc_usingdtdtiming);
+	idx->enable_crtc            = CMD_IDX_V2(enablecrtc);
+	idx->blank_crtc             = CMD_IDX_V2(blankcrtc);
+	idx->select_crtc_source     = CMD_IDX_V2(selectcrtc_source);
+	idx->enable_disp_power_gating = CMD_IDX_V2(enabledisppowergating);
+	idx->dig_encoder_ctrl       = CMD_IDX_V2(digxencodercontrol);
+	idx->dig1_xmtr_ctrl         = CMD_IDX_V2(dig1transmittercontrol);
+	idx->dac1_encoder_ctrl      = -1; /* No DAC on Vega+ */
+	idx->dac2_encoder_ctrl      = -1;
+	idx->dac_load_detect        = -1;
+	idx->process_i2c            = CMD_IDX_V2(processi2cchanneltransaction);
+	idx->process_aux            = CMD_IDX_V2(processauxchanneltransaction);
+	idx->data_object_header     = DATA_IDX_V2(displayobjectinfo);
+	idx->data_gpio_i2c          = DATA_IDX_V2(gpio_pin_lut);
+}
+
+/*
+ * Detect whether the VBIOS uses v1 (atombios.h) or v2 (atomfirmware.h)
+ * master table format by reading the format_revision of the master
+ * command table header.
+ */
+static bool atombios_detect_v2(struct atom_context *ctx)
+{
+	/* The master command table starts with a 4-byte common header.
+	 * format_revision is at byte offset 2. v1 has revision 1.x,
+	 * v2 has revision 2.x. */
+	uint8_t frev = get_u8(ctx->bios, ctx->cmd_table + 2);
+	return frev >= 2;
+}
+
+/* Global command index table, initialized during atombios_init() */
+static struct atombios_cmd_indices cmd_idx;
 
 /* Maximum EDID block size */
 #define EDID_BLOCK_SIZE		128
@@ -300,7 +385,7 @@ static int atombios_i2c_read(struct atom_context *ctx, uint8_t i2c_line,
 	args.ucSlaveAddr = slave_addr << 1;
 	args.ucLineNumber = i2c_line;
 
-	ret = atom_execute_table(ctx, ATOM_CMD_PROCESS_I2C, (uint32_t *)&args,
+	ret = atom_execute_table(ctx, cmd_idx.process_i2c, (uint32_t *)&args,
 				 sizeof(args) / sizeof(uint32_t));
 	if (ret) {
 		printk(BIOS_DEBUG, "ATOMBIOS: I2C read failed (line=%d addr=0x%02x)\n",
@@ -412,7 +497,7 @@ static int atombios_dp_aux_transfer(struct atom_context *ctx,
 	args.ucDelay = 0;
 	args.ucHPD_ID = hpd_id;
 
-	if (atom_execute_table(ctx, ATOM_CMD_PROCESS_AUX,
+	if (atom_execute_table(ctx, cmd_idx.process_aux,
 			       (uint32_t *)&args,
 			       sizeof(args) / sizeof(uint32_t))) {
 		return -1;
@@ -841,7 +926,7 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 	} args;
 	uint8_t encoder_id;
 
-	if (!atom_parse_cmd_header(ctx, ATOM_CMD_SET_PIXEL_CLOCK, &frev, &crev))
+	if (!atom_parse_cmd_header(ctx, cmd_idx.set_pixel_clock, &frev, &crev))
 		return -1;
 
 	memset(&args, 0, sizeof(args));
@@ -895,7 +980,7 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 		break;
 	}
 
-	return atom_execute_table(ctx, ATOM_CMD_SET_PIXEL_CLOCK,
+	return atom_execute_table(ctx, cmd_idx.set_pixel_clock,
 				  (uint32_t *)&args,
 				  sizeof(args) / sizeof(uint32_t));
 }
@@ -920,9 +1005,9 @@ static int atombios_dac_encoder_setup(struct atom_context *ctx,
 	memset(&args, 0, sizeof(args));
 
 	if (path->dac_type == ATOM_DAC_A)
-		index = ATOM_CMD_DAC1_ENCODER_CTRL;
+		index = cmd_idx.dac1_encoder_ctrl;
 	else
-		index = ATOM_CMD_DAC2_ENCODER_CTRL;
+		index = cmd_idx.dac2_encoder_ctrl;
 
 	args.usPixelClock = pixel_clock_10khz;
 	args.ucDacStandard = ATOM_DAC1_PS2;
@@ -963,7 +1048,7 @@ static int atombios_dac_load_detect(struct atom_context *ctx,
 	printk(BIOS_DEBUG, "ATOMBIOS: DAC%c load detection\n",
 	       path->dac_type == ATOM_DAC_A ? 'A' : 'B');
 
-	return atom_execute_table(ctx, ATOM_CMD_DAC_LOAD_DETECT,
+	return atom_execute_table(ctx, cmd_idx.dac_load_detect,
 				  (uint32_t *)&args,
 				  sizeof(args) / sizeof(uint32_t));
 }
@@ -989,7 +1074,7 @@ static int atombios_discover_display_paths(struct atom_context *ctx,
 	int i;
 	uint16_t path_offset;
 
-	if (!atom_parse_data_header(ctx, DATA_IDX(Object_Header),
+	if (!atom_parse_data_header(ctx, cmd_idx.data_object_header,
 				    NULL, &frev, &crev, &data_offset)) {
 		printk(BIOS_WARNING, "ATOMBIOS: Object_Header table not found\n");
 		return 0;
@@ -1132,7 +1217,7 @@ static int atombios_discover_display_paths(struct atom_context *ctx,
 	}
 
 	/* Look up I2C lines from GPIO_I2C_Info table */
-	if (atom_parse_data_header(ctx, DATA_IDX(GPIO_I2C_Info),
+	if (atom_parse_data_header(ctx, cmd_idx.data_gpio_i2c,
 				   NULL, &frev, &crev, &data_offset)) {
 		ATOM_GPIO_I2C_INFO *i2c_info;
 		i2c_info = (ATOM_GPIO_I2C_INFO *)(base + data_offset);
@@ -1175,7 +1260,7 @@ static int atombios_dig_encoder_setup(struct atom_context *ctx,
 		DIG_ENCODER_CONTROL_PARAMETERS_V4   v4;
 	} args;
 
-	if (!atom_parse_cmd_header(ctx, ATOM_CMD_DIG_ENCODER_CTRL, &frev, &crev))
+	if (!atom_parse_cmd_header(ctx, cmd_idx.dig_encoder_ctrl, &frev, &crev))
 		return -1;
 
 	memset(&args, 0, sizeof(args));
@@ -1219,7 +1304,7 @@ static int atombios_dig_encoder_setup(struct atom_context *ctx,
 		break;
 	}
 
-	return atom_execute_table(ctx, ATOM_CMD_DIG_ENCODER_CTRL,
+	return atom_execute_table(ctx, cmd_idx.dig_encoder_ctrl,
 				  (uint32_t *)&args,
 				  sizeof(args) / sizeof(uint32_t));
 }
@@ -1248,7 +1333,7 @@ static int atombios_transmitter_control(struct atom_context *ctx,
 		DIG_TRANSMITTER_CONTROL_PARAMETERS_V1_6  v6;
 	} args;
 
-	if (!atom_parse_cmd_header(ctx, ATOM_CMD_DIG1_XMTR_CTRL, &frev, &crev))
+	if (!atom_parse_cmd_header(ctx, cmd_idx.dig1_xmtr_ctrl, &frev, &crev))
 		return -1;
 
 	memset(&args, 0, sizeof(args));
@@ -1339,7 +1424,7 @@ static int atombios_transmitter_control(struct atom_context *ctx,
 		break;
 	}
 
-	return atom_execute_table(ctx, ATOM_CMD_DIG1_XMTR_CTRL,
+	return atom_execute_table(ctx, cmd_idx.dig1_xmtr_ctrl,
 				  (uint32_t *)&args,
 				  sizeof(args) / sizeof(uint32_t));
 }
@@ -1360,7 +1445,7 @@ static int atombios_select_crtc_source(struct atom_context *ctx,
 	} args;
 	uint8_t enc_id;
 
-	if (!atom_parse_cmd_header(ctx, ATOM_CMD_SELECT_CRTC_SOURCE,
+	if (!atom_parse_cmd_header(ctx, cmd_idx.select_crtc_source,
 				   &frev, &crev))
 		return -1;
 
@@ -1406,7 +1491,7 @@ static int atombios_select_crtc_source(struct atom_context *ctx,
 	       crtc_id, enc_id, path->encoder_mode,
 	       path->is_dac ? " (DAC)" : "");
 
-	return atom_execute_table(ctx, ATOM_CMD_SELECT_CRTC_SOURCE,
+	return atom_execute_table(ctx, cmd_idx.select_crtc_source,
 				  (uint32_t *)&args,
 				  sizeof(args) / sizeof(uint32_t));
 }
@@ -1433,7 +1518,7 @@ static int atombios_set_crtc_dtd_timing(struct atom_context *ctx,
 	params[3] = mode->vso | ((uint32_t)mode->vspw << 16);
 	params[4] = misc_flags | ((uint32_t)crtc_id << 24);
 
-	return atombios_exec(ctx, ATOM_CMD_SET_CRTC_USING_DTD, params,
+	return atombios_exec(ctx, cmd_idx.set_crtc_using_dtd, params,
 			     sizeof(params) / sizeof(uint32_t));
 }
 
@@ -1442,14 +1527,14 @@ static int atombios_enable_crtc(struct atom_context *ctx, int crtc_id,
 {
 	uint32_t params[1];
 	params[0] = crtc_id | ((enable ? ATOM_ENABLE : ATOM_DISABLE) << 8);
-	return atombios_exec(ctx, ATOM_CMD_ENABLE_CRTC, params, 1);
+	return atombios_exec(ctx, cmd_idx.enable_crtc, params, 1);
 }
 
 static int atombios_blank_crtc(struct atom_context *ctx, int crtc_id, int blank)
 {
 	uint32_t params[1];
 	params[0] = crtc_id | ((blank ? ATOM_BLANKING : ATOM_BLANKING_OFF) << 8);
-	return atombios_exec(ctx, ATOM_CMD_BLANK_CRTC, params, 1);
+	return atombios_exec(ctx, cmd_idx.blank_crtc, params, 1);
 }
 
 static int atombios_disp_power_gating(struct atom_context *ctx, int crtc_id,
@@ -1457,7 +1542,7 @@ static int atombios_disp_power_gating(struct atom_context *ctx, int crtc_id,
 {
 	uint32_t params[1];
 	params[0] = crtc_id | ((gate ? ATOM_DISABLE : ATOM_ENABLE) << 8);
-	return atombios_exec(ctx, ATOM_CMD_ENABLE_DISP_POWER_GATING, params, 1);
+	return atombios_exec(ctx, cmd_idx.enable_disp_power_gating, params, 1);
 }
 
 /* ---- Main init entry point ---- */
@@ -1534,6 +1619,16 @@ static void atombios_init(struct device *dev)
 
 	printk(BIOS_INFO, "ATOMBIOS: VBIOS \"%s\" date %s version 0x%08x\n",
 	       ctx->name, ctx->date, ctx->version);
+
+	/* Detect v1 (atombios.h) vs v2 (atomfirmware.h) table format
+	 * and initialize command table indices accordingly */
+	if (atombios_detect_v2(ctx)) {
+		atombios_init_cmd_indices_v2(&cmd_idx);
+		printk(BIOS_INFO, "ATOMBIOS: using atomfirmware.h (v2) table format\n");
+	} else {
+		atombios_init_cmd_indices_v1(&cmd_idx);
+		printk(BIOS_INFO, "ATOMBIOS: using atombios.h (v1) table format\n");
+	}
 
 	/* Allocate scratch memory */
 	scratch = calloc(ATOM_SCRATCH_SIZE_DWORDS, sizeof(uint32_t));
@@ -1748,67 +1843,129 @@ static struct device_operations atombios_gfx_ops = {
 /*
  * AMD GPU PCI device ID table.
  *
- * Complete list of AMD GPUs that use atombios.h-format VBIOS tables,
- * extracted from the Linux kernel amdgpu driver (amdgpu_drv.c).
+ * Complete list of AMD GPUs extracted from the Linux kernel amdgpu and
+ * radeon drivers. The driver auto-detects whether the VBIOS uses v1
+ * (atombios.h) or v2 (atomfirmware.h) table format at runtime.
  *
- * This covers GCN 1.0 (Southern Islands) through GCN 4.0 (Polaris/VegaM).
- * Vega 10+ GPUs use a different VBIOS table format (atomfirmware.h) and
- * are not yet supported by this driver.
- *
- * To add a new GPU, find its PCI device ID with "lspci -nn" and add it
- * to the appropriate section below.
+ * To add a new GPU, find its PCI device ID with "lspci -nn" and add
+ * it to the appropriate section below.
  */
 static const unsigned short atombios_device_ids[] = {
-	/* --- GCN 1.0 / Southern Islands (SI) --- */
-	/* Tahiti (HD 7970/7950/7870 XT) */
+	/* --- R600/R700 (HD 2000-4000, radeon, atombios.h v1) --- */
+	/* R600 (HD 2900) */
+	0x9400, 0x9401, 0x9402, 0x9403, 0x9405, 0x940A, 0x940B, 0x940F,
+	/* RV610 (HD 2400) */
+	0x94C0, 0x94C1, 0x94C3, 0x94C4, 0x94C5, 0x94C6, 0x94C7, 0x94C8,
+	0x94C9, 0x94CB, 0x94CC, 0x94CD,
+	/* RV630 (HD 2600) */
+	0x9580, 0x9581, 0x9583, 0x9586, 0x9587, 0x9588, 0x9589, 0x958A,
+	0x958B, 0x958C, 0x958D, 0x958E, 0x958F,
+	/* RV620 (HD 3450) */
+	0x95C0, 0x95C2, 0x95C4, 0x95C5, 0x95C6, 0x95C7, 0x95C9, 0x95CC,
+	0x95CD, 0x95CE, 0x95CF,
+	/* RV635 (HD 3650) */
+	0x9590, 0x9591, 0x9593, 0x9595, 0x9596, 0x9597, 0x9598, 0x9599, 0x959B,
+	/* RV670 (HD 3870) */
+	0x9500, 0x9501, 0x9504, 0x9505, 0x9506, 0x9507, 0x9508, 0x9509,
+	0x950F, 0x9511, 0x9515, 0x9517, 0x9519,
+	/* RS780/RS880 (HD 3200/4200 IGP) */
+	0x9610, 0x9611, 0x9612, 0x9613, 0x9614, 0x9615, 0x9616,
+	0x9710, 0x9711, 0x9712, 0x9713, 0x9714, 0x9715,
+	/* RV770 (HD 4870) */
+	0x9440, 0x9441, 0x9442, 0x9443, 0x9444, 0x9446, 0x944A, 0x944B,
+	0x944C, 0x944E, 0x9450, 0x9452, 0x9456, 0x945A, 0x945B, 0x945E,
+	0x9460, 0x9462, 0x946A, 0x946B, 0x947A, 0x947B,
+	/* RV730 (HD 4670) */
+	0x9480, 0x9487, 0x9488, 0x9489, 0x948A, 0x948F, 0x9490, 0x9491,
+	0x9495, 0x9498, 0x949C, 0x949E, 0x949F,
+	/* RV710 (HD 4350) */
+	0x9540, 0x9541, 0x9542, 0x954E, 0x954F, 0x9552, 0x9553, 0x9555,
+	0x9557, 0x955F,
+	/* RV740 (HD 4770) */
+	0x94A0, 0x94A1, 0x94A3, 0x94B1, 0x94B3, 0x94B4, 0x94B5, 0x94B9,
+
+	/* --- Evergreen (HD 5000, radeon, atombios.h v1) --- */
+	/* Cypress (HD 5870) */
+	0x6880, 0x6888, 0x6889, 0x688A, 0x688C, 0x688D, 0x6898, 0x6899,
+	0x689B, 0x689C, 0x689D, 0x689E,
+	/* Juniper (HD 5770) */
+	0x68A0, 0x68A1, 0x68A8, 0x68A9, 0x68B0, 0x68B8, 0x68B9, 0x68BA,
+	0x68BE, 0x68BF,
+	/* Redwood (HD 5670) */
+	0x68C0, 0x68C1, 0x68C7, 0x68C8, 0x68C9, 0x68D8, 0x68D9, 0x68DA, 0x68DE,
+	/* Cedar (HD 5450) */
+	0x68E0, 0x68E1, 0x68E4, 0x68E5, 0x68E8, 0x68E9, 0x68F1, 0x68F2,
+	0x68F8, 0x68F9, 0x68FA, 0x68FE,
+	/* Palm/Sumo IGP (HD 6310/6xxx) */
+	0x9802, 0x9803, 0x9804, 0x9805, 0x9806, 0x9807, 0x9808, 0x9809, 0x980A,
+	0x9640, 0x9641, 0x9642, 0x9643, 0x9644, 0x9645, 0x9647, 0x9648,
+	0x9649, 0x964A, 0x964B, 0x964C, 0x964E, 0x964F,
+
+	/* --- Northern Islands (HD 6000, radeon, atombios.h v1) --- */
+	/* Cayman (HD 6970) */
+	0x6700, 0x6701, 0x6702, 0x6703, 0x6704, 0x6705, 0x6706, 0x6707,
+	0x6708, 0x6709, 0x6718, 0x6719, 0x671C, 0x671D, 0x671F,
+	/* Barts (HD 6870) */
+	0x6720, 0x6721, 0x6722, 0x6723, 0x6724, 0x6725, 0x6726, 0x6727,
+	0x6728, 0x6729, 0x6738, 0x6739, 0x673E,
+	/* Turks (HD 6670) */
+	0x6740, 0x6741, 0x6742, 0x6743, 0x6744, 0x6745, 0x6746, 0x6747,
+	0x6748, 0x6749, 0x674A, 0x6750, 0x6751, 0x6758, 0x6759, 0x675B,
+	0x675D, 0x675F, 0x6840, 0x6841, 0x6842, 0x6843, 0x6849, 0x6850,
+	0x6858, 0x6859,
+	/* Caicos (HD 6450) */
+	0x6760, 0x6761, 0x6762, 0x6763, 0x6764, 0x6765, 0x6766, 0x6767,
+	0x6768, 0x6770, 0x6771, 0x6772, 0x6778, 0x6779, 0x677B,
+	/* Aruba (Trinity/Richland APU) */
+	0x9900, 0x9901, 0x9903, 0x9904, 0x9905, 0x9906, 0x9907, 0x9908,
+	0x9909, 0x990A, 0x990B, 0x990C, 0x990D, 0x990E, 0x990F, 0x9910,
+	0x9913, 0x9917, 0x9918, 0x9919, 0x9990, 0x9991, 0x9992, 0x9993,
+	0x9994, 0x9995, 0x9996, 0x9997, 0x9998, 0x9999, 0x999A, 0x999B,
+	0x999C, 0x999D, 0x99A0, 0x99A2, 0x99A4,
+
+	/* --- GCN 1.0 / Southern Islands (SI, amdgpu, atombios.h v1) --- */
+	/* Tahiti (HD 7970) */
 	0x6780, 0x6784, 0x6788, 0x678A, 0x6790, 0x6791, 0x6792,
 	0x6798, 0x6799, 0x679A, 0x679B, 0x679E, 0x679F,
-	/* Pitcairn (HD 7870/7850) */
+	/* Pitcairn (HD 7870) */
 	0x6800, 0x6801, 0x6802, 0x6806, 0x6808, 0x6809,
 	0x6810, 0x6811, 0x6816, 0x6817, 0x6818, 0x6819,
-	/* Verde (HD 7750/7770) */
+	/* Verde (HD 7750) */
 	0x6820, 0x6821, 0x6822, 0x6823, 0x6824, 0x6825, 0x6826, 0x6827,
 	0x6828, 0x6829, 0x682A, 0x682B, 0x682C, 0x682D, 0x682F,
 	0x6830, 0x6831, 0x6835, 0x6837, 0x6838, 0x6839, 0x683B, 0x683D, 0x683F,
-	/* Oland (HD 8570/R5 240) */
+	/* Oland (HD 8570) */
 	0x6600, 0x6601, 0x6602, 0x6603, 0x6604, 0x6605, 0x6606, 0x6607,
-	0x6608, 0x6610, 0x6611, 0x6613, 0x6617,
-	0x6620, 0x6621, 0x6623, 0x6631,
+	0x6608, 0x6610, 0x6611, 0x6613, 0x6617, 0x6620, 0x6621, 0x6623, 0x6631,
 	/* Hainan (HD 8470) */
 	0x6660, 0x6663, 0x6664, 0x6665, 0x6667, 0x666F,
 
-	/* --- GCN 2.0 / Sea Islands (CIK) --- */
-	/* Bonaire (R7 260X/360) */
+	/* --- GCN 2.0 / Sea Islands (CIK, amdgpu, atombios.h v1) --- */
+	/* Bonaire (R7 260X) */
 	0x6640, 0x6641, 0x6646, 0x6647, 0x6649,
 	0x6650, 0x6651, 0x6658, 0x665C, 0x665D, 0x665F,
-	/* Hawaii (R9 290/290X/390) */
+	/* Hawaii (R9 290X) */
 	0x67A0, 0x67A1, 0x67A2, 0x67A8, 0x67A9, 0x67AA,
 	0x67B0, 0x67B1, 0x67B8, 0x67B9, 0x67BA, 0x67BE,
-	/* Kaveri APU */
+	/* Kaveri/Kabini/Mullins APU */
 	0x1304, 0x1305, 0x1306, 0x1307, 0x1309, 0x130A, 0x130B,
 	0x130C, 0x130D, 0x130E, 0x130F, 0x1310, 0x1311, 0x1312,
 	0x1313, 0x1315, 0x1316, 0x1317, 0x1318, 0x131B, 0x131C, 0x131D,
-	/* Kabini APU */
 	0x9830, 0x9831, 0x9832, 0x9833, 0x9834, 0x9835, 0x9836, 0x9837,
 	0x9838, 0x9839, 0x983A, 0x983B, 0x983C, 0x983D, 0x983E, 0x983F,
-	/* Mullins APU */
 	0x9850, 0x9851, 0x9852, 0x9853, 0x9854, 0x9855, 0x9856, 0x9857,
 	0x9858, 0x9859, 0x985A, 0x985B, 0x985C, 0x985D, 0x985E, 0x985F,
 
-	/* --- GCN 3.0 / Volcanic Islands (VI) --- */
-	/* Topaz (R7 M260/M265) */
+	/* --- GCN 3.0 / Volcanic Islands (VI, amdgpu, atombios.h v1) --- */
+	/* Topaz/Tonga/Fiji */
 	0x6900, 0x6901, 0x6902, 0x6903, 0x6907,
-	/* Tonga (R9 285/380) */
 	0x6920, 0x6921, 0x6928, 0x6929, 0x692B, 0x692F,
 	0x6930, 0x6938, 0x6939,
-	/* Fiji (R9 Fury/Nano) */
 	0x7300, 0x730F,
-	/* Carrizo APU */
-	0x9870, 0x9874, 0x9875, 0x9876, 0x9877,
-	/* Stoney APU */
-	0x98E4,
+	/* Carrizo/Stoney APU */
+	0x9870, 0x9874, 0x9875, 0x9876, 0x9877, 0x98E4,
 
-	/* --- GCN 4.0 / Polaris --- */
+	/* --- GCN 4.0 / Polaris (amdgpu, atombios.h v1) --- */
 	/* Polaris10 (RX 470/480/570/580) */
 	0x67C0, 0x67C1, 0x67C2, 0x67C4, 0x67C7, 0x67C8, 0x67C9,
 	0x67CA, 0x67CC, 0x67CF, 0x67D0, 0x67DF, 0x6FDF,
@@ -1819,6 +1976,49 @@ static const unsigned short atombios_device_ids[] = {
 	0x6980, 0x6981, 0x6985, 0x6986, 0x6987, 0x6995, 0x6997, 0x699F,
 	/* VegaM (Kaby Lake-G) */
 	0x694C, 0x694E, 0x694F,
+
+	/* --- GCN 5.0 / Vega (amdgpu, atomfirmware.h v2) --- */
+	/* Vega 10 (RX Vega 56/64) */
+	0x6860, 0x6861, 0x6862, 0x6863, 0x6864, 0x6867, 0x6868, 0x6869,
+	0x686A, 0x686B, 0x686C, 0x686D, 0x686E, 0x686F, 0x687F,
+	/* Vega 12 */
+	0x69A0, 0x69A1, 0x69A2, 0x69A3, 0x69AF,
+	/* Vega 20 (Radeon VII) */
+	0x66A0, 0x66A1, 0x66A2, 0x66A3, 0x66A4, 0x66A7, 0x66AF,
+	/* Raven (Ryzen APU) */
+	0x15DD, 0x15D8,
+
+	/* --- RDNA 1.0 / Navi (amdgpu, atomfirmware.h v2) --- */
+	/* Navi10 (RX 5700) */
+	0x7310, 0x7312, 0x7318, 0x7319, 0x731A, 0x731B, 0x731E, 0x731F,
+	/* Navi14 (RX 5500) */
+	0x7340, 0x7341, 0x7347, 0x734F,
+	/* Navi12 (Pro 5600M) */
+	0x7360, 0x7362,
+	/* Renoir APU */
+	0x15E7, 0x1636, 0x1638, 0x164C,
+
+	/* --- RDNA 2.0 / Navi 2x (amdgpu, atomfirmware.h v2) --- */
+	/* Sienna Cichlid (RX 6800/6900) */
+	0x73A0, 0x73A1, 0x73A2, 0x73A3, 0x73A5, 0x73A8, 0x73A9,
+	0x73AB, 0x73AC, 0x73AD, 0x73AE, 0x73AF, 0x73BF,
+	/* Navy Flounder (RX 6700) */
+	0x73C0, 0x73C1, 0x73C3, 0x73DA, 0x73DB, 0x73DC, 0x73DD, 0x73DE, 0x73DF,
+	/* Dimgrey Cavefish (RX 6600) */
+	0x73E0, 0x73E1, 0x73E2, 0x73E3, 0x73E8, 0x73E9,
+	0x73EA, 0x73EB, 0x73EC, 0x73ED, 0x73EF, 0x73FF,
+	/* Beige Goby (RX 6400) */
+	0x7420, 0x7421, 0x7422, 0x7423, 0x7424, 0x743F,
+	/* Yellow Carp (Rembrandt APU) */
+	0x164D, 0x1681,
+
+	/* --- RDNA 3.0 / Navi 3x (amdgpu, atomfirmware.h v2) --- */
+	/* Navi 31 (RX 7900 XTX/XT) */
+	0x744C, 0x7448,
+	/* Navi 32 (RX 7800/7700 XT) */
+	0x747E,
+	/* Navi 33 (RX 7600) */
+	0x7480,
 
 	0,  /* terminator */
 };
