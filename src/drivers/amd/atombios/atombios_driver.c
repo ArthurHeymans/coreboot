@@ -54,6 +54,7 @@
 	(offsetof(ATOM_MASTER_LIST_OF_DATA_TABLES, field) / sizeof(USHORT))
 
 #define ATOM_CMD_ASIC_INIT		CMD_IDX(ASIC_Init)
+#define ATOM_CMD_SET_PIXEL_CLOCK	CMD_IDX(SetPixelClock)
 #define ATOM_CMD_SET_CRTC_USING_DTD	CMD_IDX(SetCRTC_UsingDTDTiming)
 #define ATOM_CMD_ENABLE_CRTC		CMD_IDX(EnableCRTC)
 #define ATOM_CMD_BLANK_CRTC		CMD_IDX(BlankCRTC)
@@ -62,6 +63,7 @@
 #define ATOM_CMD_DIG_ENCODER_CTRL	CMD_IDX(DIGxEncoderControl)
 #define ATOM_CMD_DIG1_XMTR_CTRL	CMD_IDX(DIG1TransmitterControl)
 #define ATOM_CMD_PROCESS_I2C		CMD_IDX(ProcessI2cChannelTransaction)
+#define ATOM_CMD_PROCESS_AUX		CMD_IDX(ProcessAuxChannelTransaction)
 
 /* Maximum EDID block size */
 #define EDID_BLOCK_SIZE		128
@@ -72,6 +74,72 @@
 
 /* DDC slave addresses */
 #define DDC_EDID_ADDRESS	0x50
+
+/* ---- DPCD register addresses ---- */
+#define DP_DPCD_REV		0x000
+#define DP_MAX_LINK_RATE	0x001
+#define DP_MAX_LANE_COUNT	0x002
+#define DP_MAX_DOWNSPREAD	0x003
+#define DP_RECEIVER_CAP_SIZE	0x00F
+
+#define DP_LINK_BW_SET		0x100
+#define DP_LANE_COUNT_SET	0x101
+#define DP_TRAINING_PATTERN_SET	0x102
+#define DP_TRAINING_LANE0_SET	0x103
+
+#define DP_DOWNSPREAD_CTRL	0x107
+#define DP_EDP_CONFIGURATION_SET 0x10A
+
+#define DP_LANE0_1_STATUS	0x202
+#define DP_LANE2_3_STATUS	0x203
+#define DP_LANE_ALIGN_STATUS_UPDATED 0x204
+#define DP_ADJUST_REQUEST_LANE0_1 0x206
+#define DP_ADJUST_REQUEST_LANE2_3 0x207
+
+#define DP_SET_POWER		0x600
+
+/* DP link bandwidth codes */
+#define DP_LINK_BW_1_62		0x06
+#define DP_LINK_BW_2_7		0x0a
+#define DP_LINK_BW_5_4		0x14
+#define DP_LINK_BW_8_1		0x1e
+
+/* DP training patterns */
+#define DP_TRAINING_PATTERN_DISABLE	0x00
+#define DP_TRAINING_PATTERN_1		0x01
+#define DP_TRAINING_PATTERN_2		0x02
+#define DP_TRAINING_PATTERN_3		0x03
+
+/* DP lane status bits */
+#define DP_LANE_CR_DONE			(1 << 0)
+#define DP_LANE_CHANNEL_EQ_DONE		(1 << 1)
+#define DP_LANE_SYMBOL_LOCKED		(1 << 2)
+#define DP_CHANNEL_EQ_BITS		(DP_LANE_CR_DONE | DP_LANE_CHANNEL_EQ_DONE | DP_LANE_SYMBOL_LOCKED)
+#define DP_INTERLANE_ALIGN_DONE		(1 << 0)
+
+/* DP lane training bits */
+#define DP_TRAIN_VOLTAGE_SWING_MASK	0x03
+#define DP_TRAIN_PRE_EMPHASIS_MASK	0x18
+#define DP_TRAIN_PRE_EMPHASIS_SHIFT	3
+#define DP_TRAIN_MAX_SWING_REACHED	(1 << 2)
+#define DP_TRAIN_MAX_PRE_REACHED	(1 << 5)
+
+/* DP misc */
+#define DP_SPREAD_AMP_0_5		0x10
+#define DP_LANE_COUNT_ENHANCED_FRAME_EN	(1 << 7)
+#define DP_TPS3_SUPPORTED		(1 << 6)
+
+/* DP power states */
+#define DP_SET_POWER_D0			0x01
+#define DP_SET_POWER_D3			0x02
+
+/* DP AUX request types */
+#define DP_AUX_NATIVE_WRITE		0x8
+#define DP_AUX_NATIVE_READ		0x9
+#define DP_AUX_HEADER_SIZE		4
+
+/* DP link status size (0x202-0x207) */
+#define DP_LINK_STATUS_SIZE		6
 
 /* ---- Display path info discovered from ATOM tables ---- */
 
@@ -86,6 +154,16 @@ struct atombios_display_path {
 	uint8_t  encoder_mode;		/* ATOM_ENCODER_MODE_* */
 	uint16_t connector_obj_id;	/* Full connector object ID */
 };
+
+/* Forward declarations for functions used by DP link training */
+static int atombios_dig_encoder_setup(struct atom_context *ctx,
+				      const struct atombios_display_path *path,
+				      uint16_t pixel_clock_10khz,
+				      uint8_t action, uint8_t bpc);
+static int atombios_transmitter_control(struct atom_context *ctx,
+					const struct atombios_display_path *path,
+					uint16_t pixel_clock_10khz,
+					uint8_t action);
 
 /* ---- card_info MMIO callbacks ---- */
 
@@ -274,6 +352,547 @@ static int atombios_read_edid(struct atom_context *ctx, uint8_t i2c_line,
 	printk(BIOS_INFO, "ATOMBIOS: EDID read successfully on I2C line %d\n",
 	       i2c_line);
 	return 0;
+}
+
+/* ---- DP AUX channel via ProcessAuxChannelTransaction ---- */
+
+/*
+ * Perform a DP AUX channel transaction via the ATOM command table.
+ *
+ * The ATOM table uses the scratch register area for data:
+ *   scratch+4:  AUX request bytes (4-byte header + write payload)
+ *   scratch+20: AUX reply data
+ *
+ * Returns number of reply bytes on success, -1 on failure.
+ */
+static int atombios_dp_aux_transfer(struct atom_context *ctx,
+				    uint8_t aux_id, uint8_t hpd_id,
+				    uint8_t request, uint32_t address,
+				    uint8_t *send, uint8_t send_len,
+				    uint8_t *recv, uint8_t recv_size)
+{
+	PROCESS_AUX_CHANNEL_TRANSACTION_PARAMETERS_V2 args;
+	uint8_t *base;
+	uint8_t tx_buf[20];
+	int tx_size;
+	int recv_bytes;
+
+	if (send_len > 16)
+		return -1;
+
+	/* Build 4-byte AUX request header */
+	tx_buf[0] = address & 0xFF;
+	tx_buf[1] = (address >> 8) & 0xFF;
+	tx_buf[2] = (request << 4) | ((address >> 16) & 0xF);
+	tx_buf[3] = send_len ? (send_len - 1) : 0;
+
+	if (request == DP_AUX_NATIVE_WRITE && send_len > 0) {
+		tx_size = DP_AUX_HEADER_SIZE + send_len;
+		tx_buf[3] |= (tx_size << 4);
+		memcpy(tx_buf + DP_AUX_HEADER_SIZE, send, send_len);
+	} else {
+		tx_size = DP_AUX_HEADER_SIZE;
+		tx_buf[3] |= (tx_size << 4);
+	}
+
+	/* Copy request into scratch area at offset +4 (DWORD 1) */
+	base = (uint8_t *)(ctx->scratch + 1);
+	memcpy(base, tx_buf, tx_size);
+
+	memset(&args, 0, sizeof(args));
+	args.lpAuxRequest = 0 + 4;   /* byte offset in scratch for request */
+	args.lpDataOut = 16 + 4;     /* byte offset in scratch for reply */
+	args.ucDataOutLen = 0;
+	args.ucChannelID = aux_id;
+	args.ucDelay = 0;
+	args.ucHPD_ID = hpd_id;
+
+	if (atom_execute_table(ctx, ATOM_CMD_PROCESS_AUX,
+			       (uint32_t *)&args,
+			       sizeof(args) / sizeof(uint32_t))) {
+		return -1;
+	}
+
+	/* Check reply status: 0=ok, 1=timeout, 2=flags, 3=error */
+	if (args.ucReplyStatus != 0) {
+		printk(BIOS_DEBUG, "ATOMBIOS: AUX reply status %d\n",
+		       args.ucReplyStatus);
+		return -1;
+	}
+
+	recv_bytes = args.ucDataOutLen;
+	if (recv && recv_size && recv_bytes > 0) {
+		if (recv_bytes > recv_size)
+			recv_bytes = recv_size;
+		memcpy(recv, base + 16, recv_bytes);
+	}
+
+	return recv_bytes;
+}
+
+/* Convenience wrappers for DP AUX native read/write */
+
+static int dp_aux_native_write(struct atom_context *ctx,
+			       uint8_t aux_id, uint8_t hpd_id,
+			       uint32_t address, uint8_t *data, uint8_t len)
+{
+	return atombios_dp_aux_transfer(ctx, aux_id, hpd_id,
+					DP_AUX_NATIVE_WRITE, address,
+					data, len, NULL, 0);
+}
+
+static int dp_aux_native_read(struct atom_context *ctx,
+			      uint8_t aux_id, uint8_t hpd_id,
+			      uint32_t address, uint8_t *data, uint8_t len)
+{
+	return atombios_dp_aux_transfer(ctx, aux_id, hpd_id,
+					DP_AUX_NATIVE_READ, address,
+					NULL, 0, data, len);
+}
+
+static int dp_dpcd_writeb(struct atom_context *ctx,
+			  uint8_t aux_id, uint8_t hpd_id,
+			  uint32_t address, uint8_t val)
+{
+	return dp_aux_native_write(ctx, aux_id, hpd_id, address, &val, 1);
+}
+
+/* ---- DP link status helpers ---- */
+
+static uint8_t dp_get_lane_status(const uint8_t link_status[DP_LINK_STATUS_SIZE],
+				  int lane)
+{
+	int idx = (lane >> 1); /* 0 for lanes 0,1; 1 for lanes 2,3 */
+	int shift = (lane & 1) * 4;
+	return (link_status[idx] >> shift) & 0xF;
+}
+
+static bool dp_clock_recovery_ok(const uint8_t link_status[DP_LINK_STATUS_SIZE],
+				 int lane_count)
+{
+	int lane;
+	for (lane = 0; lane < lane_count; lane++) {
+		if (!(dp_get_lane_status(link_status, lane) & DP_LANE_CR_DONE))
+			return false;
+	}
+	return true;
+}
+
+static bool dp_channel_eq_ok(const uint8_t link_status[DP_LINK_STATUS_SIZE],
+			     int lane_count)
+{
+	int lane;
+	/* Check interlane alignment */
+	if (!(link_status[DP_LANE_ALIGN_STATUS_UPDATED - DP_LANE0_1_STATUS]
+	      & DP_INTERLANE_ALIGN_DONE))
+		return false;
+	for (lane = 0; lane < lane_count; lane++) {
+		if ((dp_get_lane_status(link_status, lane) & DP_CHANNEL_EQ_BITS)
+		    != DP_CHANNEL_EQ_BITS)
+			return false;
+	}
+	return true;
+}
+
+/*
+ * Extract voltage swing and pre-emphasis adjustment requests from the sink.
+ * DPCD registers 0x206-0x207 contain the requested settings.
+ */
+static void dp_get_adjust_train(const uint8_t link_status[DP_LINK_STATUS_SIZE],
+				int lane_count, uint8_t train_set[4])
+{
+	int lane;
+	uint8_t adj_req;
+	uint8_t voltage, pre_emph;
+
+	for (lane = 0; lane < lane_count; lane++) {
+		int idx = (lane >> 1) + (DP_ADJUST_REQUEST_LANE0_1 - DP_LANE0_1_STATUS);
+		int shift = (lane & 1) * 4;
+		adj_req = (link_status[idx] >> shift) & 0xF;
+
+		voltage = adj_req & 0x3;
+		pre_emph = (adj_req >> 2) & 0x3;
+
+		train_set[lane] = voltage;
+		if (voltage == 0x3)
+			train_set[lane] |= DP_TRAIN_MAX_SWING_REACHED;
+		train_set[lane] |= (pre_emph << DP_TRAIN_PRE_EMPHASIS_SHIFT);
+		if (pre_emph == 0x3)
+			train_set[lane] |= DP_TRAIN_MAX_PRE_REACHED;
+	}
+}
+
+/* ---- DP Link Training ---- */
+
+struct dp_link_train_info {
+	struct atom_context *ctx;
+	const struct atombios_display_path *path;
+	uint8_t aux_id;
+	uint8_t hpd_id;
+	uint8_t dpcd[DP_RECEIVER_CAP_SIZE];
+	uint8_t link_status[DP_LINK_STATUS_SIZE];
+	uint8_t train_set[4];
+	uint8_t dp_lane_count;
+	uint8_t dp_link_bw;
+	uint16_t pixel_clock_10khz;
+	bool tp3_supported;
+};
+
+static void dp_set_training_pattern(struct dp_link_train_info *info, int pattern)
+{
+	int encoder_cmd = 0;
+
+	switch (pattern) {
+	case DP_TRAINING_PATTERN_1:
+		encoder_cmd = ATOM_ENCODER_CMD_DP_LINK_TRAINING_PATTERN1;
+		break;
+	case DP_TRAINING_PATTERN_2:
+		encoder_cmd = ATOM_ENCODER_CMD_DP_LINK_TRAINING_PATTERN2;
+		break;
+	case DP_TRAINING_PATTERN_3:
+		encoder_cmd = ATOM_ENCODER_CMD_DP_LINK_TRAINING_PATTERN3;
+		break;
+	}
+
+	/* Set pattern on source */
+	atombios_dig_encoder_setup(info->ctx, info->path,
+				   info->pixel_clock_10khz,
+				   encoder_cmd, PANEL_8BIT_PER_COLOR);
+	/* Set pattern on sink */
+	dp_dpcd_writeb(info->ctx, info->aux_id, info->hpd_id,
+		       DP_TRAINING_PATTERN_SET, pattern);
+}
+
+static void dp_update_vs_emph(struct dp_link_train_info *info)
+{
+	/* Set voltage swing and pre-emphasis on source transmitter */
+	atombios_transmitter_control(info->ctx, info->path,
+				     info->pixel_clock_10khz,
+				     ATOM_TRANSMITTER_ACTION_SETUP_VSEMPH);
+
+	/* Set on sink (write lane training registers) */
+	dp_aux_native_write(info->ctx, info->aux_id, info->hpd_id,
+			    DP_TRAINING_LANE0_SET,
+			    info->train_set, info->dp_lane_count);
+}
+
+static int dp_link_train_init(struct dp_link_train_info *info)
+{
+	uint8_t tmp;
+
+	/* Power up the sink */
+	dp_dpcd_writeb(info->ctx, info->aux_id, info->hpd_id,
+		       DP_SET_POWER, DP_SET_POWER_D0);
+	mdelay(1);
+
+	/* Enable downspread if supported */
+	if (info->dpcd[DP_MAX_DOWNSPREAD] & 0x01)
+		dp_dpcd_writeb(info->ctx, info->aux_id, info->hpd_id,
+			       DP_DOWNSPREAD_CTRL, DP_SPREAD_AMP_0_5);
+	else
+		dp_dpcd_writeb(info->ctx, info->aux_id, info->hpd_id,
+			       DP_DOWNSPREAD_CTRL, 0);
+
+	/* Set lane count (with enhanced framing if supported) */
+	tmp = info->dp_lane_count;
+	if (info->dpcd[DP_MAX_LANE_COUNT] & (1 << 7)) /* enhanced frame cap */
+		tmp |= DP_LANE_COUNT_ENHANCED_FRAME_EN;
+	dp_dpcd_writeb(info->ctx, info->aux_id, info->hpd_id,
+		       DP_LANE_COUNT_SET, tmp);
+
+	/* Set link bandwidth */
+	dp_dpcd_writeb(info->ctx, info->aux_id, info->hpd_id,
+		       DP_LINK_BW_SET, info->dp_link_bw);
+
+	/* Start training on source encoder */
+	atombios_dig_encoder_setup(info->ctx, info->path,
+				   info->pixel_clock_10khz,
+				   ATOM_ENCODER_CMD_DP_LINK_TRAINING_START,
+				   PANEL_8BIT_PER_COLOR);
+
+	/* Disable training pattern on sink */
+	dp_dpcd_writeb(info->ctx, info->aux_id, info->hpd_id,
+		       DP_TRAINING_PATTERN_SET, DP_TRAINING_PATTERN_DISABLE);
+
+	return 0;
+}
+
+static int dp_link_train_cr(struct dp_link_train_info *info)
+{
+	uint8_t voltage;
+	int tries = 0;
+	int i;
+
+	/* Set training pattern 1 */
+	dp_set_training_pattern(info, DP_TRAINING_PATTERN_1);
+	memset(info->train_set, 0, sizeof(info->train_set));
+	dp_update_vs_emph(info);
+	udelay(400);
+
+	voltage = 0xFF;
+	while (1) {
+		/* Wait for clock recovery (100us per DP spec) */
+		udelay(100);
+
+		/* Read link status */
+		if (dp_aux_native_read(info->ctx, info->aux_id, info->hpd_id,
+				       DP_LANE0_1_STATUS, info->link_status,
+				       DP_LINK_STATUS_SIZE) < 0) {
+			printk(BIOS_ERR, "ATOMBIOS: DP link status read failed\n");
+			return -1;
+		}
+
+		if (dp_clock_recovery_ok(info->link_status, info->dp_lane_count)) {
+			printk(BIOS_INFO, "ATOMBIOS: DP clock recovery OK\n");
+			return 0;
+		}
+
+		/* Check if all lanes hit max swing */
+		for (i = 0; i < info->dp_lane_count; i++) {
+			if (!(info->train_set[i] & DP_TRAIN_MAX_SWING_REACHED))
+				break;
+		}
+		if (i == info->dp_lane_count) {
+			printk(BIOS_ERR, "ATOMBIOS: DP CR failed: max voltage reached\n");
+			return -1;
+		}
+
+		/* Check for no progress */
+		if ((info->train_set[0] & DP_TRAIN_VOLTAGE_SWING_MASK) == voltage) {
+			if (++tries >= 5) {
+				printk(BIOS_ERR, "ATOMBIOS: DP CR failed: 5 tries\n");
+				return -1;
+			}
+		} else {
+			tries = 0;
+		}
+		voltage = info->train_set[0] & DP_TRAIN_VOLTAGE_SWING_MASK;
+
+		/* Adjust based on sink request */
+		dp_get_adjust_train(info->link_status, info->dp_lane_count,
+				    info->train_set);
+		dp_update_vs_emph(info);
+	}
+}
+
+static int dp_link_train_ce(struct dp_link_train_info *info)
+{
+	int tries = 0;
+
+	/* Set training pattern 3 (preferred) or 2 */
+	if (info->tp3_supported)
+		dp_set_training_pattern(info, DP_TRAINING_PATTERN_3);
+	else
+		dp_set_training_pattern(info, DP_TRAINING_PATTERN_2);
+
+	while (1) {
+		/* Wait for channel equalization (400us per DP spec) */
+		udelay(400);
+
+		if (dp_aux_native_read(info->ctx, info->aux_id, info->hpd_id,
+				       DP_LANE0_1_STATUS, info->link_status,
+				       DP_LINK_STATUS_SIZE) < 0) {
+			printk(BIOS_ERR, "ATOMBIOS: DP link status read failed\n");
+			return -1;
+		}
+
+		if (dp_channel_eq_ok(info->link_status, info->dp_lane_count)) {
+			printk(BIOS_INFO, "ATOMBIOS: DP channel equalization OK\n");
+			return 0;
+		}
+
+		if (++tries > 5) {
+			printk(BIOS_ERR, "ATOMBIOS: DP channel EQ failed: 5 tries\n");
+			return -1;
+		}
+
+		dp_get_adjust_train(info->link_status, info->dp_lane_count,
+				    info->train_set);
+		dp_update_vs_emph(info);
+	}
+}
+
+static void dp_link_train_finish(struct dp_link_train_info *info)
+{
+	udelay(400);
+
+	/* Disable training pattern on sink */
+	dp_dpcd_writeb(info->ctx, info->aux_id, info->hpd_id,
+		       DP_TRAINING_PATTERN_SET, DP_TRAINING_PATTERN_DISABLE);
+
+	/* Complete training on source */
+	atombios_dig_encoder_setup(info->ctx, info->path,
+				   info->pixel_clock_10khz,
+				   ATOM_ENCODER_CMD_DP_LINK_TRAINING_COMPLETE,
+				   PANEL_8BIT_PER_COLOR);
+}
+
+/*
+ * Full DP link training sequence.
+ * Returns 0 on success, -1 on failure.
+ */
+static int atombios_dp_link_train(struct atom_context *ctx,
+				  const struct atombios_display_path *path,
+				  uint16_t pixel_clock_10khz,
+				  uint8_t aux_id, uint8_t hpd_id)
+{
+	struct dp_link_train_info info;
+	int ret;
+
+	memset(&info, 0, sizeof(info));
+	info.ctx = ctx;
+	info.path = path;
+	info.aux_id = aux_id;
+	info.hpd_id = hpd_id;
+	info.pixel_clock_10khz = pixel_clock_10khz;
+
+	/* Read receiver capabilities (DPCD 0x000-0x00E) */
+	if (dp_aux_native_read(ctx, aux_id, hpd_id, DP_DPCD_REV,
+			       info.dpcd, DP_RECEIVER_CAP_SIZE) < 0) {
+		printk(BIOS_ERR, "ATOMBIOS: failed to read DP receiver caps\n");
+		return -1;
+	}
+
+	printk(BIOS_INFO, "ATOMBIOS: DP DPCD rev=%d.%d max_rate=0x%02x max_lanes=%d\n",
+	       info.dpcd[0] >> 4, info.dpcd[0] & 0xF,
+	       info.dpcd[DP_MAX_LINK_RATE],
+	       info.dpcd[DP_MAX_LANE_COUNT] & 0x1F);
+
+	info.dp_link_bw = info.dpcd[DP_MAX_LINK_RATE];
+	info.dp_lane_count = info.dpcd[DP_MAX_LANE_COUNT] & 0x1F;
+	if (info.dp_lane_count > 4)
+		info.dp_lane_count = 4;
+	info.tp3_supported = !!(info.dpcd[DP_MAX_LANE_COUNT] & DP_TPS3_SUPPORTED);
+
+	/* Init */
+	ret = dp_link_train_init(&info);
+	if (ret)
+		goto done;
+
+	/* Phase 1: Clock Recovery */
+	ret = dp_link_train_cr(&info);
+	if (ret)
+		goto done;
+
+	/* Phase 2: Channel Equalization */
+	ret = dp_link_train_ce(&info);
+
+done:
+	/* Always finish training (even on failure) */
+	dp_link_train_finish(&info);
+
+	if (ret == 0) {
+		/* Enable video on source */
+		atombios_dig_encoder_setup(ctx, path, pixel_clock_10khz,
+					   ATOM_ENCODER_CMD_DP_VIDEO_ON,
+					   PANEL_8BIT_PER_COLOR);
+		printk(BIOS_INFO, "ATOMBIOS: DP link training succeeded (%d lanes @ 0x%02x)\n",
+		       info.dp_lane_count, info.dp_link_bw);
+	} else {
+		printk(BIOS_ERR, "ATOMBIOS: DP link training FAILED\n");
+	}
+
+	return ret;
+}
+
+/* ---- eDP panel power control ---- */
+
+/*
+ * Power on/off an eDP panel via the transmitter control table.
+ */
+static int atombios_edp_panel_power(struct atom_context *ctx,
+				    const struct atombios_display_path *path,
+				    int power_on)
+{
+	uint8_t action = power_on ? ATOM_TRANSMITTER_ACTION_POWER_ON
+				  : ATOM_TRANSMITTER_ACTION_POWER_OFF;
+
+	printk(BIOS_INFO, "ATOMBIOS: eDP panel power %s\n",
+	       power_on ? "ON" : "OFF");
+
+	return atombios_transmitter_control(ctx, path, 0, action);
+}
+
+/* ---- SetPixelClock ---- */
+
+/*
+ * Program the pixel clock PLL via the SetPixelClock ATOM command table.
+ *
+ * For most GPU generations, calling SetCRTC_UsingDTDTiming alone is
+ * sufficient as it internally programs the PLL. However, some generations
+ * require an explicit SetPixelClock call. This function handles versions
+ * 5, 6, and 7 of the PIXEL_CLOCK_PARAMETERS structure.
+ */
+static int atombios_set_pixel_clock(struct atom_context *ctx,
+				    const struct atombios_display_path *path,
+				    uint16_t pixel_clock_10khz,
+				    int crtc_id)
+{
+	uint8_t frev, crev;
+	union {
+		PIXEL_CLOCK_PARAMETERS_V5 v5;
+		PIXEL_CLOCK_PARAMETERS_V6 v6;
+		PIXEL_CLOCK_PARAMETERS_V7 v7;
+	} args;
+	uint8_t encoder_id;
+
+	if (!atom_parse_cmd_header(ctx, ATOM_CMD_SET_PIXEL_CLOCK, &frev, &crev))
+		return -1;
+
+	memset(&args, 0, sizeof(args));
+
+	/* Map encoder object to transmitter ID used by SetPixelClock */
+	switch (path->encoder_obj_id) {
+	case ENCODER_OBJECT_ID_INTERNAL_UNIPHY:
+		encoder_id = ENCODER_OBJECT_ID_INTERNAL_UNIPHY;
+		break;
+	case ENCODER_OBJECT_ID_INTERNAL_UNIPHY1:
+		encoder_id = ENCODER_OBJECT_ID_INTERNAL_UNIPHY1;
+		break;
+	case ENCODER_OBJECT_ID_INTERNAL_UNIPHY2:
+		encoder_id = ENCODER_OBJECT_ID_INTERNAL_UNIPHY2;
+		break;
+	default:
+		encoder_id = ENCODER_OBJECT_ID_INTERNAL_UNIPHY;
+		break;
+	}
+
+	printk(BIOS_DEBUG,
+	       "ATOMBIOS: SetPixelClock frev=%d crev=%d clock=%d*10kHz crtc=%d\n",
+	       frev, crev, pixel_clock_10khz, crtc_id);
+
+	switch (crev) {
+	case 5:
+		args.v5.ucCRTC = crtc_id;
+		args.v5.usPixelClock = pixel_clock_10khz;
+		args.v5.ucPpll = crtc_id; /* PPLL1 for CRTC1, etc. */
+		args.v5.ucTransmitterID = encoder_id;
+		args.v5.ucEncoderMode = path->encoder_mode;
+		args.v5.ucMiscInfo = 0;
+		break;
+	case 6:
+		args.v6.ulCrtcPclkFreq.ulPixelClock = pixel_clock_10khz;
+		args.v6.ulCrtcPclkFreq.ucCRTC = crtc_id;
+		args.v6.ucPpll = crtc_id;
+		args.v6.ucTransmitterID = encoder_id;
+		args.v6.ucEncoderMode = path->encoder_mode;
+		args.v6.ucMiscInfo = 0;
+		break;
+	case 7:
+	default:
+		/* V7 uses pixel clock in 100Hz units */
+		args.v7.ulPixelClock = (uint32_t)pixel_clock_10khz * 100;
+		args.v7.ucCRTC = crtc_id;
+		args.v7.ucPpll = crtc_id;
+		args.v7.ucTransmitterID = encoder_id;
+		args.v7.ucEncoderMode = path->encoder_mode;
+		args.v7.ucMiscInfo = 0;
+		break;
+	}
+
+	return atom_execute_table(ctx, ATOM_CMD_SET_PIXEL_CLOCK,
+				  (uint32_t *)&args,
+				  sizeof(args) / sizeof(uint32_t));
 }
 
 /* ---- Display path discovery from ATOM object tables ---- */
@@ -896,7 +1515,22 @@ do_modeset:
 	atombios_disp_power_gating(ctx, crtc_id, 0);
 
 	/*
-	 * Step 2: Initialize transmitter PHY.
+	 * Step 2: For eDP, power on the panel first.
+	 * The panel must be powered before link training.
+	 */
+	if (active_path >= 0 &&
+	    paths[active_path].encoder_mode == ATOM_ENCODER_MODE_DP &&
+	    paths[active_path].connector_type == 2) {
+		/* Check if this is eDP (connector obj contains eDP ID) */
+		uint8_t conn_id = (paths[active_path].connector_obj_id >> 8) & 0xF;
+		if (conn_id == CONNECTOR_OBJECT_ID_eDP) {
+			atombios_edp_panel_power(ctx, &paths[active_path], 1);
+			mdelay(200); /* Wait for panel to power up */
+		}
+	}
+
+	/*
+	 * Step 3: Initialize transmitter PHY.
 	 * The INIT action tells the PHY which connector it serves.
 	 */
 	if (active_path >= 0) {
@@ -908,7 +1542,7 @@ do_modeset:
 	}
 
 	/*
-	 * Step 3: Configure DIG encoder for the target mode.
+	 * Step 4: Configure DIG encoder for the target mode.
 	 */
 	if (active_path >= 0) {
 		printk(BIOS_INFO, "ATOMBIOS: configuring DIG encoder %d...\n",
@@ -919,21 +1553,28 @@ do_modeset:
 					   PANEL_8BIT_PER_COLOR);
 	}
 
-	/* Step 4: Route CRTC to encoder */
+	/* Step 5: Route CRTC to encoder */
 	if (active_path >= 0) {
 		printk(BIOS_INFO, "ATOMBIOS: routing CRTC %d -> DIG %d...\n",
 		       crtc_id, paths[active_path].dig_encoder);
 		atombios_select_crtc_source(ctx, &paths[active_path], crtc_id);
 	}
 
-	/* Step 5: Program CRTC timing */
+	/* Step 6: Program pixel clock PLL */
+	if (active_path >= 0) {
+		printk(BIOS_INFO, "ATOMBIOS: programming pixel clock...\n");
+		atombios_set_pixel_clock(ctx, &paths[active_path],
+					 pixel_clock_10khz, crtc_id);
+	}
+
+	/* Step 7: Program CRTC timing */
 	printk(BIOS_INFO, "ATOMBIOS: programming CRTC timing...\n");
 	atombios_set_crtc_dtd_timing(ctx, &mode, crtc_id);
 
-	/* Step 6: Enable CRTC */
+	/* Step 8: Enable CRTC */
 	atombios_enable_crtc(ctx, crtc_id, 1);
 
-	/* Step 7: Enable transmitter (drive the physical link) */
+	/* Step 9: Enable transmitter (drive the physical link) */
 	if (active_path >= 0) {
 		printk(BIOS_INFO, "ATOMBIOS: enabling transmitter...\n");
 		atombios_transmitter_control(ctx, &paths[active_path],
@@ -941,19 +1582,25 @@ do_modeset:
 					     ATOM_TRANSMITTER_ACTION_ENABLE);
 	}
 
-	/* Step 8: Unblank */
-	atombios_blank_crtc(ctx, crtc_id, 0);
-
-	/* Step 9: For DP, turn on video after link training would go here.
-	 * DP link training requires AUX channel communication (DPCD reads/
-	 * writes) and is significantly more complex. For now we support
-	 * HDMI and DVI which need no link training. */
+	/*
+	 * Step 10: For DP/eDP, perform link training.
+	 * This negotiates link rate and lane count with the sink,
+	 * runs clock recovery and channel equalization, then enables
+	 * video output.
+	 */
 	if (active_path >= 0 &&
 	    paths[active_path].encoder_mode == ATOM_ENCODER_MODE_DP) {
-		printk(BIOS_INFO,
-		       "ATOMBIOS: DP link training not yet implemented, "
-		       "display may not be active\n");
+		printk(BIOS_INFO, "ATOMBIOS: starting DP link training...\n");
+		if (atombios_dp_link_train(ctx, &paths[active_path],
+					   pixel_clock_10khz,
+					   paths[active_path].i2c_line,
+					   paths[active_path].hpd_id))
+			printk(BIOS_WARNING,
+			       "ATOMBIOS: DP link training failed, display may not work\n");
 	}
+
+	/* Step 11: Unblank */
+	atombios_blank_crtc(ctx, crtc_id, 0);
 
 	/* Register framebuffer with coreboot */
 	fb_add_framebuffer_info(fb_bar,
