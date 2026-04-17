@@ -91,7 +91,7 @@ static int pch_pcie_check_set_enabled(struct device *dev)
 
 	/* Go through static device tree list of devices
 	 * because enumeration is still in progress */
-	for (port = all_devices; port; port = port->next) {
+	for_each_device(port) {
 		/* Only care about PCIe root ports */
 		if (PCI_SLOT(port->path.pci.devfn) !=
 		    PCI_SLOT(dev->path.pci.devfn))
@@ -147,7 +147,7 @@ static void pch_pcie_devicetree_update(
 	       sizeof(new_hotplug_map));
 
 	/* Update the function numbers in the static devicetree */
-	for (dev = all_devices; dev; dev = dev->next) {
+	for_each_device(dev) {
 		u8 new_devfn;
 
 		/* Only care about PCH PCIe root ports */

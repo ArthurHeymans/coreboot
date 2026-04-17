@@ -97,7 +97,7 @@ void write_pci_cfg_irqs(void)
 	/* Populate the PCI cfg space header with the IRQ assignment */
 	printk(BIOS_DEBUG, "PCI_CFG IRQ: Write PCI config space IRQ assignments\n");
 
-	for (dev = all_devices; dev; dev = dev->next) {
+	for_each_device(dev) {
 		/*
 		 * Step 1: Get the INT_PIN and device structure to look for in the
 		 * PCI_INTR table pirq_data

@@ -116,7 +116,7 @@ static void pch_pirq_init(struct device *dev)
 	 * I am not so sure anymore he was right.
 	 */
 
-	for (irq_dev = all_devices; irq_dev; irq_dev = irq_dev->next) {
+	for_each_device(irq_dev) {
 		u8 int_pin = 0, int_line = 0;
 
 		if (!is_enabled_pci(irq_dev))

@@ -93,7 +93,7 @@ static void pch_pirq_init(struct device *dev)
 	pci_write_config8(dev, PIRQG_ROUT, pirq);
 	pci_write_config8(dev, PIRQH_ROUT, pirq);
 
-	for (irq_dev = all_devices; irq_dev; irq_dev = irq_dev->next) {
+	for_each_device(irq_dev) {
 		u8 int_pin = 0, int_line = 0;
 
 		if (!is_enabled_pci(irq_dev))
