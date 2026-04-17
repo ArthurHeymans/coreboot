@@ -189,7 +189,7 @@ static asmlinkage void ap_init(unsigned int index)
 
 	struct device *dev;
 	int i = 0;
-	for (dev = g_cpu_bus->children; dev; dev = dev->sibling)
+	for_each_child_on_bus(dev, g_cpu_bus)
 		if (i++ == index)
 			break;
 

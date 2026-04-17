@@ -789,7 +789,7 @@ static void pciexp_sync_max_payload_size(struct bus *bus, unsigned int max_paylo
 	struct device *child;
 
 	/* Set the max payload for children on the bus and their children, etc. */
-	for (child = bus->children; child; child = child->sibling) {
+	for_each_child_on_bus(child, bus) {
 		if (!is_pci(child))
 			continue;
 
@@ -893,7 +893,7 @@ void pciexp_scan_bus(struct bus *bus, unsigned int min_devfn,
 
 	pci_scan_bus(bus, min_devfn, max_devfn);
 
-	for (child = bus->children; child; child = child->sibling) {
+	for_each_child_on_bus(child, bus) {
 		if (child->path.type != DEVICE_PATH_PCI)
 			continue;
 		if ((child->path.pci.devfn < min_devfn) ||

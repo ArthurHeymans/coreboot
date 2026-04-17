@@ -50,7 +50,7 @@ static void pcix_tune_bus(struct bus *bus)
 {
 	struct device *child;
 
-	for (child = bus->children; child; child = child->sibling)
+	for_each_child_on_bus(child, bus)
 		pcix_tune_dev(child);
 }
 
