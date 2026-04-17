@@ -78,6 +78,19 @@ static inline void noop_set_resources(struct device *dev) {}
 struct bus {
 	DEVTREE_CONST struct device *dev;	/* This bridge device */
 	DEVTREE_CONST struct device *children;	/* devices behind this bridge */
+
+	/*
+	 * Optional path-sorted array of children emitted by sconfig.
+	 *
+	 * When set, `children_array` points to `children_count` device
+	 * pointers sorted ascending by `device_path` (see path_cmp()).
+	 * `find_dev_path()` uses this array for O(log n) lookups. Both
+	 * fields are NULL/0 on dynamically allocated buses where the
+	 * linked list via `children`/`sibling` remains authoritative.
+	 */
+	DEVTREE_CONST struct device *DEVTREE_CONST *children_array;
+	unsigned int	children_count;
+
 	unsigned int	bridge_ctrl;		/* Bridge control register */
 	uint16_t	bridge_cmd;		/* Bridge command register */
 	uint16_t	secondary;		/* secondary bus number */

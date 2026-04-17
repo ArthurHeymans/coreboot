@@ -162,6 +162,81 @@ static int path_eq(const struct device_path *path1,
 	return equal;
 }
 
+/*
+ * Three-way comparison between two device paths, used to sort children
+ * arrays and perform binary search lookups in the generated static
+ * devicetree.
+ *
+ * Paths are ordered first by `type`, then by the type-specific key fields
+ * in the same order that `path_eq()` uses for equality. Returns a value
+ * less than, equal to, or greater than zero if @a compares less than,
+ * equal to, or greater than @b.
+ */
+static inline int cmp_uint(unsigned int a, unsigned int b)
+{
+	return (a > b) - (a < b);
+}
+
+static inline int cmp_uintptr(uintptr_t a, uintptr_t b)
+{
+	return (a > b) - (a < b);
+}
+
+int path_cmp(const struct device_path *a, const struct device_path *b);
+int path_cmp(const struct device_path *a, const struct device_path *b)
+{
+	int r;
+
+	if (a->type != b->type)
+		return cmp_uint((unsigned int)a->type, (unsigned int)b->type);
+
+	switch (a->type) {
+	case DEVICE_PATH_NONE:
+	case DEVICE_PATH_ROOT:
+		return 0;
+	case DEVICE_PATH_PCI:
+		return cmp_uint(a->pci.devfn, b->pci.devfn);
+	case DEVICE_PATH_PNP:
+		r = cmp_uint(a->pnp.port, b->pnp.port);
+		return r ? r : cmp_uint(a->pnp.device, b->pnp.device);
+	case DEVICE_PATH_I2C:
+		r = cmp_uint(a->i2c.device, b->i2c.device);
+		return r ? r : cmp_uint(a->i2c.mode_10bit, b->i2c.mode_10bit);
+	case DEVICE_PATH_APIC:
+		return cmp_uint(a->apic.apic_id, b->apic.apic_id);
+	case DEVICE_PATH_DOMAIN:
+		return cmp_uint(a->domain.domain_id, b->domain.domain_id);
+	case DEVICE_PATH_CPU_CLUSTER:
+		return cmp_uint(a->cpu_cluster.cluster, b->cpu_cluster.cluster);
+	case DEVICE_PATH_CPU:
+		return cmp_uint(a->cpu.id, b->cpu.id);
+	case DEVICE_PATH_CPU_BUS:
+		return cmp_uint(a->cpu_bus.id, b->cpu_bus.id);
+	case DEVICE_PATH_IOAPIC:
+		return cmp_uint(a->ioapic.ioapic_id, b->ioapic.ioapic_id);
+	case DEVICE_PATH_GENERIC:
+		r = cmp_uint(a->generic.id, b->generic.id);
+		return r ? r : cmp_uint(a->generic.subid, b->generic.subid);
+	case DEVICE_PATH_SPI:
+		return cmp_uint(a->spi.cs, b->spi.cs);
+	case DEVICE_PATH_USB:
+		r = cmp_uint(a->usb.port_type, b->usb.port_type);
+		return r ? r : cmp_uint(a->usb.port_id, b->usb.port_id);
+	case DEVICE_PATH_MMIO:
+		return cmp_uintptr(a->mmio.addr, b->mmio.addr);
+	case DEVICE_PATH_GPIO:
+		return cmp_uint(a->gpio.id, b->gpio.id);
+	case DEVICE_PATH_MDIO:
+		return cmp_uint(a->mdio.addr, b->mdio.addr);
+	case DEVICE_PATH_GICC_V3:
+		return (a->gicc_v3.mpidr > b->gicc_v3.mpidr)
+		       - (a->gicc_v3.mpidr < b->gicc_v3.mpidr);
+	}
+
+	printk(BIOS_ERR, "Unknown device type in path_cmp: %d\n", a->type);
+	return 0;
+}
+
 /**
  * See if a device structure exists for path.
  *
