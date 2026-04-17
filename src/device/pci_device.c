@@ -1447,8 +1447,15 @@ void pci_scan_bus(struct bus *bus, unsigned int min_devfn,
 			continue;
 		}
 
-		/* Unlink it from list. */
+		/*
+		 * Unlink the leftover from the sibling chain and mark it
+		 * disabled. The latter is important because the device is
+		 * still referenced from the bus's path-sorted
+		 * `children_array`: a `find_dev_path()` binary-search lookup
+		 * would otherwise continue to return it after this unlink.
+		 */
 		*prev = dev->sibling;
+		dev->enabled = 0;
 
 		if (!once++)
 			printk(BIOS_WARNING, "PCI: Leftover static devices:\n");
