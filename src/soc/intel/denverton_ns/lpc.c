@@ -376,7 +376,7 @@ static void pch_pirq_init(struct device *dev)
 	write32((void *)PCH_PCR_ADDRESS(PID_ITSS, PCH_PCR_ITSS_IPC3),
 		config->ipc3);
 
-	for (irq_dev = all_devices; irq_dev; irq_dev = irq_dev->next) {
+	for_each_device(irq_dev) {
 		int devfn = irq_dev->path.pci.devfn;
 		u8 int_pin = 0, int_line = 0;
 

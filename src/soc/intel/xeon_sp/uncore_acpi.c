@@ -33,7 +33,7 @@ unsigned long acpi_create_srat_lapics(unsigned long current)
 
 	unsigned int sort_start = 0;
 	for (unsigned int thread_id = 0; thread_id < MAX_THREAD; thread_id++) {
-		for (cpu = all_devices; cpu; cpu = cpu->next) {
+		for_each_device(cpu) {
 			if (!is_enabled_cpu(cpu))
 				continue;
 			if (num_cpus >= ARRAY_SIZE(apic_ids))
@@ -48,7 +48,7 @@ unsigned long acpi_create_srat_lapics(unsigned long current)
 
 	for (unsigned int i = 0; i < num_cpus; i++) {
 		/* Match the sorted apic_ids to a struct device */
-		for (cpu = all_devices; cpu; cpu = cpu->next) {
+		for_each_device(cpu) {
 			if (!is_enabled_cpu(cpu))
 				continue;
 			if (cpu->path.apic.apic_id == apic_ids[i])

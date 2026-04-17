@@ -110,7 +110,7 @@ static void write_pci_config_irqs(void)
 	 * values taken from the Interrupt Route registers in the ILB
 	 */
 	printk(BIOS_DEBUG, "PCI_CFG IRQ: Write PIRQ assignments\n");
-	for (irq_dev = all_devices; irq_dev; irq_dev = irq_dev->next) {
+	for_each_device(irq_dev) {
 		if ((irq_dev->path.type != DEVICE_PATH_PCI) ||
 			(!irq_dev->enabled))
 			continue;
