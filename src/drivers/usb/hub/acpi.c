@@ -38,10 +38,10 @@ static const char *usb_hub_acpi_name(const struct device *dev)
 static void usb_hub_add_ports(const struct device *dev)
 {
 	const struct drivers_usb_hub_config *config = config_of(dev);
-	struct device *port = NULL;
+	struct device *port;
 	unsigned int child_count = 0;
 
-	while ((port = dev_bus_each_child(dev->downstream, port)) != NULL) {
+	for_each_child(port, dev) {
 		if (child_count++ >= config->port_count) {
 			printk(BIOS_WARNING, "%s cannot be added. Port Count limit reached.\n",
 			       dev_name(port));

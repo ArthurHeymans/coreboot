@@ -73,8 +73,8 @@ static void acpigen_write_pci_prt(const struct device *dev)
 	if (!pin_irq_map)
 		return;
 
-	struct device *child = NULL;
-	while ((child = dev_bus_each_child(dev->downstream, child))) {
+	struct device *child;
+	for_each_child(child, dev) {
 		if (!is_enabled_pci(child))
 			continue;
 

@@ -26,7 +26,7 @@ void variant_devtree_update(void)
 	if (mmio_dev == NULL)
 		return;
 
-	while ((child = dev_bus_each_child(mmio_dev->downstream, child)) != NULL) {
+	for_each_child(child, mmio_dev) {
 		if (child->path.type != DEVICE_PATH_I2C)
 			continue;
 		if (child->path.i2c.device != 0x1a)
