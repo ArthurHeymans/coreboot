@@ -244,6 +244,13 @@ int path_cmp(const struct device_path *a, const struct device_path *b)
  * @param path The relative path from the bus to the appropriate device.
  * @return Pointer to a device structure for the device on bus at path
  *         or 0/NULL if no device is found.
+ *
+ * Uses an O(log n) binary search on \c parent->children_array when it is
+ * populated (static devicetree emitted by sconfig). On a miss, and for
+ * buses that were created at runtime via \c alloc_bus(), falls back to
+ * an O(n) walk over the \c children/\c sibling linked list so that any
+ * devices appended via \c alloc_dev() after the static array was emitted
+ * remain reachable.
  */
 DEVTREE_CONST struct device *find_dev_path(
 	const struct bus *parent, const struct device_path *path)
@@ -254,6 +261,31 @@ DEVTREE_CONST struct device *find_dev_path(
 		BUG();
 		/* Return NULL in case asserts are considered non-fatal. */
 		return NULL;
+	}
+
+	if (parent->children_array) {
+		unsigned int lo = 0;
+		unsigned int hi = parent->children_count;
+
+		while (lo < hi) {
+			unsigned int mid = lo + (hi - lo) / 2;
+			DEVTREE_CONST struct device *candidate =
+				parent->children_array[mid];
+			int cmp = path_cmp(path, &candidate->path);
+
+			if (cmp == 0)
+				return candidate;
+			if (cmp < 0)
+				hi = mid;
+			else
+				lo = mid + 1;
+		}
+		/*
+		 * Fall through. A device added to this bus after sconfig
+		 * emitted the static array (e.g. via alloc_dev() during
+		 * PCI enumeration) only lives on the sibling chain and
+		 * must still be reachable by path.
+		 */
 	}
 
 	for (child = parent->children; child; child = child->sibling) {
