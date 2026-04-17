@@ -32,8 +32,8 @@ DECLARE_REGION(fdt_pointer)
 void smbios_cpu_get_core_counts(u16 *core_count, u16 *thread_count)
 {
 	*core_count = 0;
-	struct device *dev = NULL;
-	while ((dev = dev_find_path(dev, DEVICE_PATH_GICC_V3)))
+	struct device *dev;
+	for_each_device_of_type(dev, DEVICE_PATH_GICC_V3)
 		*core_count += 1;
 
 	*thread_count = 1;

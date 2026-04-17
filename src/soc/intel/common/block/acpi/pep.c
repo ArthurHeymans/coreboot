@@ -168,7 +168,7 @@ static void acpi_lpi_get_constraints(void *unused)
 	struct min_sleep_state *states_arr = soc_get_min_sleep_state_array(&size);
 
 	if (size && states_arr) {
-		for (dev = all_devices; dev; dev = dev->next) {
+		for_each_device(dev) {
 			if (!dev->enabled || dev->hidden)
 				continue;
 			if (get_min_sleep_state(dev, states_arr, size)
@@ -183,7 +183,7 @@ static void acpi_lpi_get_constraints(void *unused)
 		acpigen_write_package(num_entries);
 
 		size_t cpu_index = 0;
-		for (dev = all_devices; dev; dev = dev->next) {
+		for_each_device(dev) {
 			if (!dev->enabled || dev->hidden)
 				continue;
 			min_sleep_state = get_min_sleep_state(dev, states_arr, size);

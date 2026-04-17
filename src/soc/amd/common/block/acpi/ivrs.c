@@ -310,7 +310,7 @@ static unsigned long acpi_fill_ivrs(acpi_ivrs_t *ivrs, unsigned long current)
 	struct acpi_ivrs_ivhd *ivhd;
 	struct device *iommu_dev;
 	struct device *nb_dev;
-	struct device *dev = NULL;
+	struct device *dev;
 	unsigned int domain;
 
 	if (ivrs == NULL) {
@@ -320,7 +320,7 @@ static unsigned long acpi_fill_ivrs(acpi_ivrs_t *ivrs, unsigned long current)
 
 	ivhd = &ivrs->ivhd;
 
-	while ((dev = dev_find_path(dev, DEVICE_PATH_DOMAIN)) != NULL) {
+	for_each_device_of_type(dev, DEVICE_PATH_DOMAIN) {
 		nb_dev = pcidev_path_behind(dev->downstream, PCI_DEVFN(0, 0));
 		iommu_dev = pcidev_path_behind(dev->downstream, PCI_DEVFN(0, 2));
 		domain = dev_get_domain_id(dev);

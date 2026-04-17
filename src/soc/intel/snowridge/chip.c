@@ -211,13 +211,13 @@ static void chip_domain_resource_table_fill(config_t *chip_info)
 
 static void devicetree_domain_definition_update(config_t *chip_info)
 {
-	struct device *dev = NULL;
+	struct device *dev;
 	int domain;
 
 	/**
 	 * Check static domain id agaginst dynamic and fill domain device.
 	 */
-	while ((dev = dev_find_path(dev, DEVICE_PATH_DOMAIN)) != NULL) {
+	for_each_device_of_type(dev, DEVICE_PATH_DOMAIN) {
 		domain = dev_get_domain_id(dev);
 		if (domain >= MAX_DOMAIN)
 			die("Incorrect domain[%d] in devicetree\n", domain);

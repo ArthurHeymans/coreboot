@@ -47,11 +47,11 @@ static void get_usb_port_references(int port_number, struct device **usb2_port,
 				    struct device **usb3_port, struct device **usb4_port)
 {
 	struct drivers_usb_acpi_config *config;
-	struct device *port = NULL;
+	struct device *port;
 
 	/* Search through the devicetree for matching USB Type-C ports */
-	while ((port = dev_find_path(port, DEVICE_PATH_USB)) != NULL) {
-		if (!port->enabled || port->path.type != DEVICE_PATH_USB)
+	for_each_device_of_type(port, DEVICE_PATH_USB) {
+		if (!port->enabled)
 			continue;
 
 		config = port->chip_info;

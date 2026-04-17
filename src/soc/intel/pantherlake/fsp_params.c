@@ -482,7 +482,7 @@ static void fill_fsps_pci_ssid_params(FSP_S_CONFIG *s_cfg,
 	const struct device *dev;
 	size_t i = 0;
 
-	for (dev = all_devices; dev; dev = dev->next) {
+	for_each_device(dev) {
 		if (!(is_dev_enabled(dev) && dev->path.type == DEVICE_PATH_PCI &&
 		    dev->upstream->secondary == 0))
 			continue;

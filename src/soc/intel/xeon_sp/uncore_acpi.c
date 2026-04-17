@@ -364,7 +364,7 @@ static unsigned long acpi_create_drhd(unsigned long current, struct device *iomm
 
 static unsigned long acpi_create_atsr(unsigned long current)
 {
-	struct device *domain = NULL;
+	struct device *domain;
 	struct device *child, *dev;
 	struct resource *resource;
 
@@ -383,7 +383,7 @@ static unsigned long acpi_create_atsr(unsigned long current)
 
 		/* Early Xeon-SP have different PCI IDs for the VTD device on CSTACK vs PSTACK.
 		 * Iterate over PCI domains and then look for the VTD PCI device. */
-		while ((domain = dev_find_path(domain, DEVICE_PATH_DOMAIN))) {
+		for_each_device_of_type(domain, DEVICE_PATH_DOMAIN) {
 			dev = pcidev_path_behind(domain->downstream,
 						 PCI_DEVFN(VTD_DEV_NUM, VTD_FUNC_NUM));
 			assert(dev);
@@ -435,13 +435,13 @@ static unsigned long acpi_create_rmrr(unsigned long current)
 
 static unsigned long acpi_create_rhsa(unsigned long current)
 {
-	struct device *domain = NULL;
+	struct device *domain;
 	struct resource *resource;
 	struct device *dev;
 
 	/* Early Xeon-SP have different PCI IDs for the VTD device on CSTACK vs PSTACK.
 	 * Iterate over PCI domains and then look for the VTD PCI device. */
-	while ((domain = dev_find_path(domain, DEVICE_PATH_DOMAIN))) {
+	for_each_device_of_type(domain, DEVICE_PATH_DOMAIN) {
 		dev = pcidev_path_behind(domain->downstream,
 					 PCI_DEVFN(VTD_DEV_NUM, VTD_FUNC_NUM));
 		assert(dev);
@@ -497,8 +497,7 @@ static unsigned long acpi_create_satc(unsigned long current)
 		if (!soc_cpu_is_enabled(socket))
 			continue;
 
-		dev = NULL;
-		while ((dev = dev_find_path(dev, DEVICE_PATH_DOMAIN))) {
+		for_each_device_of_type(dev, DEVICE_PATH_DOMAIN) {
 			/* Only add devices for the current socket */
 			if (iio_pci_domain_socket_from_dev(dev) != socket)
 				continue;
@@ -529,13 +528,13 @@ static unsigned long acpi_fill_dmar(unsigned long current)
 	const IIO_UDS *hob = get_iio_uds();
 
 	// DRHD - iommu0 must be the last DRHD entry.
-	struct device *domain = NULL;
+	struct device *domain;
 	struct device *iommu0 = NULL;
 	struct device *dev;
 
 	/* Early Xeon-SP have different PCI IDs for the VTD device on CSTACK vs PSTACK.
 	 * Iterate over PCI domains and then look for the VTD PCI device. */
-	while ((domain = dev_find_path(domain, DEVICE_PATH_DOMAIN))) {
+	for_each_device_of_type(domain, DEVICE_PATH_DOMAIN) {
 		dev = pcidev_path_behind(domain->downstream,
 					 PCI_DEVFN(VTD_DEV_NUM, VTD_FUNC_NUM));
 		assert(dev);

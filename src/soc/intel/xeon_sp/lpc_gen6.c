@@ -65,10 +65,10 @@ static void soc_pch_pirq_init(void)
 		itss_set_irq_polarity(pirq_routing_legacy[i], 1);
 
 	/* Route irq for end-points */
-	struct device *domain = NULL;
-	while ((domain = dev_find_path(domain, DEVICE_PATH_DOMAIN))) {
-		struct device *irq_dev = NULL;
-		while ((irq_dev = dev_bus_each_child(domain->downstream, irq_dev))) {
+	struct device *domain;
+	for_each_device_of_type(domain, DEVICE_PATH_DOMAIN) {
+		struct device *irq_dev;
+		for_each_child(irq_dev, domain) {
 			if (!is_enabled_pci(irq_dev))
 				continue;
 			uint8_t int_pin = pci_read_config8(irq_dev, PCI_INTERRUPT_PIN);

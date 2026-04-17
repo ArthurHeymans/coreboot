@@ -6,8 +6,8 @@
 
 unsigned long acpi_fill_madt(unsigned long current)
 {
-	struct device *dev = NULL;
-	while ((dev = dev_find_path(dev, DEVICE_PATH_DOMAIN)) != NULL) {
+	struct device *dev;
+	for_each_device_of_type(dev, DEVICE_PATH_DOMAIN) {
 		struct resource *res = probe_resource(dev, IOMMU_IOAPIC_IDX);
 		if (!res)
 			continue;

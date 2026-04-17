@@ -495,14 +495,13 @@ void platform_fsp_silicon_init_params_cb(FSPS_UPD *supd)
 	params->PchLanEnable = is_devfn_enabled(PCH_DEVFN_GBE);
 
 	/* CNVi */
-	struct device *port = NULL;
+	struct device *port;
 	struct drivers_usb_acpi_config *usb_cfg = NULL;
 	bool usb_audio_offload = false;
 
 	/* Search through the devicetree for matching USB devices */
-	while ((port = dev_find_path(port, DEVICE_PATH_USB)) != NULL) {
-		/* Skip ports that are not enabled or not of USB type */
-		if (!port->enabled || port->path.type != DEVICE_PATH_USB)
+	for_each_device_of_type(port, DEVICE_PATH_USB) {
+		if (!port->enabled)
 			continue;
 
 		usb_cfg = port->chip_info;
@@ -510,7 +509,6 @@ void platform_fsp_silicon_init_params_cb(FSPS_UPD *supd)
 			usb_audio_offload = true;
 			break;
 		}
-
 	}
 
 	params->CnviMode = is_devfn_enabled(PCH_DEVFN_CNVI_WIFI);

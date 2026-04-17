@@ -168,11 +168,11 @@ struct pptt_topology *acpi_get_pptt_topology(void)
 
 	u32 cpu_id = 0;
 
-	struct device *dev   = NULL;
+	struct device *dev;
 	struct pptt_topology **it = &root_topology.child->sibling;
 	struct pptt_topology **sibling;
 
-	while ((dev = dev_find_path(dev, DEVICE_PATH_GICC_V3))) {
+	for_each_device_of_type(dev, DEVICE_PATH_GICC_V3) {
 		if (cpu_id == 0) {
 
 			cpu_id += 1;

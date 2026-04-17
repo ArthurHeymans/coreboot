@@ -108,7 +108,8 @@ static void update_board_layout(void)
 	printk(BIOS_INFO, "MB: Collecting Board Layout information\n");
 
 	/* Update CPU fields */
-	for (struct device *cpu = all_devices; cpu; cpu = cpu->next) {
+	struct device *cpu;
+	for_each_device(cpu) {
 		if (!is_enabled_cpu(cpu))
 			continue;
 		layout.cpu_count++;
