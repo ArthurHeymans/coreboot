@@ -573,7 +573,7 @@ void search_bus_resources(struct bus *bus, unsigned long type_mask,
 {
 	struct device *curdev;
 
-	for (curdev = bus->children; curdev; curdev = curdev->sibling) {
+	for_each_child_on_bus(curdev, bus) {
 		struct resource *res;
 
 		/* Ignore disabled devices. */
@@ -602,7 +602,7 @@ void search_global_resources(unsigned long type_mask, unsigned long type,
 {
 	struct device *curdev;
 
-	for (curdev = all_devices; curdev; curdev = curdev->next) {
+	for_each_device(curdev) {
 		struct resource *res;
 
 		/* Ignore disabled devices. */
@@ -643,7 +643,7 @@ void disable_children(struct bus *bus)
 {
 	struct device *child;
 
-	for (child = bus->children; child; child = child->sibling) {
+	for_each_child_on_bus(child, bus) {
 		if (child->downstream)
 			disable_children(child->downstream);
 		dev_set_enabled(child, 0);
@@ -664,7 +664,7 @@ bool dev_is_active_bridge(const struct device *dev)
 	if (!dev->downstream || !dev->downstream->children)
 		return 0;
 
-	for (child = dev->downstream->children; child; child = child->sibling) {
+	for_each_child(child, dev) {
 		if (child->path.type == DEVICE_PATH_NONE)
 			continue;
 		if (child->enabled)
@@ -702,7 +702,7 @@ static void resource_tree(const struct device *root, int debug_level, int depth)
 	if (!root->downstream)
 		return;
 
-	for (child = root->downstream->children; child; child = child->sibling)
+	for_each_child(child, root)
 		resource_tree(child, debug_level, depth + 1);
 }
 
@@ -739,7 +739,7 @@ void show_devs_tree(const struct device *dev, int debug_level, int depth)
 	if (!dev->downstream)
 		return;
 
-	for (sibling = dev->downstream->children; sibling; sibling = sibling->sibling)
+	for_each_child(sibling, dev)
 		show_devs_tree(sibling, debug_level, depth + 1);
 }
 
@@ -768,7 +768,7 @@ void show_all_devs(int debug_level, const char *msg)
 	/* Bail if not printing to screen. */
 	if (!printk(debug_level, "Show all devs... %s\n", msg))
 		return;
-	for (dev = all_devices; dev; dev = dev->next) {
+	for_each_device(dev) {
 		printk(debug_level, "%s: enabled %d\n",
 			  dev_path(dev), dev->enabled);
 	}
@@ -796,7 +796,7 @@ void show_all_devs_resources(int debug_level, const char *msg)
 	if (!printk(debug_level, "Show all devs with resources... %s\n", msg))
 		return;
 
-	for (dev = all_devices; dev; dev = dev->next) {
+	for_each_device(dev) {
 		struct resource *res;
 		printk(debug_level, "%s: enabled %d\n",
 			  dev_path(dev), dev->enabled);
@@ -899,7 +899,7 @@ int dev_count_cpu(void)
 	struct device *cpu;
 	int count = 0;
 
-	for (cpu = all_devices; cpu; cpu = cpu->next) {
+	for_each_device(cpu) {
 		if (!is_enabled_cpu(cpu))
 			continue;
 		count++;

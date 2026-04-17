@@ -221,7 +221,7 @@ static void compute_bridge_resources(const struct device *bridge, unsigned long 
 		 * Ensure that the resource requirements for all downstream bridges are
 		 * gathered before updating the window for current bridge resource.
 		 */
-		for (child = bus->children; child; child = child->sibling) {
+		for_each_child_on_bus(child, bus) {
 			if (!dev_has_children(child))
 				continue;
 			compute_bridge_resources(child, type_match, print_depth + 1);
@@ -258,7 +258,7 @@ static void compute_domain_resources(const struct device *domain)
 	if (domain->downstream == NULL)
 		return;
 
-	for (child = domain->downstream->children; child; child = child->sibling) {
+	for_each_child(child, domain) {
 		/* Skip if this is not a bridge or has no children under it. */
 		if (!dev_has_children(child))
 			continue;
@@ -301,7 +301,7 @@ static void avoid_fixed_resources(struct memranges *ranges, const struct device 
 	if (bus == NULL)
 		return;
 
-	for (child = bus->children; child != NULL; child = child->sibling)
+	for_each_child_on_bus(child, bus)
 		avoid_fixed_resources(ranges, child, mask_match);
 }
 
@@ -457,7 +457,7 @@ static void allocate_bridge_resources(const struct device *bridge)
 				     assign_resource_cb, &res->base);
 	}
 
-	for (child = bus->children; child != NULL; child = child->sibling) {
+	for_each_child_on_bus(child, bus) {
 		if (!dev_has_children(child))
 			continue;
 
@@ -493,7 +493,7 @@ static void allocate_domain_resources(const struct device *domain)
 	allocate_toplevel_resources(domain, IORESOURCE_MEM);
 
 	struct device *child;
-	for (child = domain->downstream->children; child; child = child->sibling) {
+	for_each_child(child, domain) {
 		if (!dev_has_children(child))
 			continue;
 
@@ -553,7 +553,7 @@ void allocate_resources(const struct device *root)
 	if ((root == NULL) || (root->downstream == NULL))
 		return;
 
-	for (child = root->downstream->children; child; child = child->sibling) {
+	for_each_child(child, root) {
 		if (child->path.type != DEVICE_PATH_DOMAIN)
 			continue;
 

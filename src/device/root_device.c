@@ -42,7 +42,7 @@ void enable_static_devices(struct device *bus)
 	if (!bus->downstream)
 		return;
 
-	for (child = bus->downstream->children; child; child = child->sibling)
+	for_each_child(child, bus)
 		enable_static_device(child);
 }
 
@@ -56,7 +56,7 @@ void scan_generic_bus(struct device *bus)
 	if (bus->downstream) {
 		bus->downstream->secondary = ++bus_max;
 
-		for (child = bus->downstream->children; child; child = child->sibling) {
+		for_each_child(child, bus) {
 			enable_static_device(child);
 			printk(BIOS_DEBUG, "bus: %s->", dev_path(child->upstream->dev));
 		}

@@ -36,7 +36,7 @@ void dev_initialize_chips(void)
 {
 	const struct device *dev;
 
-	for (dev = all_devices; dev; dev = dev->next) {
+	for_each_device(dev) {
 		/* Initialize chip if we haven't yet. */
 		if (dev->chip_ops && dev->chip_ops->init &&
 				!dev->chip_ops->initialized) {
@@ -58,7 +58,7 @@ void dev_finalize_chips(void)
 {
 	const struct device *dev;
 
-	for (dev = all_devices; dev; dev = dev->next) {
+	for_each_device(dev) {
 		/* Initialize chip if we haven't yet. */
 		if (dev->chip_ops && dev->chip_ops->final &&
 				!dev->chip_ops->finalized) {
@@ -191,7 +191,7 @@ static void read_resources(struct bus *bus)
 	       __func__, bus->segment_group, bus->secondary);
 
 	/* Walk through all devices and find which resources they need. */
-	for (curdev = bus->children; curdev; curdev = curdev->sibling) {
+	for_each_child_on_bus(curdev, bus) {
 		if (!curdev->enabled)
 			continue;
 
@@ -302,7 +302,7 @@ void assign_resources(struct bus *bus)
 	printk(BIOS_SPEW, "%s %s, segment group %d bus %d\n",
 	       dev_path(bus->dev), __func__, bus->segment_group, bus->secondary);
 
-	for (curdev = bus->children; curdev; curdev = curdev->sibling) {
+	for_each_child_on_bus(curdev, bus) {
 		if (!curdev->enabled || !curdev->resource_list)
 			continue;
 
@@ -335,14 +335,14 @@ static void enable_resources(struct bus *link)
 {
 	struct device *dev;
 
-	for (dev = link->children; dev; dev = dev->sibling) {
+	for_each_child_on_bus(dev, link) {
 		if (dev->enabled && dev->ops && dev->ops->enable_resources) {
 			post_log_path(dev);
 			dev->ops->enable_resources(dev);
 		}
 	}
 
-	for (dev = link->children; dev; dev = dev->sibling) {
+	for_each_child_on_bus(dev, link) {
 		if (dev->downstream)
 			enable_resources(dev->downstream);
 	}
@@ -411,7 +411,7 @@ void scan_bridges(struct bus *bus)
 {
 	struct device *child;
 
-	for (child = bus->children; child; child = child->sibling) {
+	for_each_child_on_bus(child, bus) {
 		if (!child->ops || !child->ops->scan_bus)
 			continue;
 		scan_bus(child);
@@ -565,13 +565,13 @@ static void init_link(struct bus *link)
 {
 	struct device *dev;
 
-	for (dev = link->children; dev; dev = dev->sibling) {
+	for_each_child_on_bus(dev, link) {
 		post_code(POSTCODE_BS_DEV_INIT);
 		post_log_path(dev);
 		init_dev(dev);
 	}
 
-	for (dev = link->children; dev; dev = dev->sibling)
+	for_each_child_on_bus(dev, link)
 		if (dev->downstream)
 			init_link(dev->downstream);
 }
@@ -622,10 +622,10 @@ static void final_link(struct bus *link)
 {
 	struct device *dev;
 
-	for (dev = link->children; dev; dev = dev->sibling)
+	for_each_child_on_bus(dev, link)
 		final_dev(dev);
 
-	for (dev = link->children; dev; dev = dev->sibling)
+	for_each_child_on_bus(dev, link)
 		if (dev->downstream)
 			final_link(dev->downstream);
 }

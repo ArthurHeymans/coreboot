@@ -345,7 +345,7 @@ static void acpi_create_ssdt_generator(acpi_header_t *ssdt, void *unused)
 
 	{
 		struct device *dev;
-		for (dev = all_devices; dev; dev = dev->next)
+		for_each_device(dev)
 			if (dev->enabled && dev->ops && dev->ops->acpi_fill_ssdt)
 				dev->ops->acpi_fill_ssdt(dev);
 		current = (unsigned long)acpigen_get_current();
@@ -1659,7 +1659,7 @@ unsigned long write_acpi_tables(const unsigned long start)
 
 	printk(BIOS_DEBUG, "current = %lx\n", current);
 
-	for (dev = all_devices; dev; dev = dev->next) {
+	for_each_device(dev) {
 		if (dev->ops && dev->ops->write_acpi_tables) {
 			current = dev->ops->write_acpi_tables(dev, current,
 				rsdp);

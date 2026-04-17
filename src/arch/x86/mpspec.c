@@ -161,7 +161,7 @@ void smp_write_processors(struct mp_config_table *mc)
 	cpu_feature_flags = cpu_get_feature_flags_edx();
 	/* order the output of the cpus to fix a bug in kernel 2.6.11 */
 	for (order_id = 0; order_id < 256; order_id++) {
-		for (cpu = all_devices; cpu; cpu = cpu->next) {
+		for_each_device(cpu) {
 			unsigned long cpu_flag;
 			if (!is_enabled_cpu(cpu))
 				continue;
@@ -474,7 +474,7 @@ void mptable_write_buses(struct mp_config_table *mc, int *max_pci_bus,
 	highest = 0;
 	memset(buses, 0, sizeof(buses));
 
-	for (dev = all_devices; dev; dev = dev->next) {
+	for_each_device(dev) {
 		struct bus *bus = dev->downstream;
 		if (!bus)
 			continue;

@@ -65,7 +65,7 @@ static unsigned long acpi_create_madt_lapics(unsigned long current)
 	struct device *cpu;
 	int index, apic_ids[CONFIG_MAX_CPUS] = {0}, num_cpus = 0, sort_start = 0;
 	for (unsigned int thread_id = 0; thread_id <= MAX_THREAD_ID; thread_id++) {
-		for (cpu = all_devices; cpu; cpu = cpu->next) {
+		for_each_device(cpu) {
 			if (!is_enabled_cpu(cpu))
 				continue;
 			if (num_cpus >= ARRAY_SIZE(apic_ids))
@@ -229,7 +229,7 @@ int acpi_create_srat_x2apic(acpi_srat_x2apic_t *x2apic, u32 node, u32 apic)
 
 unsigned long acpi_arch_fill_madt(acpi_madt_t *madt, unsigned long current)
 {
-	struct device *dev = NULL;
+	struct device *dev;
 
 	madt->lapic_addr = cpu_get_lapic_addr();
 
@@ -242,7 +242,7 @@ unsigned long acpi_arch_fill_madt(acpi_madt_t *madt, unsigned long current)
 	if (CONFIG(ACPI_COMMON_MADT_IOAPIC))
 		current = acpi_create_madt_ioapic_gsi0_default(current);
 
-	while ((dev = dev_find_path(dev, DEVICE_PATH_IOAPIC)) != NULL) {
+	for_each_device_of_type(dev, DEVICE_PATH_IOAPIC) {
 		/*
 		 CONFIG(ACPI_COMMON_MADT_IOAPIC) adds the IOAPIC with gsi_base = 0 above.
 		 Make sure to not add it twice when it's also part of the devicetree.

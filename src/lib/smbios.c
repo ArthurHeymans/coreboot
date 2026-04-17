@@ -692,7 +692,7 @@ static int smbios_write_type11(unsigned long *current, int *handle)
 	struct smbios_type11 *t = smbios_carve_table(*current, SMBIOS_OEM_STRINGS,
 						     sizeof(*t), *handle);
 
-	for (dev = all_devices; dev; dev = dev->next) {
+	for_each_device(dev) {
 		if (dev->ops && dev->ops->get_smbios_strings)
 			dev->ops->get_smbios_strings(dev, t);
 	}

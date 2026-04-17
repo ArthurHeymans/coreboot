@@ -170,7 +170,7 @@ static void fw_config_init(void *unused)
 {
 	struct device *dev;
 
-	for (dev = all_devices; dev; dev = dev->next) {
+	for_each_device(dev) {
 		const struct fw_config *probe;
 
 		if (!fw_config_probe_dev(dev, &probe)) {
