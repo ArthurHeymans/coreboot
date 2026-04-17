@@ -184,6 +184,20 @@ struct device {
 extern DEVTREE_CONST struct device	dev_root;
 /* list of all devices */
 extern DEVTREE_CONST struct device * DEVTREE_CONST all_devices;
+
+/*
+ * BFS-ordered flat array of every static device emitted by sconfig.
+ *
+ * `devtree_all_devices_count` is the number of entries. Only static
+ * devices declared in the mainboard's devicetree.cb are present;
+ * dynamically allocated devices (e.g. PCI devices discovered at scan
+ * time via `alloc_dev()`) are only reachable through the
+ * `all_devices` linked list, so code that needs to see those must
+ * continue to use `for_each_device()`.
+ */
+extern DEVTREE_CONST struct device *DEVTREE_CONST devtree_all_devices[];
+extern const size_t devtree_all_devices_count;
+
 extern struct resource	*free_resources;
 extern struct bus	*free_links;
 
@@ -611,5 +625,17 @@ void scan_static_bus(struct device *bus);
 	for_each_device(dev) \
 		if (!((dev)->enabled && (dev)->path.type == DEVICE_PATH_PCI)) \
 			{} else
+
+/*
+ * Iterate every PCI device in the tree (enabled or not).
+ */
+#define for_each_pci_device(dev) \
+	for_each_device_of_type((dev), DEVICE_PATH_PCI)
+
+/*
+ * Iterate every CPU device in the tree.
+ */
+#define for_each_cpu_device(dev) \
+	for_each_device_of_type((dev), DEVICE_PATH_CPU)
 
 #endif /* DEVICE_H */

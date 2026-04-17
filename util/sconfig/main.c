@@ -1435,6 +1435,37 @@ static void walk_device_tree(FILE *fil, FILE *head, struct device *ptr,
 	}
 }
 
+/*
+ * Emit a BFS-ordered flat array of pointers to every static device.
+ *
+ * This matches the order that `all_devices->next` already produces at
+ * runtime and is exposed to C via \c devtree_all_devices[] /
+ * \c devtree_all_devices_count in <device/device.h>.
+ */
+static void emit_all_devices_array(FILE *fil, struct device *root)
+{
+	struct queue_entry *bfs_q_head = NULL;
+	struct device *ptr;
+	size_t count = 0;
+
+	fprintf(fil,
+		"\n/* Flat BFS-ordered array of every static device. */\n");
+	fprintf(fil,
+		"DEVTREE_CONST struct device *DEVTREE_CONST devtree_all_devices[] = {\n");
+
+	enqueue_tail(&bfs_q_head, root);
+
+	while ((ptr = dequeue_head(&bfs_q_head))) {
+		add_children_to_queue(&bfs_q_head, ptr);
+		fprintf(fil, "\t&%s,\n", ptr->name);
+		count++;
+	}
+
+	fprintf(fil, "};\n");
+	fprintf(fil,
+		"const size_t devtree_all_devices_count = %zu;\n", count);
+}
+
 static void emit_chip_headers(FILE *fil, struct chip *chip)
 {
 	struct chip *tmp = chip;
@@ -2011,6 +2042,8 @@ static void generate_outputc(FILE *f, const char *static_header)
 	emit_chip_configs(f);
 	fprintf(f, "\n/* pass 1 */\n");
 	walk_device_tree(f, NULL, &base_root_dev, pass1);
+
+	emit_all_devices_array(f, &base_root_dev);
 }
 
 static void generate_outputd(FILE *gen, FILE *dev)
