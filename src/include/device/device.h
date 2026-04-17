@@ -514,4 +514,89 @@ void scan_smbus(struct device *bus);
 void scan_generic_bus(struct device *bus);
 void scan_static_bus(struct device *bus);
 
+/*
+ * Devicetree iteration macros.
+ *
+ * These macros are the supported way to walk the coreboot devicetree.
+ * Today they expand to open-coded pointer traversals over the legacy
+ * linked-list representation (`all_devices->next`, `bus->children->sibling`).
+ * A future representation change (see Documentation/internals/devicetree-v2.md)
+ * will replace the expansions with generated pointer arrays without touching
+ * call sites.
+ *
+ * Always prefer these macros over raw `->next`, `->sibling`,
+ * `->downstream->children`, or hand-rolled `dev_find_path()` loops. Direct
+ * pointer access through those fields is deprecated and will be removed in
+ * a later series of the migration.
+ *
+ * Iteration is not safe against unlinking the current device from the tree
+ * inside the loop body. Sites that mutate the linkage (for example
+ * `pci_scan_get_dev` and `pcie_rp_update_dev`) must keep open-coding their
+ * traversal for now.
+ */
+
+/*
+ * Iterate every device in the tree in devicetree-source order.
+ *
+ * @dev: a pre-declared `struct device *` (or `const struct device *`) loop
+ *       variable. On each iteration it is set to the current device.
+ *
+ * Using this macro anchors every device in the build unit once v2 lands;
+ * prefer a named alias (`DEV_PTR()`, `__pci_SEG_BUS_DEVFN`) when only one
+ * device is needed.
+ */
+#define for_each_device(dev) \
+	for ((dev) = all_devices; (dev) != NULL; (dev) = (dev)->next)
+
+/*
+ * Iterate every device whose `path.type` matches @path_type.
+ *
+ * @dev:       a pre-declared `struct device *` loop variable.
+ * @path_type: a `DEVICE_PATH_*` enumerator (e.g. `DEVICE_PATH_PCI`).
+ *
+ * Replaces the `while ((dev = dev_find_path(dev, TYPE)) != NULL)` idiom.
+ */
+#define for_each_device_of_type(dev, path_type) \
+	for ((dev) = dev_find_path(NULL, (path_type)); \
+	     (dev) != NULL; \
+	     (dev) = dev_find_path((dev), (path_type)))
+
+/*
+ * Iterate the direct children of @parent.
+ *
+ * @child:  a pre-declared `struct device *` loop variable.
+ * @parent: a `struct device *` whose children are walked. If @parent is NULL
+ *          or has no downstream bus the loop yields nothing.
+ */
+#define for_each_child(child, parent) \
+	for ((child) = ((parent) && (parent)->downstream) \
+			? (parent)->downstream->children : NULL; \
+	     (child) != NULL; \
+	     (child) = (child)->sibling)
+
+/*
+ * Iterate the direct children attached to @bus.
+ *
+ * Convenience form for call sites that already hold a `struct bus *`. Prefer
+ * `for_each_child()` when a `struct device *` parent is available; `struct
+ * bus` is slated for removal in a later migration series.
+ */
+#define for_each_child_on_bus(child, bus) \
+	for ((child) = (bus) ? (bus)->children : NULL; \
+	     (child) != NULL; \
+	     (child) = (child)->sibling)
+
+/*
+ * Iterate every enabled PCI device in the tree.
+ *
+ * @dev: a pre-declared `struct device *` loop variable.
+ *
+ * The dangling `if (...) {} else` is deliberate: it makes the macro behave
+ * like a single statement even when placed in an unbraced `if`/`else`.
+ */
+#define for_each_enabled_pci_device(dev) \
+	for_each_device(dev) \
+		if (!((dev)->enabled && (dev)->path.type == DEVICE_PATH_PCI)) \
+			{} else
+
 #endif /* DEVICE_H */
