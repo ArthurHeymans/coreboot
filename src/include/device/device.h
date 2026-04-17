@@ -79,6 +79,7 @@ struct bus {
 	DEVTREE_CONST struct device *dev;	/* This bridge device */
 	DEVTREE_CONST struct device *children;	/* devices behind this bridge */
 
+#if !DEVTREE_EARLY
 	/*
 	 * Optional path-sorted array of children emitted by sconfig.
 	 *
@@ -87,9 +88,14 @@ struct bus {
 	 * `find_dev_path()` uses this array for O(log n) lookups. Both
 	 * fields are NULL/0 on dynamically allocated buses where the
 	 * linked list via `children`/`sibling` remains authoritative.
+	 *
+	 * Early stages (bootblock/romstage/verstage/smm) never need the
+	 * binary search fast path and are size-sensitive, so the fields
+	 * and the underlying sconfig-emitted arrays are omitted there.
 	 */
 	DEVTREE_CONST struct device *DEVTREE_CONST *children_array;
 	unsigned int	children_count;
+#endif
 
 	unsigned int	bridge_ctrl;		/* Bridge control register */
 	uint16_t	bridge_cmd;		/* Bridge command register */
@@ -185,6 +191,7 @@ extern DEVTREE_CONST struct device	dev_root;
 /* list of all devices */
 extern DEVTREE_CONST struct device * DEVTREE_CONST all_devices;
 
+#if !DEVTREE_EARLY
 /*
  * BFS-ordered flat array of every static device emitted by sconfig.
  *
@@ -194,9 +201,13 @@ extern DEVTREE_CONST struct device * DEVTREE_CONST all_devices;
  * time via `alloc_dev()`) are only reachable through the
  * `all_devices` linked list, so code that needs to see those must
  * continue to use `for_each_device()`.
+ *
+ * Not emitted for early stages (bootblock/romstage/verstage/smm) which
+ * are size-sensitive and have no consumer.
  */
 extern DEVTREE_CONST struct device *DEVTREE_CONST devtree_all_devices[];
 extern const size_t devtree_all_devices_count;
+#endif
 
 extern struct resource	*free_resources;
 extern struct bus	*free_links;

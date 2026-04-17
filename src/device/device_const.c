@@ -162,6 +162,7 @@ static int path_eq(const struct device_path *path1,
 	return equal;
 }
 
+#if !DEVTREE_EARLY
 /*
  * Three-way comparison between two device paths, used to sort children
  * arrays and perform binary search lookups in the generated static
@@ -171,6 +172,9 @@ static int path_eq(const struct device_path *path1,
  * in the same order that `path_eq()` uses for equality. Returns a value
  * less than, equal to, or greater than zero if @a compares less than,
  * equal to, or greater than @b.
+ *
+ * Only compiled for ramstage; the binary search that consumes it is
+ * gated on !DEVTREE_EARLY.
  */
 static inline int cmp_uint(unsigned int a, unsigned int b)
 {
@@ -236,6 +240,7 @@ int path_cmp(const struct device_path *a, const struct device_path *b)
 	printk(BIOS_ERR, "Unknown device type in path_cmp: %d\n", a->type);
 	return 0;
 }
+#endif /* !DEVTREE_EARLY */
 
 /**
  * See if a device structure exists for path.
@@ -263,6 +268,7 @@ DEVTREE_CONST struct device *find_dev_path(
 		return NULL;
 	}
 
+#if !DEVTREE_EARLY
 	if (parent->children_array) {
 		unsigned int lo = 0;
 		unsigned int hi = parent->children_count;
@@ -287,6 +293,7 @@ DEVTREE_CONST struct device *find_dev_path(
 		 * must still be reachable by path.
 		 */
 	}
+#endif
 
 	for (child = parent->children; child; child = child->sibling) {
 		if (path_eq(path, &child->path))

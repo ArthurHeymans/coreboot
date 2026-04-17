@@ -1241,13 +1241,22 @@ static void emit_dev_bus(FILE *fil, struct device *ptr)
 	 * Emit the path-sorted array of children. It's referenced by the
 	 * `struct bus` initializer below so the runtime binary search in
 	 * `find_dev_path()` can use it without walking `->sibling`.
+	 *
+	 * Early stages (bootblock/romstage/verstage/smm) are size-sensitive
+	 * and never exercise the binary search fast path, so both the array
+	 * and the field assignments that reference it are gated on
+	 * `!DEVTREE_EARLY`. The matching guards on `struct bus::children_array`
+	 * / `children_count` and on the binary search itself live in
+	 * <device/device.h> and device_const.c respectively.
 	 */
+	fprintf(fil, "#if !DEVTREE_EARLY\n");
 	fprintf(fil,
 		"static DEVTREE_CONST struct device *DEVTREE_CONST %s_bus_children[] = {\n",
 		ptr->name);
 	for (i = 0; i < count; i++)
 		fprintf(fil, "\t&%s,\n", sorted[i]->name);
 	fprintf(fil, "};\n");
+	fprintf(fil, "#endif\n");
 	free(sorted);
 
 	fprintf(fil, "STORAGE struct bus %s_bus = {\n",
@@ -1255,8 +1264,10 @@ static void emit_dev_bus(FILE *fil, struct device *ptr)
 
 	fprintf(fil, "\t.dev = &%s,\n", bus->dev->name);
 	fprintf(fil, "\t.children = &%s,\n", bus->children->name);
+	fprintf(fil, "#if !DEVTREE_EARLY\n");
 	fprintf(fil, "\t.children_array = %s_bus_children,\n", ptr->name);
 	fprintf(fil, "\t.children_count = %zu,\n", count);
+	fprintf(fil, "#endif\n");
 
 	fprintf(fil, "};\n");
 }
@@ -1441,6 +1452,9 @@ static void walk_device_tree(FILE *fil, FILE *head, struct device *ptr,
  * This matches the order that `all_devices->next` already produces at
  * runtime and is exposed to C via \c devtree_all_devices[] /
  * \c devtree_all_devices_count in <device/device.h>.
+ *
+ * Only emitted for !DEVTREE_EARLY; early stages have no consumer and
+ * the array would bloat every one of bootblock/romstage/verstage/smm.
  */
 static void emit_all_devices_array(FILE *fil, struct device *root)
 {
@@ -1448,8 +1462,8 @@ static void emit_all_devices_array(FILE *fil, struct device *root)
 	struct device *ptr;
 	size_t count = 0;
 
-	fprintf(fil,
-		"\n/* Flat BFS-ordered array of every static device. */\n");
+	fprintf(fil, "\n#if !DEVTREE_EARLY\n");
+	fprintf(fil, "/* Flat BFS-ordered array of every static device. */\n");
 	fprintf(fil,
 		"DEVTREE_CONST struct device *DEVTREE_CONST devtree_all_devices[] = {\n");
 
@@ -1464,6 +1478,7 @@ static void emit_all_devices_array(FILE *fil, struct device *root)
 	fprintf(fil, "};\n");
 	fprintf(fil,
 		"const size_t devtree_all_devices_count = %zu;\n", count);
+	fprintf(fil, "#endif /* !DEVTREE_EARLY */\n");
 }
 
 static void emit_chip_headers(FILE *fil, struct chip *chip)
