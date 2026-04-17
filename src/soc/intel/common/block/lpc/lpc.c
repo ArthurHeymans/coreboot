@@ -114,10 +114,7 @@ static void pch_lpc_set_child_resources(struct device *dev)
 {
 	struct device *child;
 
-	if (!dev->downstream)
-		return;
-
-	for (child = dev->downstream->children; child; child = child->sibling)
+	for_each_child(child, dev)
 		pch_lpc_loop_resources(child);
 }
 

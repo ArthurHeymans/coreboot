@@ -153,9 +153,7 @@ static void add_ivhd_device_entries(struct device *parent, struct device *dev,
 				ivrs_add_device_or_bridge(parent, dev, current);
 	}
 
-	if (!dev->downstream)
-		return;
-	for (sibling = dev->downstream->children; sibling; sibling = sibling->sibling)
+	for_each_child(sibling, dev)
 		add_ivhd_device_entries(dev, sibling, depth + 1, depth, root_level, current,
 					nb_bus);
 }

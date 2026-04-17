@@ -284,10 +284,7 @@ static void lpc_enable_children_resources(struct device *dev)
 {
 	struct device *child;
 
-	if (!dev->downstream)
-		return;
-
-	for (child = dev->downstream->children; child; child = child->sibling) {
+	for_each_child(child, dev) {
 		if (!child->enabled)
 			continue;
 		if (child->path.type != DEVICE_PATH_PNP)

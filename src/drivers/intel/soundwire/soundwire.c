@@ -20,7 +20,7 @@ static bool link_enabled(const struct device *dev, unsigned int link)
 {
 	struct device *child;
 
-	for (child = dev->downstream->children; child; child = child->sibling) {
+	for_each_child(child, dev) {
 		if (child->enabled && child->path.type == DEVICE_PATH_GENERIC &&
 		    child->path.generic.id == link)
 			return true;

@@ -250,11 +250,9 @@ static void add_ivhd_device_entries(struct device *parent, struct device *dev,
 		}
 	}
 
-	if (dev->downstream) {
-		for (sibling = dev->downstream->children; sibling; sibling = sibling->sibling)
-			add_ivhd_device_entries(dev, sibling, depth + 1, depth, root_level,
-						current, ivhd_length);
-	}
+	for_each_child(sibling, dev)
+		add_ivhd_device_entries(dev, sibling, depth + 1, depth, root_level,
+					current, ivhd_length);
 
 	free(root_level);
 }
