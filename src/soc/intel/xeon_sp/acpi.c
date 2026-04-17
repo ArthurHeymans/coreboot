@@ -163,8 +163,8 @@ static void acpigen_write_pci_root_port_devices(const struct device *rp)
 	uint8_t psn;
 	bool have_psn = read_physical_slot_number(rp, &psn);
 
-	struct device *dev = NULL;
-	while ((dev = dev_bus_each_child(rp->downstream, dev))) {
+	struct device *dev;
+	for_each_child(dev, rp) {
 		if (!is_pci(dev))
 			continue;
 		const char *name = acpi_device_name(dev);
@@ -213,8 +213,8 @@ void acpigen_write_PRT_pre_routed(const struct device *br)
 	acpigen_write_name("_PRT");
 	entry_count = acpigen_write_package(0);
 
-	struct device *dev = NULL;
-	while ((dev = dev_bus_each_child(br->downstream, dev))) {
+	struct device *dev;
+	for_each_child(dev, br) {
 		if (!is_pci(dev))
 			continue;
 		dev_num = PCI_SLOT(dev->path.pci.devfn);

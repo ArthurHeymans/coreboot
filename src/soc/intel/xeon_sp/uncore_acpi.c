@@ -285,8 +285,8 @@ static unsigned long acpi_create_drhd(unsigned long current, struct device *iomm
 	/* 14nm Xeon-SP have per stack PCI IOAPIC */
 	{
 		const struct device *domain = dev_get_domain(iommu);
-		struct device *dev = NULL;
-		while ((dev = dev_bus_each_child(domain->downstream, dev))) {
+		struct device *dev;
+		for_each_child(dev, domain) {
 			if (!is_pci_ioapic(dev))
 				continue;
 
@@ -311,8 +311,8 @@ static unsigned long acpi_create_drhd(unsigned long current, struct device *iomm
 	if (flags != DRHD_INCLUDE_PCI_ALL) {
 		// Add PCIe Ports
 		const struct device *domain = dev_get_domain(iommu);
-		struct device *dev = NULL;
-		while ((dev = dev_bus_each_child(domain->downstream, dev)))
+		struct device *dev;
+		for_each_child(dev, domain)
 			if (is_pci_bridge(dev))
 				current +=
 				acpi_create_dmar_ds_pci_br_for_port(
@@ -462,8 +462,8 @@ static unsigned long acpi_create_rhsa(unsigned long current)
 
 static unsigned long xeonsp_create_satc(unsigned long current, struct device *domain)
 {
-	struct device *dev = NULL;
-	while ((dev = dev_bus_each_child(domain->downstream, dev))) {
+	struct device *dev;
+	for_each_child(dev, domain) {
 		if (pciexp_find_extended_cap(dev, PCIE_EXT_CAP_ID_ATS, 0)) {
 			const uint32_t b = domain->downstream->secondary;
 			const uint32_t d = PCI_SLOT(dev->path.pci.devfn);

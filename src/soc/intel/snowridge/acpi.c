@@ -287,9 +287,8 @@ static unsigned long acpi_create_drhd(unsigned long current, struct device *dev)
 					PCI_FUNC(DEV_PTR(dlb)->path.pci.devfn));
 			}
 		} else {
-			struct device *pci_bridge = NULL;
-			while ((pci_bridge = dev_bus_each_child(dev_get_domain(dev)->downstream,
-								pci_bridge))) {
+			struct device *pci_bridge;
+			for_each_child(pci_bridge, dev_get_domain(dev)) {
 				if (pci_bridge->vendor != PCI_VID_INTEL)
 					continue;
 
@@ -381,9 +380,8 @@ static unsigned long acpi_create_atsr(unsigned long current, struct device *dev)
 	       vtd_ext_cap);
 
 	bool first = true;
-	struct device *cpu_pcie_rp = NULL;
-	while ((cpu_pcie_rp =
-			dev_bus_each_child(dev_get_domain(dev)->downstream, cpu_pcie_rp))) {
+	struct device *cpu_pcie_rp;
+	for_each_child(cpu_pcie_rp, dev_get_domain(dev)) {
 		if (cpu_pcie_rp->vendor != PCI_VID_INTEL)
 			continue;
 

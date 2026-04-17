@@ -45,8 +45,8 @@ static void pcie_root_port_init(struct device *rp)
 
 	pcie_device_set_acpi_name(rp, "RP");
 
-	struct device *dev = NULL;
-	while ((dev = dev_bus_each_child(rp->downstream, dev))) {
+	struct device *dev;
+	for_each_child(dev, rp) {
 		if (!is_pci(dev))
 			continue;
 		pcie_device_set_acpi_name(dev, "DC");
