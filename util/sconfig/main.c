@@ -1175,16 +1175,88 @@ static void emit_resources(FILE *fil, struct device *ptr)
 	fprintf(fil, "\t };\n");
 }
 
+/*
+ * Map an sconfig bustype token (PCI, PNP, ...) to the matching
+ * `enum device_path_type` value declared in src/include/device/path.h.
+ *
+ * These values must stay in sync with that enum; sorting by this key and
+ * the device's (path_a, path_b) tuple is exactly the order that the
+ * runtime `path_cmp()` helper produces, which is what the generated
+ * `children_array` relies on for binary search.
+ */
+static int sconfig_dev_path_type(int bustype)
+{
+	switch (bustype) {
+	case PCI:         return 2;  /* DEVICE_PATH_PCI         */
+	case PNP:         return 3;  /* DEVICE_PATH_PNP         */
+	case I2C:         return 4;  /* DEVICE_PATH_I2C         */
+	case DOMAIN:      return 6;  /* DEVICE_PATH_DOMAIN      */
+	case CPU_CLUSTER: return 7;  /* DEVICE_PATH_CPU_CLUSTER */
+	case CPU:         return 8;  /* DEVICE_PATH_CPU         */
+	case GENERIC:     return 11; /* DEVICE_PATH_GENERIC     */
+	case SPI:         return 12; /* DEVICE_PATH_SPI         */
+	case USB:         return 13; /* DEVICE_PATH_USB         */
+	case MMIO:        return 14; /* DEVICE_PATH_MMIO        */
+	case GPIO:        return 15; /* DEVICE_PATH_GPIO        */
+	case MDIO:        return 16; /* DEVICE_PATH_MDIO        */
+	default:          return 0;  /* DEVICE_PATH_NONE        */
+	}
+}
+
+static int dev_path_cmp(const void *pa, const void *pb)
+{
+	const struct device *a = *(const struct device *const *)pa;
+	const struct device *b = *(const struct device *const *)pb;
+	int ta = sconfig_dev_path_type(a->bustype);
+	int tb = sconfig_dev_path_type(b->bustype);
+
+	if (ta != tb)
+		return (ta > tb) - (ta < tb);
+	if (a->path_a != b->path_a)
+		return (a->path_a > b->path_a) - (a->path_a < b->path_a);
+	return (a->path_b > b->path_b) - (a->path_b < b->path_b);
+}
+
 static void emit_dev_bus(FILE *fil, struct device *ptr)
 {
-	fprintf(fil, "STORAGE struct bus %s_bus = {\n",
-		ptr->name);
-
 	assert(ptr->bus && ptr->bus->children);
 	struct bus *bus = ptr->bus;
 
+	/* Count the children and build a sortable array. */
+	size_t count = 0;
+	for (struct device *c = bus->children; c; c = c->sibling)
+		count++;
+
+	struct device **sorted = calloc(count, sizeof(*sorted));
+	if (!sorted) {
+		fprintf(stderr, "ERROR: out of memory emitting children array\n");
+		exit(1);
+	}
+	size_t i = 0;
+	for (struct device *c = bus->children; c; c = c->sibling)
+		sorted[i++] = c;
+	qsort(sorted, count, sizeof(*sorted), dev_path_cmp);
+
+	/*
+	 * Emit the path-sorted array of children. It's referenced by the
+	 * `struct bus` initializer below so the runtime binary search in
+	 * `find_dev_path()` can use it without walking `->sibling`.
+	 */
+	fprintf(fil,
+		"static DEVTREE_CONST struct device *DEVTREE_CONST %s_bus_children[] = {\n",
+		ptr->name);
+	for (i = 0; i < count; i++)
+		fprintf(fil, "\t&%s,\n", sorted[i]->name);
+	fprintf(fil, "};\n");
+	free(sorted);
+
+	fprintf(fil, "STORAGE struct bus %s_bus = {\n",
+		ptr->name);
+
 	fprintf(fil, "\t.dev = &%s,\n", bus->dev->name);
 	fprintf(fil, "\t.children = &%s,\n", bus->children->name);
+	fprintf(fil, "\t.children_array = %s_bus_children,\n", ptr->name);
+	fprintf(fil, "\t.children_count = %zu,\n", count);
 
 	fprintf(fil, "};\n");
 }
