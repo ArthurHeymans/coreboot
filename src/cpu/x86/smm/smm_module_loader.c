@@ -7,11 +7,16 @@
 #include <commonlib/region.h>
 #include <console/console.h>
 #include <cpu/cpu.h>
+#if CONFIG(FSTART_PIC_SMM_IMAGE)
+#include <cpu/x86/fstart_smm.h>
+#include <ramstage/cpu/x86/fstart_smm_offsets.h>
+#endif
 #include <cpu/x86/smm.h>
 #include <device/device.h>
 #include <device/mmio.h>
 #include <rmodule.h>
 #include <smmstore.h>
+#include <southbridge/intel/common/pmutil.h>
 #include <stdio.h>
 #include <string.h>
 #include <types.h>
@@ -33,6 +38,10 @@
  * CPU. It then calls into the SMM handler module. It is encoded as an rmodule.
  */
 extern unsigned char _binary_smmstub_start[];
+#if CONFIG(FSTART_PIC_SMM_IMAGE)
+extern unsigned char _binary_fstart_smm_image_start[];
+extern unsigned char _binary_fstart_smm_image_end[];
+#endif
 
 /* Per CPU minimum stack size. */
 #define SMM_MINIMUM_STACK_SIZE 32
@@ -43,7 +52,7 @@ struct cpu_smm_info {
 	struct region ss;
 	struct region stub_code;
 };
-struct cpu_smm_info cpus[CONFIG_MAX_CPUS] = { 0 };
+struct cpu_smm_info cpus[CONFIG_MAX_CPUS] = {0};
 
 /*
  * This method creates a map of all the CPU entry points, save state locations
@@ -107,19 +116,20 @@ static int smm_create_map(const uintptr_t smbase, const unsigned int num_cpus,
 		(SMM_CODE_SEGMENT_SIZE - SMM_ENTRY_OFFSET - stub_size) / needed_ss_size;
 
 	if (cpus_per_segment == 0) {
-		printk(BIOS_ERR, "%s: CPUs won't fit in segment. Broken stub or save state size\n",
+		printk(BIOS_ERR,
+		       "%s: CPUs won't fit in segment. Broken stub or save state size\n",
 		       __func__);
 		return 0;
 	}
 
 	for (unsigned int i = 0; i < num_cpus; i++) {
 		const size_t segment_number = i / cpus_per_segment;
-		cpus[i].smbase = smbase - SMM_CODE_SEGMENT_SIZE * segment_number
-			- needed_ss_size * (i % cpus_per_segment);
+		cpus[i].smbase = smbase - SMM_CODE_SEGMENT_SIZE * segment_number -
+				 needed_ss_size * (i % cpus_per_segment);
 		cpus[i].stub_code = region_create(cpus[i].smbase + SMM_ENTRY_OFFSET, stub_size);
-		cpus[i].ss = region_create(
-				cpus[i].smbase + SMM_CODE_SEGMENT_SIZE - params->cpu_save_state_size,
-				params->cpu_save_state_size);
+		cpus[i].ss = region_create(cpus[i].smbase + SMM_CODE_SEGMENT_SIZE -
+						   params->cpu_save_state_size,
+					   params->cpu_save_state_size);
 		cpus[i].active = 1;
 	}
 
@@ -169,14 +179,13 @@ static void smm_place_entry_code(const unsigned int num_cpus)
 	/* start at 1, the first CPU stub code is already there */
 	size = region_sz(&cpus[0].stub_code);
 	for (i = 1; i < num_cpus; i++) {
-		printk(BIOS_DEBUG,
-		       "SMM Module: placing smm entry code at %zx,  cpu # 0x%x\n",
+		printk(BIOS_DEBUG, "SMM Module: placing smm entry code at %zx,  cpu # 0x%x\n",
 		       region_offset(&cpus[i].stub_code), i);
 		memcpy((void *)region_offset(&cpus[i].stub_code),
 		       (void *)region_offset(&cpus[0].stub_code), size);
-		printk(BIOS_SPEW, "%s: copying from %zx to %zx 0x%zx bytes\n",
-		       __func__, region_offset(&cpus[0].stub_code),
-		       region_offset(&cpus[i].stub_code), size);
+		printk(BIOS_SPEW, "%s: copying from %zx to %zx 0x%zx bytes\n", __func__,
+		       region_offset(&cpus[0].stub_code), region_offset(&cpus[i].stub_code),
+		       size);
 	}
 }
 
@@ -184,7 +193,7 @@ static uintptr_t stack_top;
 static size_t g_stack_size;
 
 int smm_setup_stack(const uintptr_t perm_smbase, const size_t perm_smram_size,
-		     const unsigned int total_cpus, const size_t stack_size)
+		    const unsigned int total_cpus, const size_t stack_size)
 {
 	/* Need a minimum stack size and alignment. */
 	if (stack_size <= SMM_MINIMUM_STACK_SIZE || (stack_size & 3) != 0) {
@@ -413,12 +422,10 @@ static void print_region(const char *name, const struct region region)
 }
 
 /* STM + Handler + (Stub + Save state) * CONFIG_MAX_CPUS + stacks + page tables*/
-#define SMM_REGIONS_ARRAY_SIZE (1  + 1 + CONFIG_MAX_CPUS * 2 + 1 + 1)
+#define SMM_REGIONS_ARRAY_SIZE (1 + 1 + CONFIG_MAX_CPUS * 2 + 1 + 1)
 
-static int append_and_check_region(const struct region smram,
-				   const struct region region,
-				   struct region *region_list,
-				   const char *name)
+static int append_and_check_region(const struct region smram, const struct region region,
+				   struct region *region_list, const char *name)
 {
 	unsigned int region_counter = 0;
 	for (; region_counter < SMM_REGIONS_ARRAY_SIZE; region_counter++)
@@ -448,15 +455,15 @@ static int append_and_check_region(const struct region smram,
 	return 0;
 }
 
-#define _PRES (1ULL << 0)
-#define _RW   (1ULL << 1)
-#define _US   (1ULL << 2)
-#define _A    (1ULL << 5)
-#define _D    (1ULL << 6)
-#define _PS   (1ULL << 7)
-#define _GEN_DIR(a) (_PRES + _RW + _US + _A + (a))
-#define _GEN_PAGE(a) (_PRES + _RW + _US + _PS + _A +  _D + (a))
-#define PTE_SIZE 8
+#define _PRES        (1ULL << 0)
+#define _RW          (1ULL << 1)
+#define _US          (1ULL << 2)
+#define _A           (1ULL << 5)
+#define _D           (1ULL << 6)
+#define _PS          (1ULL << 7)
+#define _GEN_DIR(a)  (_PRES + _RW + _US + _A + (a))
+#define _GEN_PAGE(a) (_PRES + _RW + _US + _PS + _A + _D + (a))
+#define PTE_SIZE     8
 
 /* Return the PML4E */
 static uintptr_t install_page_table(const uintptr_t handler_base)
@@ -467,8 +474,8 @@ static uintptr_t install_page_table(const uintptr_t handler_base)
 	 * CONFIG_CPU_PT_ROM_MAP_GB 1G pages or
 	 * CONFIG_CPU_PT_ROM_MAP_GB PDPE entries with 512 * 2M pages
 	 */
-	const size_t ptes_needed = CONFIG_CPU_PT_ROM_MAP_GB + (one_g_pages ? 0 :
-				   512 * CONFIG_CPU_PT_ROM_MAP_GB);
+	const size_t ptes_needed =
+		CONFIG_CPU_PT_ROM_MAP_GB + (one_g_pages ? 0 : 512 * CONFIG_CPU_PT_ROM_MAP_GB);
 	const uintptr_t pages_base = ALIGN_DOWN(handler_base - ptes_needed * PTE_SIZE, 4096);
 	const uintptr_t pml4e = ALIGN_DOWN(pages_base - 8, 4096);
 	uintptr_t pdpt;
@@ -491,6 +498,276 @@ static uintptr_t install_page_table(const uintptr_t handler_base)
 
 	return pml4e;
 }
+
+#if CONFIG(FSTART_PIC_SMM_IMAGE)
+static int fstart_smm_create_map(const uintptr_t smbase, const unsigned int num_cpus,
+				 const struct smm_loader_params *params, size_t stub_size)
+{
+	if (ARRAY_SIZE(cpus) < num_cpus) {
+		printk(BIOS_ERR, "%s: increase MAX_CPUS in Kconfig\n", __func__);
+		return 0;
+	}
+
+	if (stub_size >= SMM_ENTRY_OFFSET) {
+		printk(BIOS_ERR, "%s: entry stub too large\n", __func__);
+		return 0;
+	}
+
+	const size_t needed_ss_size = MAX(params->cpu_save_state_size, stub_size);
+	const size_t cpus_per_segment =
+		(SMM_CODE_SEGMENT_SIZE - SMM_ENTRY_OFFSET - stub_size) / needed_ss_size;
+
+	if (cpus_per_segment == 0) {
+		printk(BIOS_ERR, "%s: CPUs won't fit in segment\n", __func__);
+		return 0;
+	}
+
+	memset(cpus, 0, sizeof(cpus));
+	for (unsigned int i = 0; i < num_cpus; i++) {
+		const size_t segment_number = i / cpus_per_segment;
+		cpus[i].smbase = smbase - SMM_CODE_SEGMENT_SIZE * segment_number -
+				 needed_ss_size * (i % cpus_per_segment);
+		cpus[i].stub_code = region_create(cpus[i].smbase + SMM_ENTRY_OFFSET, stub_size);
+		cpus[i].ss = region_create(cpus[i].smbase + SMM_CODE_SEGMENT_SIZE -
+						   params->cpu_save_state_size,
+					   params->cpu_save_state_size);
+		cpus[i].active = 1;
+	}
+
+	return 1;
+}
+
+static int fstart_smm_range_ok(const struct fstart_smm_image_header *header, u32 offset,
+			       u32 size)
+{
+	if (offset < header->header_size)
+		return 0;
+	if (offset > header->image_size)
+		return 0;
+	if (size > header->image_size - offset)
+		return 0;
+	return 1;
+}
+
+static int fstart_smm_validate_image(const struct fstart_smm_image_header *header,
+				     size_t blob_size)
+{
+	if (blob_size < sizeof(*header)) {
+		printk(BIOS_ERR, "fstart SMM image: too small\n");
+		return -1;
+	}
+	if (header->magic != FSTART_SMM_IMAGE_MAGIC ||
+	    header->version != FSTART_SMM_IMAGE_VERSION) {
+		printk(BIOS_ERR, "fstart SMM image: bad magic/version\n");
+		return -1;
+	}
+	if (header->header_size != sizeof(*header) ||
+	    header->entry_desc_size != sizeof(struct fstart_smm_entry_descriptor)) {
+		printk(BIOS_ERR, "fstart SMM image: ABI size mismatch\n");
+		return -1;
+	}
+	if (header->image_size > blob_size) {
+		printk(BIOS_ERR, "fstart SMM image: truncated blob\n");
+		return -1;
+	}
+	if (header->entry_count < CONFIG_MAX_CPUS ||
+	    FSTART_SMM_ENTRY_COUNT != header->entry_count ||
+	    FSTART_SMM_ENTRIES_OFFSET != header->entries_offset ||
+	    FSTART_SMM_COMMON_OFFSET != header->common_offset ||
+	    FSTART_SMM_COMMON_ENTRY_OFFSET != header->common_entry_offset ||
+	    FSTART_SMM_RUNTIME_OFFSET != header->runtime_offset ||
+	    FSTART_SMM_MODULE_ARGS_OFFSET != header->module_args_offset) {
+		printk(BIOS_ERR, "fstart SMM image: generated header does not match blob\n");
+		return -1;
+	}
+	if (!fstart_smm_range_ok(header, header->entries_offset,
+				 header->entry_count * header->entry_desc_size) ||
+	    !fstart_smm_range_ok(header, header->common_offset, header->common_size)) {
+		printk(BIOS_ERR, "fstart SMM image: range outside image\n");
+		return -1;
+	}
+	if (header->common_entry_offset >= header->common_size) {
+		printk(BIOS_ERR, "fstart SMM image: bad common entry offset\n");
+		return -1;
+	}
+	if (header->runtime_offset && header->runtime_offset >= header->common_size) {
+		printk(BIOS_ERR, "fstart SMM image: bad runtime offset\n");
+		return -1;
+	}
+	if ((header->module_args_offset || header->module_args_size) &&
+	    !fstart_smm_range_ok(header, header->module_args_offset,
+				 header->module_args_size)) {
+		printk(BIOS_ERR, "fstart SMM image: bad module args range\n");
+		return -1;
+	}
+	if (header->module_args_offset &&
+	    (header->module_args_offset < header->common_offset ||
+	     header->module_args_offset + header->module_args_size >
+		     header->common_offset + header->common_size)) {
+		printk(BIOS_ERR,
+		       "fstart SMM image: module args must live in handler/data region\n");
+		return -1;
+	}
+	return 0;
+}
+
+static int smm_load_fstart_pic_image(const uintptr_t smram_base, const size_t smram_size,
+				     struct smm_loader_params *params)
+{
+	static struct region region_list[SMM_REGIONS_ARRAY_SIZE] = {};
+
+	const unsigned char *image = _binary_fstart_smm_image_start;
+	const size_t blob_size = _binary_fstart_smm_image_end - _binary_fstart_smm_image_start;
+	const struct fstart_smm_image_header *header = (const void *)image;
+
+	if (fstart_smm_validate_image(header, blob_size))
+		return -1;
+	if (header->entry_count < params->num_concurrent_save_states) {
+		printk(BIOS_ERR, "fstart SMM image: not enough precompiled entries\n");
+		return -1;
+	}
+
+	const struct fstart_smm_entry_descriptor *entries =
+		(const void *)(image + header->entries_offset);
+	const struct region smram = region_create(smram_base, smram_size);
+	const uintptr_t smram_top = region_last(&smram) + 1;
+	const size_t stm_size =
+		CONFIG(STM) ? CONFIG_MSEG_SIZE + CONFIG_BIOS_RESOURCE_LIST_SIZE : 0;
+
+	if (CONFIG(STM)) {
+		struct region stm = region_create(smram_top - stm_size, stm_size);
+		if (append_and_check_region(smram, stm, region_list, "STM"))
+			return -1;
+	}
+
+	uintptr_t common_base = ALIGN_DOWN(smram_top - stm_size - header->common_size, 16);
+	struct region common = region_create(common_base, header->common_size);
+	if (append_and_check_region(smram, common, region_list, "FSTART HANDLER"))
+		return -1;
+
+	/*
+	 * fstart's PIC entry stub always enters long mode before calling the
+	 * Rust SMM handler, even when the surrounding coreboot build is 32-bit.
+	 * Therefore always reserve SMM page tables and patch CR3 for the stub.
+	 */
+	uintptr_t pt_base = install_page_table(common_base);
+	struct region page_tables = region_create(pt_base, common_base - pt_base);
+	if (append_and_check_region(smram, page_tables, region_list, "PAGE TABLES"))
+		return -1;
+	params->cr3 = pt_base;
+	uintptr_t stub_segment_base = pt_base - SMM_CODE_SEGMENT_SIZE;
+
+	size_t max_stub_size = 0;
+	for (unsigned int i = 0; i < params->num_concurrent_save_states; i++) {
+		const struct fstart_smm_entry_descriptor *entry = &entries[i];
+		if (!fstart_smm_range_ok(header, entry->stub_offset, entry->stub_size)) {
+			printk(BIOS_ERR, "fstart SMM image: bad stub range for CPU %u\n", i);
+			return -1;
+		}
+		max_stub_size = MAX(max_stub_size, entry->stub_size);
+	}
+
+	if (!fstart_smm_create_map(stub_segment_base, params->num_concurrent_save_states,
+				   params, max_stub_size)) {
+		printk(BIOS_ERR, "%s: Error creating CPU map\n", __func__);
+		return -1;
+	}
+
+	for (unsigned int i = 0; i < params->num_concurrent_save_states; i++) {
+		printk(BIOS_DEBUG, "\nCPU %u\n", i);
+		char string[13];
+		snprintf(string, sizeof(string), "  ss%d", i);
+		if (append_and_check_region(smram, cpus[i].ss, region_list, string))
+			return -1;
+		snprintf(string, sizeof(string), "  stub%d", i);
+		if (append_and_check_region(smram, cpus[i].stub_code, region_list, string))
+			return -1;
+	}
+
+	struct region stacks = region_create(smram_base, params->num_concurrent_save_states *
+								 CONFIG_SMM_MODULE_STACK_SIZE);
+	if (append_and_check_region(smram, stacks, region_list, "stacks"))
+		return -1;
+
+	memcpy((void *)common_base, image + header->common_offset, header->common_size);
+	const uintptr_t common_entry = common_base + header->common_entry_offset;
+	struct fstart_smm_runtime *runtime = NULL;
+	if (header->runtime_offset) {
+		runtime = (void *)(common_base + header->runtime_offset);
+		runtime->smram_base = smram_base;
+		runtime->smram_size = smram_size;
+		runtime->num_cpus = params->num_concurrent_save_states;
+		runtime->save_state_size = params->cpu_save_state_size;
+		runtime->stack_size = g_stack_size;
+		runtime->common_offset = header->common_offset;
+		runtime->entries_offset = header->entries_offset;
+		for (unsigned int i = 0; i < params->num_concurrent_save_states; i++)
+			runtime->save_state_top[i] = region_last(&cpus[i].ss) + 1;
+	}
+
+	uintptr_t module_args_base = 0;
+	if (header->module_args_offset) {
+		const size_t needed = params->num_concurrent_save_states *
+				      sizeof(struct fstart_smm_coreboot_module_args);
+		if (header->module_args_size < needed) {
+			printk(BIOS_ERR,
+			       "fstart SMM image: coreboot module args block too small\n");
+			return -1;
+		}
+		module_args_base =
+			common_base + (header->module_args_offset - header->common_offset);
+	}
+
+	for (unsigned int i = 0; i < params->num_concurrent_save_states; i++) {
+		const struct fstart_smm_entry_descriptor *entry = &entries[i];
+		const uintptr_t stub_base = region_offset(&cpus[i].stub_code);
+		memcpy((void *)stub_base, image + entry->stub_offset, entry->stub_size);
+
+		if (entry->params_offset) {
+			if (entry->params_offset + sizeof(struct fstart_smm_entry_params) >
+			    entry->stub_size) {
+				printk(BIOS_ERR,
+				       "fstart SMM image: bad params offset for CPU %u\n", i);
+				return -1;
+			}
+			struct fstart_smm_entry_params *entry_params =
+				(void *)(stub_base + entry->params_offset);
+			const uintptr_t cpu_stack_top = stack_top - i * g_stack_size;
+			const uintptr_t cpu_stack_bottom = cpu_stack_top - g_stack_size;
+
+			entry_params->cpu = i;
+			entry_params->stack_size = g_stack_size;
+			entry_params->stack_top = cpu_stack_top;
+			entry_params->common_entry = common_entry;
+			entry_params->runtime = (uintptr_t)runtime;
+			entry_params->coreboot_module_args = 0;
+			if (module_args_base) {
+				struct fstart_smm_coreboot_module_args *module_args =
+					(void *)(module_args_base + i * sizeof(*module_args));
+				module_args->cpu = i;
+				module_args->canary = cpu_stack_bottom;
+				*(uintptr_t *)cpu_stack_bottom = cpu_stack_bottom;
+				entry_params->coreboot_module_args = (uintptr_t)module_args;
+			}
+			entry_params->cr3 = params->cr3;
+			entry_params->entry_base = stub_base;
+			entry_params->platform_kind = FSTART_SMM_PLATFORM_INTEL_ICH;
+			entry_params->platform_flags = 0;
+			entry_params->platform_data[FSTART_SMM_PLATFORM_DATA_ICH_PM_BASE] =
+				get_pmbase();
+			/* Q35/ICH9 uses GPE0_STS at PMBASE + 0x20. */
+			entry_params
+				->platform_data[FSTART_SMM_PLATFORM_DATA_ICH_GPE0_STS_OFFSET] =
+				0x20;
+		}
+	}
+
+	params->handler = (smm_handler_t)common_entry;
+	printk(BIOS_DEBUG, "fstart SMM image: common at %lx entry %lx entries %u\n",
+	       common_base, common_entry, header->entry_count);
+	return 0;
+}
+#endif
 
 /*
  *The SMM module is placed within the provided region in the following
@@ -519,6 +796,9 @@ static uintptr_t install_page_table(const uintptr_t handler_base)
 int smm_load_module(const uintptr_t smram_base, const size_t smram_size,
 		    struct smm_loader_params *params)
 {
+#if CONFIG(FSTART_PIC_SMM_IMAGE)
+	return smm_load_fstart_pic_image(smram_base, smram_size, params);
+#endif
 	/*
 	 * Place in .bss to reduce stack usage.
 	 * TODO: once CPU_INFO_V2 is used everywhere, use smaller stack for APs and move
@@ -547,8 +827,7 @@ int smm_load_module(const uintptr_t smram_base, const size_t smram_size,
 	const size_t handler_size = rmodule_memory_size(&smi_handler);
 	const size_t handler_alignment = rmodule_load_alignment(&smi_handler);
 	const uintptr_t handler_base =
-		ALIGN_DOWN(smram_top - stm_size - handler_size,
-			   handler_alignment);
+		ALIGN_DOWN(smram_top - stm_size - handler_size, handler_alignment);
 	struct region handler = region_create(handler_base, handler_size);
 	if (append_and_check_region(smram, handler, region_list, "HANDLER"))
 		return -1;
@@ -580,8 +859,8 @@ int smm_load_module(const uintptr_t smram_base, const size_t smram_size,
 			return -1;
 	}
 
-	struct region stacks = region_create(smram_base,
-			params->num_concurrent_save_states * CONFIG_SMM_MODULE_STACK_SIZE);
+	struct region stacks = region_create(smram_base, params->num_concurrent_save_states *
+								 CONFIG_SMM_MODULE_STACK_SIZE);
 	printk(BIOS_DEBUG, "\n");
 	if (append_and_check_region(smram, stacks, region_list, "stacks"))
 		return -1;

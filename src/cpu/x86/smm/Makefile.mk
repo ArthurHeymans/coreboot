@@ -3,6 +3,26 @@
 ramstage-y += smm_module_loader.c
 ramstage-$(CONFIG_SMM_PCI_RESOURCE_STORE) += pci_resource_store.c
 
+ifeq ($(CONFIG_FSTART_PIC_SMM_IMAGE),y)
+ramstage-srcs += $(obj)/cpu/x86/smm/fstart_smm_image.manual
+
+$(obj)/cpu/x86/smm/fstart_smm_image: $(call strip_quotes,$(CONFIG_FSTART_PIC_SMM_IMAGE_PATH))
+	@printf "    CP         $(subst $(obj)/,,$(@))\n"
+	mkdir -p $(dir $@)
+	cp $< $@
+
+$(call src-to-obj,ramstage,$(obj)/cpu/x86/smm/fstart_smm_image.manual): $(obj)/cpu/x86/smm/fstart_smm_image
+	@printf "    OBJCOPY    $(subst $(obj)/,,$(@))\n"
+	cd $(dir $<); $(OBJCOPY_ramstage) -I binary $(notdir $<) $(target-objcopy) $(abspath $@)
+
+$(obj)/ramstage/cpu/x86/fstart_smm_offsets.h: $(call strip_quotes,$(CONFIG_FSTART_PIC_SMM_HEADER_PATH))
+	@printf "    CP         $(subst $(obj)/,,$(@))\n"
+	mkdir -p $(dir $@)
+	cp $< $@
+
+$(call src-to-obj,ramstage,$(dir)/smm_module_loader.c): $(obj)/ramstage/cpu/x86/fstart_smm_offsets.h
+endif
+
 smm-$(CONFIG_SMM_PCI_RESOURCE_STORE) += pci_resource_store.c
 
 ifeq ($(CONFIG_ARCH_SMM_X86_32),y)
