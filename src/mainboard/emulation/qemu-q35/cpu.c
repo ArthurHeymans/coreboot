@@ -10,9 +10,13 @@
 #include <device/fw_cfg.h>
 #include <stddef.h>
 #include <stdint.h>
+#if CONFIG(FSTART_PIC_SMM_IMAGE)
+#include <southbridge/intel/common/pmbase.h>
+#include <southbridge/intel/common/pmutil.h>
+#endif
 
 static void get_smm_info(uintptr_t *perm_smbase, size_t *perm_smsize,
-	      size_t *smm_save_state_size)
+			 size_t *smm_save_state_size)
 {
 	printk(BIOS_DEBUG, "Setting up SMI for CPU\n");
 
@@ -34,8 +38,8 @@ static void get_smm_info(uintptr_t *perm_smbase, size_t *perm_smsize,
 union __packed save_state {
 	amd64_smm_state_save_area_t amd64;
 	struct {
-		char _reserved[sizeof(amd64_smm_state_save_area_t)
-			       - sizeof(legacy_smm_state_save_area_t)];
+		char _reserved[sizeof(amd64_smm_state_save_area_t) -
+			       sizeof(legacy_smm_state_save_area_t)];
 		legacy_smm_state_save_area_t legacy;
 	};
 };
@@ -43,12 +47,11 @@ union __packed save_state {
 _Static_assert(sizeof(union save_state) == sizeof(amd64_smm_state_save_area_t),
 	       "Incorrect save state union size");
 
-_Static_assert(offsetof(union save_state, amd64.smm_revision)
-	       == offsetof(union save_state, legacy.smm_revision),
+_Static_assert(offsetof(union save_state, amd64.smm_revision) ==
+		       offsetof(union save_state, legacy.smm_revision),
 	       "Incompatible SMM save state revision offset");
 
-static void relocation_handler(int cpu, uintptr_t curr_smbase,
-			       uintptr_t staggered_smbase)
+static void relocation_handler(int cpu, uintptr_t curr_smbase, uintptr_t staggered_smbase)
 {
 	union save_state *save_state =
 		(void *)(curr_smbase + SMM_DEFAULT_SIZE - sizeof(*save_state));
@@ -84,12 +87,20 @@ static void post_mp_init(void)
 
 	/* Lock down the SMRAM space. */
 	smm_lock();
+
+#if CONFIG(FSTART_PIC_SMM_IMAGE)
+	/* Exercise the copied fstart permanent handler twice. */
+	for (int i = 0; i < 2; i++) {
+		write_pmbase32(SMI_EN, read_pmbase32(SMI_EN) | EOS);
+		apm_control(APM_CNT_ELOG_GSMI);
+	}
+#endif
 }
 
 const struct mp_ops mp_ops_with_smm = {
-	.get_cpu_count       = fw_cfg_max_cpus,
-	.get_smm_info        = get_smm_info,
-	.pre_mp_smm_init     = smm_southbridge_clear_state,
-	.relocation_handler  = relocation_handler,
-	.post_mp_init        = post_mp_init,
+	.get_cpu_count = fw_cfg_max_cpus,
+	.get_smm_info = get_smm_info,
+	.pre_mp_smm_init = smm_southbridge_clear_state,
+	.relocation_handler = relocation_handler,
+	.post_mp_init = post_mp_init,
 };
