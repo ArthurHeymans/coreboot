@@ -18,6 +18,7 @@
 #include <device/pci.h>
 #include <device/pci_ids.h>
 #include <device/pci_ops.h>
+#include <device/resource.h>
 #include <edid.h>
 #include <framebuffer_info.h>
 #include <stddef.h>
@@ -82,8 +83,15 @@ struct atombios_cmd_indices {
 	int blank_crtc;
 	int select_crtc_source;
 	int enable_disp_power_gating;
+	int enable_scaler;
+	int set_crtc_overscan;
+	int enable_yuv;
 	int dig_encoder_ctrl;
 	int dig1_xmtr_ctrl;
+	int tmds1_encoder_ctrl;
+	int tmds2_encoder_ctrl;
+	int tmds1_output_ctrl;
+	int tmds2_output_ctrl;
 	int dac1_encoder_ctrl;	/* -1 if not available (v2) */
 	int dac2_encoder_ctrl;	/* -1 if not available (v2) */
 	int dac_load_detect;	/* -1 if not available (v2) */
@@ -91,6 +99,8 @@ struct atombios_cmd_indices {
 	int process_aux;
 	int data_object_header;
 	int data_gpio_i2c;
+	int data_supported_devices;
+	int data_firmware_info;
 	bool is_v2;
 };
 
@@ -104,8 +114,15 @@ static void atombios_init_cmd_indices_v1(struct atombios_cmd_indices *idx)
 	idx->blank_crtc             = CMD_IDX_V1(BlankCRTC);
 	idx->select_crtc_source     = CMD_IDX_V1(SelectCRTC_Source);
 	idx->enable_disp_power_gating = CMD_IDX_V1(EnableDispPowerGating);
+	idx->enable_scaler         = CMD_IDX_V1(EnableScaler);
+	idx->set_crtc_overscan     = CMD_IDX_V1(SetCRTC_OverScan);
+	idx->enable_yuv            = CMD_IDX_V1(EnableYUV);
 	idx->dig_encoder_ctrl       = CMD_IDX_V1(DIGxEncoderControl);
 	idx->dig1_xmtr_ctrl         = CMD_IDX_V1(DIG1TransmitterControl);
+	idx->tmds1_encoder_ctrl     = CMD_IDX_V1(TMDSAEncoderControl);
+	idx->tmds2_encoder_ctrl     = CMD_IDX_V1(LVTMAEncoderControl);
+	idx->tmds1_output_ctrl      = CMD_IDX_V1(TMDSAOutputControl);
+	idx->tmds2_output_ctrl      = CMD_IDX_V1(LVTMAOutputControl);
 	idx->dac1_encoder_ctrl      = CMD_IDX_V1(DAC1EncoderControl);
 	idx->dac2_encoder_ctrl      = CMD_IDX_V1(DAC2EncoderControl);
 	idx->dac_load_detect        = CMD_IDX_V1(DAC_LoadDetection);
@@ -113,6 +130,8 @@ static void atombios_init_cmd_indices_v1(struct atombios_cmd_indices *idx)
 	idx->process_aux            = CMD_IDX_V1(ProcessAuxChannelTransaction);
 	idx->data_object_header     = DATA_IDX_V1(Object_Header);
 	idx->data_gpio_i2c          = DATA_IDX_V1(GPIO_I2C_Info);
+	idx->data_supported_devices = DATA_IDX_V1(SupportedDevicesInfo);
+	idx->data_firmware_info     = DATA_IDX_V1(FirmwareInfo);
 }
 
 static void atombios_init_cmd_indices_v2(struct atombios_cmd_indices *idx)
@@ -125,8 +144,15 @@ static void atombios_init_cmd_indices_v2(struct atombios_cmd_indices *idx)
 	idx->blank_crtc             = CMD_IDX_V2(blankcrtc);
 	idx->select_crtc_source     = CMD_IDX_V2(selectcrtc_source);
 	idx->enable_disp_power_gating = CMD_IDX_V2(enabledisppowergating);
+	idx->enable_scaler         = -1;
+	idx->set_crtc_overscan     = -1;
+	idx->enable_yuv            = -1;
 	idx->dig_encoder_ctrl       = CMD_IDX_V2(digxencodercontrol);
 	idx->dig1_xmtr_ctrl         = CMD_IDX_V2(dig1transmittercontrol);
+	idx->tmds1_encoder_ctrl     = -1;
+	idx->tmds2_encoder_ctrl     = -1;
+	idx->tmds1_output_ctrl      = -1;
+	idx->tmds2_output_ctrl      = -1;
 	idx->dac1_encoder_ctrl      = -1; /* No DAC on Vega+ */
 	idx->dac2_encoder_ctrl      = -1;
 	idx->dac_load_detect        = -1;
@@ -134,6 +160,8 @@ static void atombios_init_cmd_indices_v2(struct atombios_cmd_indices *idx)
 	idx->process_aux            = CMD_IDX_V2(processauxchanneltransaction);
 	idx->data_object_header     = DATA_IDX_V2(displayobjectinfo);
 	idx->data_gpio_i2c          = DATA_IDX_V2(gpio_pin_lut);
+	idx->data_supported_devices = -1;
+	idx->data_firmware_info     = DATA_IDX_V2(firmwareinfo);
 }
 
 /*
@@ -235,14 +263,39 @@ struct atombios_display_path {
 	uint8_t  connector_type;	/* 1=HDMI, 2=DP/eDP, 3=DVI, 4=VGA, 5=DVI-I */
 	uint8_t  encoder_obj_id;	/* ENCODER_OBJECT_ID_* */
 	uint8_t  encoder_type;		/* GRAPH_OBJECT_ENUM_ID */
-	uint8_t  i2c_line;		/* I2C line number for DDC */
+	uint8_t  i2c_line;		/* ATOM I2C line ID for DDC */
+	uint8_t  i2c_valid;		/* DDC line was found in connector records */
 	uint8_t  hpd_id;		/* HPD pin ID (1-6, 0=none) */
 	uint8_t  dig_encoder;		/* DIG index (0=DIG1, ...) for digital */
 	uint8_t  phy_id;		/* UNIPHY ID (0=A, 1=B, ...) for digital */
 	uint8_t  encoder_mode;		/* ATOM_ENCODER_MODE_* */
 	uint16_t connector_obj_id;	/* Full connector object ID */
-	uint8_t  is_dac;		/* 1 if DAC encoder (VGA/CRT), 0 if DIG */
+	uint8_t  is_dac;		/* 1 if DAC encoder (VGA/CRT), 0 if digital */
+	uint8_t  is_legacy_tmds;	/* 1 for pre-UNIPHY TMDS/LVTMA encoders */
 	uint8_t  dac_type;		/* ATOM_DAC_A or ATOM_DAC_B */
+	uint16_t device_tag;		/* ATOM_DEVICE_*_SUPPORT bit */
+};
+
+struct atombios_i2c_bus_rec {
+	uint32_t mask_clk_reg;
+	uint32_t mask_data_reg;
+	uint32_t en_clk_reg;
+	uint32_t en_data_reg;
+	uint32_t y_clk_reg;
+	uint32_t y_data_reg;
+	uint32_t a_clk_reg;
+	uint32_t a_data_reg;
+	uint32_t mask_clk_mask;
+	uint32_t mask_data_mask;
+	uint32_t en_clk_mask;
+	uint32_t en_data_mask;
+	uint32_t y_clk_mask;
+	uint32_t y_data_mask;
+	uint32_t a_clk_mask;
+	uint32_t a_data_mask;
+	uint8_t i2c_id;
+	uint8_t hw_capable;
+	uint8_t valid;
 };
 
 /* Forward declarations for functions used by DP link training */
@@ -259,19 +312,406 @@ static int atombios_transmitter_control(struct atom_context *ctx,
 
 static void cail_reg_write(struct card_info *info, uint32_t reg, uint32_t val)
 {
-	write32((uint8_t *)info->mmio_base + reg, val);
+	write32((uint8_t *)info->mmio_base + reg * 4, val);
 }
 
 static uint32_t cail_reg_read(struct card_info *info, uint32_t reg)
 {
-	return read32((uint8_t *)info->mmio_base + reg);
+	return read32((uint8_t *)info->mmio_base + reg * 4);
 }
 
-/* MC and PLL callbacks are stubs on modern GPUs -- all access goes via MMIO */
-static void cail_mc_write(struct card_info *info, uint32_t reg, uint32_t val) { }
-static uint32_t cail_mc_read(struct card_info *info, uint32_t reg) { return 0; }
-static void cail_pll_write(struct card_info *info, uint32_t reg, uint32_t val) { }
-static uint32_t cail_pll_read(struct card_info *info, uint32_t reg) { return 0; }
+#define R600_BIOS_0_SCRATCH	0x1724
+#define R600_BIOS_2_SCRATCH	0x172c
+#define R600_BIOS_3_SCRATCH	0x1730
+#define R600_BIOS_6_SCRATCH	0x173c
+
+#define VGA_HDP_CONTROL			0x0328
+#define VGA_MEMORY_DISABLE		(1 << 4)
+#define MC_VM_FB_LOCATION		0x2180
+#define MC_VM_SYSTEM_APERTURE_LOW_ADDR	0x2190
+#define MC_VM_SYSTEM_APERTURE_HIGH_ADDR	0x2194
+#define MC_VM_SYSTEM_APERTURE_DEFAULT_ADDR 0x2198
+#define HDP_NONSURFACE_BASE		0x2c04
+#define HDP_NONSURFACE_INFO		0x2c08
+#define HDP_NONSURFACE_SIZE		0x2c0c
+#define CONFIG_MEMSIZE			0x5428
+#define HDP_MEM_COHERENCY_FLUSH_CNTL	0x5480
+
+#define AVIVO_D1VGA_CONTROL			0x0330
+#define AVIVO_D1CRTC_UPDATE_LOCK		0x60e8
+#define AVIVO_D1MODE_MASTER_UPDATE_MODE		0x60e4
+#define AVIVO_D1GRPH_ENABLE			0x6100
+#define AVIVO_D1GRPH_CONTROL			0x6104
+#define AVIVO_D1GRPH_LUT_SEL			0x6108
+#define R600_D1GRPH_SWAP_CONTROL		0x610c
+#define AVIVO_D1GRPH_PRIMARY_SURFACE_ADDRESS	0x6110
+#define AVIVO_D1GRPH_SECONDARY_SURFACE_ADDRESS	0x6118
+#define AVIVO_D1GRPH_PITCH			0x6120
+#define AVIVO_D1GRPH_SURFACE_OFFSET_X		0x6124
+#define AVIVO_D1GRPH_SURFACE_OFFSET_Y		0x6128
+#define AVIVO_D1GRPH_X_START			0x612c
+#define AVIVO_D1GRPH_Y_START			0x6130
+#define AVIVO_D1GRPH_X_END			0x6134
+#define AVIVO_D1GRPH_Y_END			0x6138
+#define AVIVO_D1GRPH_FLIP_CONTROL		0x6148
+#define AVIVO_D1MODE_DESKTOP_HEIGHT		0x652c
+#define AVIVO_D1MODE_VIEWPORT_START		0x6580
+#define AVIVO_D1MODE_VIEWPORT_SIZE		0x6584
+
+#define AVIVO_D1GRPH_CONTROL_DEPTH_32BPP	(2 << 0)
+#define AVIVO_D1GRPH_CONTROL_32BPP_ARGB8888	(0 << 8)
+#define R600_D1GRPH_SWAP_ENDIAN_NONE		0
+
+#define AVIVO_DC_LUT_RW_SELECT			0x6480
+#define AVIVO_DC_LUT_RW_MODE			0x6484
+#define AVIVO_DC_LUT_RW_INDEX			0x6488
+#define AVIVO_DC_LUT_WRITE_EN_MASK		0x648c
+#define AVIVO_DC_LUT_30_COLOR			0x6494
+#define AVIVO_DC_LUTA_CONTROL			0x64c0
+#define AVIVO_DC_LUTA_BLACK_OFFSET_BLUE		0x64c4
+#define AVIVO_DC_LUTA_BLACK_OFFSET_GREEN	0x64c8
+#define AVIVO_DC_LUTA_BLACK_OFFSET_RED		0x64cc
+#define AVIVO_DC_LUTA_WHITE_OFFSET_BLUE		0x64d0
+#define AVIVO_DC_LUTA_WHITE_OFFSET_GREEN	0x64d4
+#define AVIVO_DC_LUTA_WHITE_OFFSET_RED		0x64d8
+
+static uint32_t atombios_scratch_read(struct atom_context *ctx, uint32_t reg)
+{
+	return read32((uint8_t *)ctx->card->mmio_base + reg);
+}
+
+static void atombios_scratch_write(struct atom_context *ctx, uint32_t reg,
+					   uint32_t val)
+{
+	write32((uint8_t *)ctx->card->mmio_base + reg, val);
+}
+
+static uint32_t atombios_s0_connected_bit(uint16_t device_tag)
+{
+	switch (device_tag) {
+	case ATOM_DEVICE_CRT1_SUPPORT: return ATOM_S0_CRT1_COLOR;
+	case ATOM_DEVICE_CRT2_SUPPORT: return ATOM_S0_CRT2_COLOR;
+	case ATOM_DEVICE_LCD1_SUPPORT: return ATOM_S0_LCD1;
+	case ATOM_DEVICE_LCD2_SUPPORT: return ATOM_S0_LCD2;
+	case ATOM_DEVICE_DFP1_SUPPORT: return ATOM_S0_DFP1;
+	case ATOM_DEVICE_DFP2_SUPPORT: return ATOM_S0_DFP2;
+	case ATOM_DEVICE_DFP3_SUPPORT: return ATOM_S0_DFP3;
+	case ATOM_DEVICE_DFP4_SUPPORT: return ATOM_S0_DFP4;
+	case ATOM_DEVICE_DFP5_SUPPORT: return ATOM_S0_DFP5;
+	case ATOM_DEVICE_DFP6_SUPPORT: return ATOM_S0_DFP6;
+	default: return 0;
+	}
+}
+
+static uint32_t atombios_s2_dpms_bit(uint16_t device_tag)
+{
+	switch (device_tag) {
+	case ATOM_DEVICE_CRT1_SUPPORT: return 0x00010000;
+	case ATOM_DEVICE_LCD1_SUPPORT: return 0x00020000;
+	case ATOM_DEVICE_TV1_SUPPORT:  return 0x00040000;
+	case ATOM_DEVICE_DFP1_SUPPORT: return 0x00080000;
+	case ATOM_DEVICE_CRT2_SUPPORT: return 0x00100000;
+	case ATOM_DEVICE_LCD2_SUPPORT: return 0x00200000;
+	case ATOM_DEVICE_DFP6_SUPPORT: return 0x00400000;
+	case ATOM_DEVICE_DFP2_SUPPORT: return 0x00800000;
+	case ATOM_DEVICE_CV_SUPPORT:   return 0x01000000;
+	case ATOM_DEVICE_DFP3_SUPPORT: return 0x02000000;
+	case ATOM_DEVICE_DFP4_SUPPORT: return 0x04000000;
+	case ATOM_DEVICE_DFP5_SUPPORT: return 0x08000000;
+	default: return 0;
+	}
+}
+
+static uint32_t atombios_s3_active_bit(uint16_t device_tag)
+{
+	switch (device_tag) {
+	case ATOM_DEVICE_CRT1_SUPPORT: return ATOM_S3_CRT1_ACTIVE;
+	case ATOM_DEVICE_LCD1_SUPPORT: return ATOM_S3_LCD1_ACTIVE;
+	case ATOM_DEVICE_TV1_SUPPORT:  return ATOM_S3_TV1_ACTIVE;
+	case ATOM_DEVICE_DFP1_SUPPORT: return ATOM_S3_DFP1_ACTIVE;
+	case ATOM_DEVICE_CRT2_SUPPORT: return ATOM_S3_CRT2_ACTIVE;
+	case ATOM_DEVICE_LCD2_SUPPORT: return ATOM_S3_LCD2_ACTIVE;
+	case ATOM_DEVICE_DFP6_SUPPORT: return ATOM_S3_DFP6_ACTIVE;
+	case ATOM_DEVICE_DFP2_SUPPORT: return ATOM_S3_DFP2_ACTIVE;
+	case ATOM_DEVICE_CV_SUPPORT:   return ATOM_S3_CV_ACTIVE;
+	case ATOM_DEVICE_DFP3_SUPPORT: return ATOM_S3_DFP3_ACTIVE;
+	case ATOM_DEVICE_DFP4_SUPPORT: return ATOM_S3_DFP4_ACTIVE;
+	case ATOM_DEVICE_DFP5_SUPPORT: return ATOM_S3_DFP5_ACTIVE;
+	default: return 0;
+	}
+}
+
+static uint32_t atombios_s3_crtc_shift(uint16_t device_tag)
+{
+	switch (device_tag) {
+	case ATOM_DEVICE_CRT1_SUPPORT: return 16;
+	case ATOM_DEVICE_LCD1_SUPPORT: return 17;
+	case ATOM_DEVICE_TV1_SUPPORT:  return 18;
+	case ATOM_DEVICE_DFP1_SUPPORT: return 19;
+	case ATOM_DEVICE_CRT2_SUPPORT: return 20;
+	case ATOM_DEVICE_LCD2_SUPPORT: return 21;
+	case ATOM_DEVICE_DFP6_SUPPORT: return 22;
+	case ATOM_DEVICE_DFP2_SUPPORT: return 23;
+	case ATOM_DEVICE_CV_SUPPORT:   return 24;
+	case ATOM_DEVICE_DFP3_SUPPORT: return 25;
+	case ATOM_DEVICE_DFP4_SUPPORT: return 26;
+	case ATOM_DEVICE_DFP5_SUPPORT: return 27;
+	default: return 0;
+	}
+}
+
+static uint32_t atombios_s6_acc_req_bit(uint16_t device_tag)
+{
+	switch (device_tag) {
+	case ATOM_DEVICE_CRT1_SUPPORT: return ATOM_S6_ACC_REQ_CRT1;
+	case ATOM_DEVICE_LCD1_SUPPORT: return ATOM_S6_ACC_REQ_LCD1;
+	case ATOM_DEVICE_TV1_SUPPORT:  return ATOM_S6_ACC_REQ_TV1;
+	case ATOM_DEVICE_DFP1_SUPPORT: return ATOM_S6_ACC_REQ_DFP1;
+	case ATOM_DEVICE_CRT2_SUPPORT: return ATOM_S6_ACC_REQ_CRT2;
+	case ATOM_DEVICE_LCD2_SUPPORT: return ATOM_S6_ACC_REQ_LCD2;
+	case ATOM_DEVICE_DFP6_SUPPORT: return ATOM_S6_ACC_REQ_DFP6;
+	case ATOM_DEVICE_DFP2_SUPPORT: return ATOM_S6_ACC_REQ_DFP2;
+	case ATOM_DEVICE_CV_SUPPORT:   return ATOM_S6_ACC_REQ_CV;
+	case ATOM_DEVICE_DFP3_SUPPORT: return ATOM_S6_ACC_REQ_DFP3;
+	case ATOM_DEVICE_DFP4_SUPPORT: return ATOM_S6_ACC_REQ_DFP4;
+	case ATOM_DEVICE_DFP5_SUPPORT: return ATOM_S6_ACC_REQ_DFP5;
+	default: return 0;
+	}
+}
+
+static uint32_t atombios_mmio_read(struct atom_context *ctx, uint32_t reg)
+{
+	return read32((uint8_t *)ctx->card->mmio_base + reg);
+}
+
+static void atombios_mmio_write(struct atom_context *ctx, uint32_t reg,
+				       uint32_t val)
+{
+	write32((uint8_t *)ctx->card->mmio_base + reg, val);
+}
+
+static void atombios_mmio_write8(struct atom_context *ctx, uint32_t reg,
+					uint8_t val)
+{
+	write8((uint8_t *)ctx->card->mmio_base + reg, val);
+}
+
+static void atombios_load_identity_lut(struct atom_context *ctx, int crtc_id)
+{
+	int i;
+
+	printk(BIOS_DEBUG, "ATOMBIOS: loading identity CRTC LUT\n");
+
+	atombios_mmio_write(ctx, AVIVO_DC_LUTA_CONTROL, 0);
+	atombios_mmio_write(ctx, AVIVO_DC_LUTA_BLACK_OFFSET_BLUE, 0);
+	atombios_mmio_write(ctx, AVIVO_DC_LUTA_BLACK_OFFSET_GREEN, 0);
+	atombios_mmio_write(ctx, AVIVO_DC_LUTA_BLACK_OFFSET_RED, 0);
+	atombios_mmio_write(ctx, AVIVO_DC_LUTA_WHITE_OFFSET_BLUE, 0xffff);
+	atombios_mmio_write(ctx, AVIVO_DC_LUTA_WHITE_OFFSET_GREEN, 0xffff);
+	atombios_mmio_write(ctx, AVIVO_DC_LUTA_WHITE_OFFSET_RED, 0xffff);
+
+	atombios_mmio_write(ctx, AVIVO_DC_LUT_RW_SELECT, crtc_id);
+	atombios_mmio_write(ctx, AVIVO_DC_LUT_RW_MODE, 0);
+	atombios_mmio_write(ctx, AVIVO_DC_LUT_WRITE_EN_MASK, 0x0000003f);
+	atombios_mmio_write8(ctx, AVIVO_DC_LUT_RW_INDEX, 0);
+
+	for (i = 0; i < 256; i++) {
+		uint16_t v = (i << 8) | i;
+		uint32_t color = ((v & 0xffc0) << 14) |
+			((v & 0xffc0) << 4) | (v >> 6);
+
+		atombios_mmio_write(ctx, AVIVO_DC_LUT_30_COLOR, color);
+	}
+
+	atombios_mmio_write(ctx, AVIVO_D1GRPH_LUT_SEL,
+			   (atombios_mmio_read(ctx, AVIVO_D1GRPH_LUT_SEL) & ~1) |
+			   (crtc_id & 1));
+}
+
+static uint32_t atombios_r600_vram_size(struct atom_context *ctx)
+{
+	uint32_t size = atombios_mmio_read(ctx, CONFIG_MEMSIZE);
+
+	if (!size || size == 0xffffffff)
+		size = 256u * 1024u * 1024u;
+	return size;
+}
+
+static void atombios_program_r600_mc_aperture(struct atom_context *ctx)
+{
+	uint32_t old_fb = atombios_mmio_read(ctx, MC_VM_FB_LOCATION);
+	uint32_t vram_size = atombios_r600_vram_size(ctx);
+	uint32_t vram_start = 0;
+	uint32_t vram_end = vram_size - 1;
+	uint32_t fb_location;
+
+	/* Match Linux r600_mc_program() for discrete PCIe cards: GPU VRAM
+	 * addresses start at 0, while the CPU accesses VRAM through PCI BAR0. */
+	fb_location = ((vram_end >> 24) & 0xffff) << 16;
+	fb_location |= (vram_start >> 24) & 0xffff;
+
+	atombios_mmio_write(ctx, VGA_HDP_CONTROL, VGA_MEMORY_DISABLE);
+	atombios_mmio_write(ctx, MC_VM_SYSTEM_APERTURE_LOW_ADDR,
+			   vram_start >> 12);
+	atombios_mmio_write(ctx, MC_VM_SYSTEM_APERTURE_HIGH_ADDR,
+			   vram_end >> 12);
+	atombios_mmio_write(ctx, MC_VM_SYSTEM_APERTURE_DEFAULT_ADDR, 0);
+	atombios_mmio_write(ctx, MC_VM_FB_LOCATION, fb_location);
+	atombios_mmio_write(ctx, HDP_NONSURFACE_BASE, vram_start >> 8);
+	atombios_mmio_write(ctx, HDP_NONSURFACE_INFO, 2 << 7);
+	atombios_mmio_write(ctx, HDP_NONSURFACE_SIZE, 0x3fffffff);
+
+	printk(BIOS_INFO,
+	       "ATOMBIOS: MC VRAM %u MiB old_fb=0x%08x new_fb=0x%08x hdp_base=0x%08x\n",
+	       vram_size / (1024u * 1024u), old_fb, fb_location,
+	       atombios_mmio_read(ctx, HDP_NONSURFACE_BASE));
+}
+
+static void atombios_program_avivo_framebuffer(struct atom_context *ctx,
+					       resource_t fb_bar,
+					       const struct edid_mode *mode)
+{
+	uint32_t width = mode->ha;
+	uint32_t height = mode->va;
+	uint32_t pitch_pixels = width;
+	uint32_t fb_format = AVIVO_D1GRPH_CONTROL_DEPTH_32BPP |
+		AVIVO_D1GRPH_CONTROL_32BPP_ARGB8888;
+	uint32_t surface_addr = 0;
+
+	atombios_program_r600_mc_aperture(ctx);
+
+	printk(BIOS_INFO,
+	       "ATOMBIOS: programming AVIVO scanout %ux%u pitch=%u gpu_addr=0x%08x cpu_addr=0x%llx mc_fb=0x%08x\n",
+	       width, height, pitch_pixels, surface_addr,
+	       (unsigned long long)fb_bar,
+	       atombios_mmio_read(ctx, MC_VM_FB_LOCATION));
+
+	memset((void *)(uintptr_t)fb_bar, 0, width * height * BYTES_PER_PIXEL);
+	atombios_mmio_write(ctx, HDP_MEM_COHERENCY_FLUSH_CNTL, 1);
+
+	atombios_mmio_write(ctx, AVIVO_D1VGA_CONTROL, 0);
+	atombios_mmio_write(ctx, AVIVO_D1CRTC_UPDATE_LOCK, 1);
+	atombios_mmio_write(ctx, AVIVO_D1GRPH_FLIP_CONTROL, 0);
+	atombios_mmio_write(ctx, AVIVO_D1GRPH_PRIMARY_SURFACE_ADDRESS,
+			   surface_addr);
+	atombios_mmio_write(ctx, AVIVO_D1GRPH_SECONDARY_SURFACE_ADDRESS,
+			   surface_addr);
+	atombios_mmio_write(ctx, AVIVO_D1GRPH_CONTROL, fb_format);
+	atombios_mmio_write(ctx, R600_D1GRPH_SWAP_CONTROL,
+			   R600_D1GRPH_SWAP_ENDIAN_NONE);
+	atombios_load_identity_lut(ctx, 0);
+	atombios_mmio_write(ctx, AVIVO_D1GRPH_SURFACE_OFFSET_X, 0);
+	atombios_mmio_write(ctx, AVIVO_D1GRPH_SURFACE_OFFSET_Y, 0);
+	atombios_mmio_write(ctx, AVIVO_D1GRPH_X_START, 0);
+	atombios_mmio_write(ctx, AVIVO_D1GRPH_Y_START, 0);
+	atombios_mmio_write(ctx, AVIVO_D1GRPH_X_END, width);
+	atombios_mmio_write(ctx, AVIVO_D1GRPH_Y_END, height);
+	atombios_mmio_write(ctx, AVIVO_D1GRPH_PITCH, pitch_pixels);
+	atombios_mmio_write(ctx, AVIVO_D1GRPH_ENABLE, 1);
+	atombios_mmio_write(ctx, AVIVO_D1MODE_DESKTOP_HEIGHT, height);
+	atombios_mmio_write(ctx, AVIVO_D1MODE_VIEWPORT_START, 0);
+	atombios_mmio_write(ctx, AVIVO_D1MODE_VIEWPORT_SIZE,
+			   (width << 16) | ((height + 1) & ~1u));
+	atombios_mmio_write(ctx, AVIVO_D1MODE_MASTER_UPDATE_MODE, 3);
+	atombios_mmio_write(ctx, AVIVO_D1CRTC_UPDATE_LOCK, 0);
+}
+
+static void atombios_output_lock(struct atom_context *ctx, bool lock)
+{
+	uint32_t scratch = atombios_scratch_read(ctx, R600_BIOS_6_SCRATCH);
+
+	if (lock) {
+		scratch |= ATOM_S6_CRITICAL_STATE;
+		scratch &= ~ATOM_S6_ACC_MODE;
+	} else {
+		scratch &= ~ATOM_S6_CRITICAL_STATE;
+		scratch |= ATOM_S6_ACC_MODE;
+	}
+
+	atombios_scratch_write(ctx, R600_BIOS_6_SCRATCH, scratch);
+}
+
+static void atombios_update_scratch_for_path(struct atom_context *ctx,
+					     const struct atombios_display_path *path,
+					     int crtc_id, bool connected, bool dpms_on)
+{
+	uint32_t s0 = atombios_scratch_read(ctx, R600_BIOS_0_SCRATCH);
+	uint32_t s2 = atombios_scratch_read(ctx, R600_BIOS_2_SCRATCH);
+	uint32_t s3 = atombios_scratch_read(ctx, R600_BIOS_3_SCRATCH);
+	uint32_t s6 = atombios_scratch_read(ctx, R600_BIOS_6_SCRATCH);
+	uint32_t s0_bit = atombios_s0_connected_bit(path->device_tag);
+	uint32_t s2_bit = atombios_s2_dpms_bit(path->device_tag);
+	uint32_t s3_bit = atombios_s3_active_bit(path->device_tag);
+	uint32_t s6_bit = atombios_s6_acc_req_bit(path->device_tag);
+	uint32_t shift = atombios_s3_crtc_shift(path->device_tag);
+
+	if (connected) {
+		s0 |= s0_bit;
+		s3 |= s3_bit;
+		s6 |= s6_bit;
+	} else {
+		s0 &= ~s0_bit;
+		s3 &= ~s3_bit;
+		s6 &= ~s6_bit;
+	}
+
+	if (dpms_on)
+		s2 &= ~s2_bit;
+	else
+		s2 |= s2_bit;
+
+	if (shift) {
+		s3 &= ~(1u << shift);
+		s3 |= (uint32_t)crtc_id << shift;
+	}
+
+	atombios_scratch_write(ctx, R600_BIOS_0_SCRATCH, s0);
+	atombios_scratch_write(ctx, R600_BIOS_2_SCRATCH, s2);
+	atombios_scratch_write(ctx, R600_BIOS_3_SCRATCH, s3);
+	atombios_scratch_write(ctx, R600_BIOS_6_SCRATCH, s6);
+}
+
+#define RV515_MC_IND_INDEX	0x70
+#define RV515_MC_IND_DATA	0x74
+#define RV515_MC_IND_WR_EN	(1 << 24)
+
+static void cail_mc_write(struct card_info *info, uint32_t reg, uint32_t val)
+{
+	write32((uint8_t *)info->mmio_base + RV515_MC_IND_INDEX,
+		0xff0000 | (reg & 0xffff) | RV515_MC_IND_WR_EN);
+	write32((uint8_t *)info->mmio_base + RV515_MC_IND_DATA, val);
+	write32((uint8_t *)info->mmio_base + RV515_MC_IND_INDEX, 0);
+}
+
+static uint32_t cail_mc_read(struct card_info *info, uint32_t reg)
+{
+	uint32_t val;
+
+	write32((uint8_t *)info->mmio_base + RV515_MC_IND_INDEX,
+		0x7f0000 | (reg & 0xffff));
+	val = read32((uint8_t *)info->mmio_base + RV515_MC_IND_DATA);
+	write32((uint8_t *)info->mmio_base + RV515_MC_IND_INDEX, 0);
+	return val;
+}
+
+#define RADEON_CLOCK_CNTL_DATA	0x0c
+#define RADEON_CLOCK_CNTL_INDEX	0x08
+#define RADEON_PLL_WR_EN	(1 << 7)
+
+static void cail_pll_write(struct card_info *info, uint32_t reg, uint32_t val)
+{
+	write8((uint8_t *)info->mmio_base + RADEON_CLOCK_CNTL_INDEX,
+	       (reg & 0x3f) | RADEON_PLL_WR_EN);
+	(void)read32((uint8_t *)info->mmio_base + RADEON_CLOCK_CNTL_DATA);
+	write32((uint8_t *)info->mmio_base + RADEON_CLOCK_CNTL_DATA, val);
+}
+
+static uint32_t cail_pll_read(struct card_info *info, uint32_t reg)
+{
+	write8((uint8_t *)info->mmio_base + RADEON_CLOCK_CNTL_INDEX,
+	       reg & 0x3f);
+	return read32((uint8_t *)info->mmio_base + RADEON_CLOCK_CNTL_DATA);
+}
 
 /* ---- VBIOS loading ---- */
 
@@ -358,6 +798,297 @@ static int atombios_exec(struct atom_context *ctx, int index, uint32_t *params,
 	return atom_execute_table(ctx, index, params, params_size);
 }
 
+/* ---- Linux-style GPIO DDC bit banging ---- */
+
+static void atombios_gpio_i2c_lookup_quirks(ATOM_GPIO_I2C_ASSIGMENT *gpio,
+					    uint8_t index)
+{
+	/* Linux radeon has this DCE3 quirk for bad GPIO_I2C_Info data. */
+	if (index == 4 && gpio->usClkMaskRegisterIndex == 0x1fda &&
+	    gpio->sucI2cId.ucAccess == 0x94)
+		gpio->sucI2cId.ucAccess = 0x14;
+}
+
+static void atombios_i2c_bus_from_gpio(struct atombios_i2c_bus_rec *bus,
+				       const ATOM_GPIO_I2C_ASSIGMENT *gpio)
+{
+	memset(bus, 0, sizeof(*bus));
+
+	bus->mask_clk_reg = gpio->usClkMaskRegisterIndex * 4;
+	bus->mask_data_reg = gpio->usDataMaskRegisterIndex * 4;
+	bus->en_clk_reg = gpio->usClkEnRegisterIndex * 4;
+	bus->en_data_reg = gpio->usDataEnRegisterIndex * 4;
+	bus->y_clk_reg = gpio->usClkY_RegisterIndex * 4;
+	bus->y_data_reg = gpio->usDataY_RegisterIndex * 4;
+	bus->a_clk_reg = gpio->usClkA_RegisterIndex * 4;
+	bus->a_data_reg = gpio->usDataA_RegisterIndex * 4;
+	bus->mask_clk_mask = 1u << gpio->ucClkMaskShift;
+	bus->mask_data_mask = 1u << gpio->ucDataMaskShift;
+	bus->en_clk_mask = 1u << gpio->ucClkEnShift;
+	bus->en_data_mask = 1u << gpio->ucDataEnShift;
+	bus->y_clk_mask = 1u << gpio->ucClkY_Shift;
+	bus->y_data_mask = 1u << gpio->ucDataY_Shift;
+	bus->a_clk_mask = 1u << gpio->ucClkA_Shift;
+	bus->a_data_mask = 1u << gpio->ucDataA_Shift;
+	bus->i2c_id = gpio->sucI2cId.ucAccess;
+	bus->hw_capable = !!(gpio->sucI2cId.ucAccess &
+		ATOM_DEVICE_I2C_HARDWARE_CAP_MASK);
+	bus->valid = !!bus->mask_clk_reg;
+}
+
+static int atombios_lookup_i2c_gpio(struct atom_context *ctx, uint8_t i2c_id,
+				    struct atombios_i2c_bus_rec *bus)
+{
+	ATOM_GPIO_I2C_INFO *i2c_info;
+	ATOM_GPIO_I2C_ASSIGMENT *gpio;
+	uint16_t data_offset, size;
+	int num_indices;
+	int i;
+
+	memset(bus, 0, sizeof(*bus));
+
+	if (!atom_parse_data_header(ctx, cmd_idx.data_gpio_i2c, &size, NULL,
+				    NULL, &data_offset))
+		return -1;
+
+	i2c_info = (ATOM_GPIO_I2C_INFO *)((uint8_t *)ctx->bios + data_offset);
+	num_indices = (size - sizeof(ATOM_COMMON_TABLE_HEADER)) /
+		sizeof(ATOM_GPIO_I2C_ASSIGMENT);
+	gpio = &i2c_info->asGPIO_Info[0];
+
+	for (i = 0; i < num_indices; i++) {
+		atombios_gpio_i2c_lookup_quirks(gpio, i);
+		if (gpio->sucI2cId.ucAccess == i2c_id) {
+			atombios_i2c_bus_from_gpio(bus, gpio);
+			return bus->valid ? 0 : -1;
+		}
+		gpio = (ATOM_GPIO_I2C_ASSIGMENT *)
+			((uint8_t *)gpio + sizeof(ATOM_GPIO_I2C_ASSIGMENT));
+	}
+
+	return -1;
+}
+
+static void atombios_gpio_i2c_pre_xfer(struct atom_context *ctx,
+				       const struct atombios_i2c_bus_rec *bus)
+{
+	uint32_t temp;
+
+	/* Linux switches DCE3 hardware-capable pads to DDC/GPIO mode. */
+	if (bus->hw_capable) {
+		temp = atombios_mmio_read(ctx, bus->mask_clk_reg);
+		temp &= ~(1u << 16);
+		atombios_mmio_write(ctx, bus->mask_clk_reg, temp);
+	}
+
+	/* Clear output values. */
+	temp = atombios_mmio_read(ctx, bus->a_clk_reg) & ~bus->a_clk_mask;
+	atombios_mmio_write(ctx, bus->a_clk_reg, temp);
+	temp = atombios_mmio_read(ctx, bus->a_data_reg) & ~bus->a_data_mask;
+	atombios_mmio_write(ctx, bus->a_data_reg, temp);
+
+	/* Release pins, then mask them for software use. */
+	temp = atombios_mmio_read(ctx, bus->en_clk_reg) & ~bus->en_clk_mask;
+	atombios_mmio_write(ctx, bus->en_clk_reg, temp);
+	temp = atombios_mmio_read(ctx, bus->en_data_reg) & ~bus->en_data_mask;
+	atombios_mmio_write(ctx, bus->en_data_reg, temp);
+	temp = atombios_mmio_read(ctx, bus->mask_clk_reg) | bus->mask_clk_mask;
+	atombios_mmio_write(ctx, bus->mask_clk_reg, temp);
+	(void)atombios_mmio_read(ctx, bus->mask_clk_reg);
+	temp = atombios_mmio_read(ctx, bus->mask_data_reg) | bus->mask_data_mask;
+	atombios_mmio_write(ctx, bus->mask_data_reg, temp);
+	(void)atombios_mmio_read(ctx, bus->mask_data_reg);
+}
+
+static void atombios_gpio_i2c_post_xfer(struct atom_context *ctx,
+					const struct atombios_i2c_bus_rec *bus)
+{
+	uint32_t temp;
+
+	temp = atombios_mmio_read(ctx, bus->mask_clk_reg) & ~bus->mask_clk_mask;
+	atombios_mmio_write(ctx, bus->mask_clk_reg, temp);
+	(void)atombios_mmio_read(ctx, bus->mask_clk_reg);
+	temp = atombios_mmio_read(ctx, bus->mask_data_reg) & ~bus->mask_data_mask;
+	atombios_mmio_write(ctx, bus->mask_data_reg, temp);
+	(void)atombios_mmio_read(ctx, bus->mask_data_reg);
+}
+
+static int atombios_gpio_i2c_get_clock(struct atom_context *ctx,
+				       const struct atombios_i2c_bus_rec *bus)
+{
+	return !!(atombios_mmio_read(ctx, bus->y_clk_reg) & bus->y_clk_mask);
+}
+
+static int atombios_gpio_i2c_get_data(struct atom_context *ctx,
+				      const struct atombios_i2c_bus_rec *bus)
+{
+	return !!(atombios_mmio_read(ctx, bus->y_data_reg) & bus->y_data_mask);
+}
+
+static void atombios_gpio_i2c_set_clock(struct atom_context *ctx,
+					const struct atombios_i2c_bus_rec *bus,
+					int clock)
+{
+	uint32_t val;
+
+	val = atombios_mmio_read(ctx, bus->en_clk_reg) & ~bus->en_clk_mask;
+	if (!clock)
+		val |= bus->en_clk_mask;
+	atombios_mmio_write(ctx, bus->en_clk_reg, val);
+}
+
+static void atombios_gpio_i2c_set_data(struct atom_context *ctx,
+				       const struct atombios_i2c_bus_rec *bus,
+				       int data)
+{
+	uint32_t val;
+
+	val = atombios_mmio_read(ctx, bus->en_data_reg) & ~bus->en_data_mask;
+	if (!data)
+		val |= bus->en_data_mask;
+	atombios_mmio_write(ctx, bus->en_data_reg, val);
+}
+
+static void atombios_gpio_i2c_delay(void)
+{
+	udelay(10);
+}
+
+static int atombios_gpio_i2c_wait_clock_high(struct atom_context *ctx,
+					     const struct atombios_i2c_bus_rec *bus)
+{
+	int i;
+
+	atombios_gpio_i2c_set_clock(ctx, bus, 1);
+	for (i = 0; i < 100; i++) {
+		atombios_gpio_i2c_delay();
+		if (atombios_gpio_i2c_get_clock(ctx, bus))
+			return 0;
+	}
+	return -1;
+}
+
+static int atombios_gpio_i2c_start(struct atom_context *ctx,
+				   const struct atombios_i2c_bus_rec *bus)
+{
+	atombios_gpio_i2c_set_data(ctx, bus, 1);
+	if (atombios_gpio_i2c_wait_clock_high(ctx, bus))
+		return -1;
+	atombios_gpio_i2c_set_data(ctx, bus, 0);
+	atombios_gpio_i2c_delay();
+	atombios_gpio_i2c_set_clock(ctx, bus, 0);
+	atombios_gpio_i2c_delay();
+	return 0;
+}
+
+static void atombios_gpio_i2c_stop(struct atom_context *ctx,
+				  const struct atombios_i2c_bus_rec *bus)
+{
+	atombios_gpio_i2c_set_data(ctx, bus, 0);
+	atombios_gpio_i2c_delay();
+	atombios_gpio_i2c_wait_clock_high(ctx, bus);
+	atombios_gpio_i2c_set_data(ctx, bus, 1);
+	atombios_gpio_i2c_delay();
+}
+
+static int atombios_gpio_i2c_write_byte(struct atom_context *ctx,
+					const struct atombios_i2c_bus_rec *bus,
+					uint8_t val)
+{
+	int i;
+	int ack;
+
+	for (i = 7; i >= 0; i--) {
+		atombios_gpio_i2c_set_data(ctx, bus, !!(val & (1u << i)));
+		atombios_gpio_i2c_delay();
+		if (atombios_gpio_i2c_wait_clock_high(ctx, bus))
+			return -1;
+		atombios_gpio_i2c_set_clock(ctx, bus, 0);
+		atombios_gpio_i2c_delay();
+	}
+
+	atombios_gpio_i2c_set_data(ctx, bus, 1);
+	atombios_gpio_i2c_delay();
+	if (atombios_gpio_i2c_wait_clock_high(ctx, bus))
+		return -1;
+	ack = !atombios_gpio_i2c_get_data(ctx, bus);
+	atombios_gpio_i2c_set_clock(ctx, bus, 0);
+	atombios_gpio_i2c_delay();
+
+	return ack ? 0 : -1;
+}
+
+static int atombios_gpio_i2c_read_byte(struct atom_context *ctx,
+				       const struct atombios_i2c_bus_rec *bus,
+				       uint8_t *val, int last)
+{
+	uint8_t data = 0;
+	int i;
+
+	atombios_gpio_i2c_set_data(ctx, bus, 1);
+	for (i = 7; i >= 0; i--) {
+		if (atombios_gpio_i2c_wait_clock_high(ctx, bus))
+			return -1;
+		if (atombios_gpio_i2c_get_data(ctx, bus))
+			data |= 1u << i;
+		atombios_gpio_i2c_set_clock(ctx, bus, 0);
+		atombios_gpio_i2c_delay();
+	}
+
+	/* ACK every byte except the last one. */
+	atombios_gpio_i2c_set_data(ctx, bus, last ? 1 : 0);
+	atombios_gpio_i2c_delay();
+	if (atombios_gpio_i2c_wait_clock_high(ctx, bus))
+		return -1;
+	atombios_gpio_i2c_set_clock(ctx, bus, 0);
+	atombios_gpio_i2c_set_data(ctx, bus, 1);
+	atombios_gpio_i2c_delay();
+
+	*val = data;
+	return 0;
+}
+
+static int atombios_gpio_i2c_read(struct atom_context *ctx, uint8_t i2c_line,
+				  uint8_t slave_addr, uint8_t reg_offset,
+				  uint8_t *buf, uint8_t len)
+{
+	struct atombios_i2c_bus_rec bus;
+	int ret = -1;
+	int i;
+
+	if (atombios_lookup_i2c_gpio(ctx, i2c_line, &bus))
+		return -1;
+
+	printk(BIOS_DEBUG,
+	       "ATOMBIOS: GPIO DDC line=0x%02x clk=0x%04x/%08x data=0x%04x/%08x hw=%d\n",
+	       i2c_line, bus.en_clk_reg, bus.en_clk_mask, bus.en_data_reg,
+	       bus.en_data_mask, bus.hw_capable);
+
+	atombios_gpio_i2c_pre_xfer(ctx, &bus);
+
+	if (atombios_gpio_i2c_start(ctx, &bus))
+		goto out;
+	if (atombios_gpio_i2c_write_byte(ctx, &bus, slave_addr << 1))
+		goto stop;
+	if (atombios_gpio_i2c_write_byte(ctx, &bus, reg_offset))
+		goto stop;
+	if (atombios_gpio_i2c_start(ctx, &bus))
+		goto stop;
+	if (atombios_gpio_i2c_write_byte(ctx, &bus, (slave_addr << 1) | 1))
+		goto stop;
+	for (i = 0; i < len; i++) {
+		if (atombios_gpio_i2c_read_byte(ctx, &bus, &buf[i], i == len - 1))
+			goto stop;
+	}
+	ret = 0;
+
+stop:
+	atombios_gpio_i2c_stop(ctx, &bus);
+out:
+	atombios_gpio_i2c_post_xfer(ctx, &bus);
+	return ret;
+}
+
 /* ---- EDID reading via ATOM I2C ---- */
 
 /*
@@ -366,9 +1097,37 @@ static int atombios_exec(struct atom_context *ctx, int index, uint32_t *params,
  *
  * Returns 0 on success, -1 on failure.
  */
-static int atombios_i2c_read(struct atom_context *ctx, uint8_t i2c_line,
-			     uint8_t slave_addr, uint8_t reg_offset,
-			     uint8_t *buf, uint8_t len)
+static int atombios_i2c_write_offset(struct atom_context *ctx, uint8_t i2c_line,
+				     uint8_t slave_addr, uint8_t reg_offset)
+{
+	PROCESS_I2C_CHANNEL_TRANSACTION_PARAMETERS args;
+	int ret;
+
+	memset(&args, 0, sizeof(args));
+	args.ucI2CSpeed = 50; /* 50 kHz */
+	args.ucRegIndex = reg_offset;
+	args.lpI2CDataOut = 0;
+	args.ucFlag = HW_I2C_WRITE;
+	args.ucTransBytes = 0;
+	args.ucSlaveAddr = slave_addr << 1;
+	args.ucLineNumber = i2c_line;
+
+	ret = atom_execute_table(ctx, cmd_idx.process_i2c, (uint32_t *)&args,
+				 sizeof(args));
+	if (ret || args.ucStatus != HW_ASSISTED_I2C_STATUS_SUCCESS) {
+		printk(BIOS_DEBUG,
+		       "ATOMBIOS: ATOM I2C offset write failed "
+		       "(line=0x%02x addr=0x%02x status=%d)\n",
+		       i2c_line, slave_addr, args.ucStatus);
+		return -1;
+	}
+
+	return 0;
+}
+
+static int atombios_i2c_read_chunk(struct atom_context *ctx, uint8_t i2c_line,
+				   uint8_t slave_addr, uint8_t reg_offset,
+				   uint8_t *buf, uint8_t len)
 {
 	PROCESS_I2C_CHANNEL_TRANSACTION_PARAMETERS args;
 	int ret;
@@ -386,17 +1145,29 @@ static int atombios_i2c_read(struct atom_context *ctx, uint8_t i2c_line,
 	args.ucLineNumber = i2c_line;
 
 	ret = atom_execute_table(ctx, cmd_idx.process_i2c, (uint32_t *)&args,
-				 sizeof(args) / sizeof(uint32_t));
-	if (ret) {
-		printk(BIOS_DEBUG, "ATOMBIOS: I2C read failed (line=%d addr=0x%02x)\n",
-		       i2c_line, slave_addr);
+				 sizeof(args));
+	if (ret || args.ucStatus != HW_ASSISTED_I2C_STATUS_SUCCESS) {
+		printk(BIOS_DEBUG,
+		       "ATOMBIOS: ATOM I2C read failed "
+		       "(line=0x%02x addr=0x%02x status=%d)\n",
+		       i2c_line, slave_addr, args.ucStatus);
 		return -1;
 	}
 
-	/* On success, the ATOM table writes data to the scratch area.
-	 * The first bytes of the parameter space contain the result. */
-	memcpy(buf, &args, len < sizeof(args) ? len : sizeof(args));
+	memcpy(buf, ctx->scratch, len);
 	return 0;
+}
+
+static int atombios_i2c_read(struct atom_context *ctx, uint8_t i2c_line,
+			     uint8_t slave_addr, uint8_t reg_offset,
+			     uint8_t *buf, uint8_t len)
+{
+	if (!atombios_i2c_write_offset(ctx, i2c_line, slave_addr, reg_offset))
+		return atombios_i2c_read_chunk(ctx, i2c_line, slave_addr, 0, buf, len);
+
+	/* Some older VBIOS tables combine the offset and read in one call. */
+	return atombios_i2c_read_chunk(ctx, i2c_line, slave_addr, reg_offset,
+				     buf, len);
 }
 
 /*
@@ -412,7 +1183,7 @@ static int atombios_read_edid(struct atom_context *ctx, uint8_t i2c_line,
 	int chunk;
 	int ret;
 
-	printk(BIOS_DEBUG, "ATOMBIOS: reading EDID on I2C line %d\n", i2c_line);
+	printk(BIOS_DEBUG, "ATOMBIOS: reading EDID on I2C line 0x%02x\n", i2c_line);
 
 	/*
 	 * Read EDID in chunks. The ProcessI2cChannelTransaction table
@@ -424,9 +1195,16 @@ static int atombios_read_edid(struct atom_context *ctx, uint8_t i2c_line,
 		if (chunk > 16)
 			chunk = 16;
 
-		ret = atombios_i2c_read(ctx, i2c_line, DDC_EDID_ADDRESS,
-					(uint8_t)offset,
-					edid_buf + offset, (uint8_t)chunk);
+		ret = atombios_gpio_i2c_read(ctx, i2c_line, DDC_EDID_ADDRESS,
+					     (uint8_t)offset,
+					     edid_buf + offset, (uint8_t)chunk);
+		if (ret) {
+			printk(BIOS_DEBUG,
+			       "ATOMBIOS: GPIO DDC failed, trying ATOM I2C\n");
+			ret = atombios_i2c_read(ctx, i2c_line, DDC_EDID_ADDRESS,
+						(uint8_t)offset, edid_buf + offset,
+						(uint8_t)chunk);
+		}
 		if (ret)
 			return -1;
 	}
@@ -434,12 +1212,16 @@ static int atombios_read_edid(struct atom_context *ctx, uint8_t i2c_line,
 	/* Validate EDID header: 00 FF FF FF FF FF FF 00 */
 	if (edid_buf[0] != 0x00 || edid_buf[1] != 0xFF ||
 	    edid_buf[6] != 0xFF || edid_buf[7] != 0x00) {
-		printk(BIOS_DEBUG, "ATOMBIOS: EDID header invalid on I2C line %d\n",
-		       i2c_line);
+		printk(BIOS_DEBUG,
+		       "ATOMBIOS: EDID header invalid on I2C line 0x%02x: "
+		       "%02x %02x %02x %02x %02x %02x %02x %02x\n",
+		       i2c_line, edid_buf[0], edid_buf[1], edid_buf[2],
+		       edid_buf[3], edid_buf[4], edid_buf[5], edid_buf[6],
+		       edid_buf[7]);
 		return -1;
 	}
 
-	printk(BIOS_INFO, "ATOMBIOS: EDID read successfully on I2C line %d\n",
+	printk(BIOS_INFO, "ATOMBIOS: EDID read successfully on I2C line 0x%02x\n",
 	       i2c_line);
 	return 0;
 }
@@ -499,7 +1281,7 @@ static int atombios_dp_aux_transfer(struct atom_context *ctx,
 
 	if (atom_execute_table(ctx, cmd_idx.process_aux,
 			       (uint32_t *)&args,
-			       sizeof(args) / sizeof(uint32_t))) {
+			       sizeof(args))) {
 		return -1;
 	}
 
@@ -905,13 +1687,187 @@ static int atombios_edp_panel_power(struct atom_context *ctx,
 
 /* ---- SetPixelClock ---- */
 
+struct atombios_pll_params {
+	uint32_t reference_freq;
+	uint32_t pll_out_min;
+	uint32_t pll_out_max;
+};
+
+static void atombios_get_pll_params(struct atom_context *ctx,
+					    struct atombios_pll_params *pll)
+{
+	uint16_t data_offset;
+	uint8_t frev, crev;
+	ATOM_FIRMWARE_INFO *info;
+
+	pll->reference_freq = 2700;
+	pll->pll_out_min = 64800;
+	pll->pll_out_max = 200000;
+
+	if (!atom_parse_data_header(ctx, cmd_idx.data_firmware_info,
+				    NULL, &frev, &crev, &data_offset))
+		return;
+
+	info = (ATOM_FIRMWARE_INFO *)((uint8_t *)ctx->bios + data_offset);
+	if (info->usReferenceClock)
+		pll->reference_freq = info->usReferenceClock;
+	if (info->ulMaxPixelClockPLL_Output)
+		pll->pll_out_max = info->ulMaxPixelClockPLL_Output;
+
+	if (frev < 2 && crev < 2) {
+		if (info->usMinPixelClockPLL_Output)
+			pll->pll_out_min = info->usMinPixelClockPLL_Output;
+	} else {
+		ATOM_FIRMWARE_INFO_V1_2 *info12 = (ATOM_FIRMWARE_INFO_V1_2 *)info;
+		if (info12->ulMinPixelClockPLL_Output)
+			pll->pll_out_min = info12->ulMinPixelClockPLL_Output;
+	}
+}
+
+static uint32_t atombios_abs_diff_u32(uint32_t a, uint32_t b)
+{
+	return a > b ? a - b : b - a;
+}
+
+static uint32_t atombios_gcd_u32(uint32_t a, uint32_t b)
+{
+	while (b) {
+		uint32_t t = b;
+		b = a % b;
+		a = t;
+	}
+	return a ? a : 1;
+}
+
+static uint32_t atombios_div_round_up(uint32_t n, uint32_t d)
+{
+	return (n + d - 1) / d;
+}
+
+static uint32_t atombios_div_round_closest(uint64_t n, uint32_t d)
+{
+	return (uint32_t)((n + d / 2) / d);
+}
+
+static uint32_t atombios_clamp_u32(uint32_t v, uint32_t min, uint32_t max)
+{
+	if (v < min)
+		return min;
+	if (v > max)
+		return max;
+	return v;
+}
+
+static void atombios_avivo_reduce_ratio(uint32_t *nom, uint32_t *den,
+					uint32_t nom_min, uint32_t den_min)
+{
+	uint32_t tmp = atombios_gcd_u32(*nom, *den);
+
+	*nom /= tmp;
+	*den /= tmp;
+
+	if (*nom < nom_min) {
+		tmp = atombios_div_round_up(nom_min, *nom);
+		*nom *= tmp;
+		*den *= tmp;
+	}
+
+	if (*den < den_min) {
+		tmp = atombios_div_round_up(den_min, *den);
+		*nom *= tmp;
+		*den *= tmp;
+	}
+}
+
+static void atombios_avivo_get_fb_ref_div(uint32_t nom, uint32_t den,
+					  uint32_t post_div,
+					  uint32_t fb_div_max,
+					  uint32_t ref_div_max,
+					  uint32_t *fb_div,
+					  uint32_t *ref_div)
+{
+	ref_div_max = atombios_clamp_u32(100 / post_div, 1, ref_div_max);
+	*ref_div = atombios_clamp_u32(den / post_div, 1, ref_div_max);
+	*fb_div = atombios_div_round_closest((uint64_t)nom * *ref_div * post_div,
+					      den);
+
+	if (*fb_div > fb_div_max) {
+		*ref_div = (*ref_div * fb_div_max) / *fb_div;
+		*fb_div = fb_div_max;
+	}
+}
+
+static void atombios_compute_avivo_pll(struct atom_context *ctx,
+					       uint32_t target_clock,
+					       uint32_t *dot_clock,
+					       uint32_t *fb_div,
+					       uint32_t *frac_fb_div,
+					       uint32_t *ref_div,
+					       uint32_t *post_div)
+{
+	struct atombios_pll_params pll;
+	uint32_t fb_div_min = 4;
+	uint32_t fb_div_max = 0x7ff;
+	uint32_t ref_div_min = 2;
+	uint32_t ref_div_max = 7;
+	uint32_t post_min, post_max, post;
+	uint32_t post_best, diff_best = 0xffffffff;
+	uint32_t nom, den;
+
+	atombios_get_pll_params(ctx, &pll);
+
+	post_min = pll.pll_out_min / target_clock;
+	if (target_clock * post_min < pll.pll_out_min)
+		post_min++;
+	if (post_min < 2)
+		post_min = 2;
+
+	post_max = pll.pll_out_max / target_clock;
+	if (target_clock * post_max > pll.pll_out_max)
+		post_max--;
+	if (post_max > 0x7f)
+		post_max = 0x7f;
+	if (post_max < post_min)
+		post_max = post_min;
+
+	/* Match Linux radeon_compute_pll_avivo() flags used on RV630:
+	 * RADEON_PLL_PREFER_LOW_REF_DIV and RADEON_PLL_PREFER_MINM_OVER_MAXP. */
+	nom = target_clock;
+	den = pll.reference_freq;
+	atombios_avivo_reduce_ratio(&nom, &den, fb_div_min, post_min);
+
+	post_best = post_min;
+	for (post = post_min; post <= post_max; post++) {
+		uint32_t fb, ref, actual, diff;
+
+		atombios_avivo_get_fb_ref_div(nom, den, post, fb_div_max,
+					      ref_div_max, &fb, &ref);
+		actual = (pll.reference_freq * fb) / (ref * post);
+		diff = atombios_abs_diff_u32(target_clock, actual);
+		if (diff < diff_best) {
+			post_best = post;
+			diff_best = diff;
+		}
+	}
+
+	*post_div = post_best;
+	atombios_avivo_get_fb_ref_div(nom, den, *post_div, fb_div_max,
+				      ref_div_max, fb_div, ref_div);
+	atombios_avivo_reduce_ratio(fb_div, ref_div, fb_div_min, ref_div_min);
+
+	*frac_fb_div = 0;
+	*dot_clock = (pll.reference_freq * *fb_div) / (*ref_div * *post_div);
+
+	printk(BIOS_DEBUG,
+	       "ATOMBIOS: PLL ref=%u min=%u max=%u target=%u actual=%u fb=%u refdiv=%u post=%u\n",
+	       pll.reference_freq, pll.pll_out_min, pll.pll_out_max,
+	       target_clock, *dot_clock, *fb_div, *ref_div, *post_div);
+}
+
 /*
  * Program the pixel clock PLL via the SetPixelClock ATOM command table.
- *
- * For most GPU generations, calling SetCRTC_UsingDTDTiming alone is
- * sufficient as it internally programs the PLL. However, some generations
- * require an explicit SetPixelClock call. This function handles versions
- * 5, 6, and 7 of the PIXEL_CLOCK_PARAMETERS structure.
+ * Linux computes PLL dividers before calling SetPixelClock on table
+ * revisions 1.1 through 1.3; do the same here for older AVIVO chips.
  */
 static int atombios_set_pixel_clock(struct atom_context *ctx,
 				    const struct atombios_display_path *path,
@@ -920,42 +1876,72 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 {
 	uint8_t frev, crev;
 	union {
+		PIXEL_CLOCK_PARAMETERS v1;
+		PIXEL_CLOCK_PARAMETERS_V2 v2;
+		PIXEL_CLOCK_PARAMETERS_V3 v3;
 		PIXEL_CLOCK_PARAMETERS_V5 v5;
 		PIXEL_CLOCK_PARAMETERS_V6 v6;
 		PIXEL_CLOCK_PARAMETERS_V7 v7;
 	} args;
 	uint8_t encoder_id;
+	uint32_t dot_clock, fb_div, frac_fb_div, ref_div, post_div;
 
 	if (!atom_parse_cmd_header(ctx, cmd_idx.set_pixel_clock, &frev, &crev))
 		return -1;
 
 	memset(&args, 0, sizeof(args));
 
-	/* Map encoder object to transmitter ID used by SetPixelClock */
-	switch (path->encoder_obj_id) {
-	case ENCODER_OBJECT_ID_INTERNAL_UNIPHY:
-		encoder_id = ENCODER_OBJECT_ID_INTERNAL_UNIPHY;
-		break;
-	case ENCODER_OBJECT_ID_INTERNAL_UNIPHY1:
-		encoder_id = ENCODER_OBJECT_ID_INTERNAL_UNIPHY1;
-		break;
-	case ENCODER_OBJECT_ID_INTERNAL_UNIPHY2:
-		encoder_id = ENCODER_OBJECT_ID_INTERNAL_UNIPHY2;
-		break;
-	default:
-		encoder_id = ENCODER_OBJECT_ID_INTERNAL_UNIPHY;
-		break;
-	}
+	/* Linux passes radeon_encoder->encoder_id here. */
+	encoder_id = path->encoder_obj_id;
+	atombios_compute_avivo_pll(ctx, pixel_clock_10khz, &dot_clock,
+				 &fb_div, &frac_fb_div, &ref_div, &post_div);
 
 	printk(BIOS_DEBUG,
 	       "ATOMBIOS: SetPixelClock frev=%d crev=%d clock=%d*10kHz crtc=%d\n",
 	       frev, crev, pixel_clock_10khz, crtc_id);
 
 	switch (crev) {
+	case 1:
+		args.v1.usPixelClock = pixel_clock_10khz;
+		args.v1.usRefDiv = ref_div;
+		args.v1.usFbDiv = fb_div;
+		args.v1.ucFracFbDiv = frac_fb_div;
+		args.v1.ucPostDiv = post_div;
+		args.v1.ucPpll = crtc_id;
+		args.v1.ucCRTC = crtc_id;
+		args.v1.ucRefDivSrc = 1;
+		break;
+	case 2:
+		args.v2.usPixelClock = pixel_clock_10khz;
+		args.v2.usRefDiv = ref_div;
+		args.v2.usFbDiv = fb_div;
+		args.v2.ucFracFbDiv = frac_fb_div;
+		args.v2.ucPostDiv = post_div;
+		args.v2.ucPpll = crtc_id;
+		args.v2.ucCRTC = crtc_id;
+		args.v2.ucRefDivSrc = 1;
+		break;
+	case 3:
+		args.v3.usPixelClock = pixel_clock_10khz;
+		args.v3.usRefDiv = ref_div;
+		args.v3.usFbDiv = fb_div;
+		args.v3.ucFracFbDiv = frac_fb_div;
+		args.v3.ucPostDiv = post_div;
+		args.v3.ucPpll = crtc_id;
+		args.v3.ucTransmitterId = encoder_id;
+		args.v3.ucEncoderMode = path->encoder_mode;
+		args.v3.ucMiscInfo = crtc_id == ATOM_CRTC2 ?
+			PIXEL_CLOCK_MISC_CRTC_SEL_CRTC2 :
+			PIXEL_CLOCK_MISC_CRTC_SEL_CRTC1;
+		break;
 	case 5:
 		args.v5.ucCRTC = crtc_id;
 		args.v5.usPixelClock = pixel_clock_10khz;
-		args.v5.ucPpll = crtc_id; /* PPLL1 for CRTC1, etc. */
+		args.v5.ucRefDiv = ref_div;
+		args.v5.usFbDiv = fb_div;
+		args.v5.ulFbDivDecFrac = frac_fb_div * 100000;
+		args.v5.ucPostDiv = post_div;
+		args.v5.ucPpll = crtc_id;
 		args.v5.ucTransmitterID = encoder_id;
 		args.v5.ucEncoderMode = path->encoder_mode;
 		args.v5.ucMiscInfo = 0;
@@ -963,6 +1949,10 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 	case 6:
 		args.v6.ulCrtcPclkFreq.ulPixelClock = pixel_clock_10khz;
 		args.v6.ulCrtcPclkFreq.ucCRTC = crtc_id;
+		args.v6.ucRefDiv = ref_div;
+		args.v6.usFbDiv = fb_div;
+		args.v6.ulFbDivDecFrac = frac_fb_div * 100000;
+		args.v6.ucPostDiv = post_div;
 		args.v6.ucPpll = crtc_id;
 		args.v6.ucTransmitterID = encoder_id;
 		args.v6.ucEncoderMode = path->encoder_mode;
@@ -970,7 +1960,6 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 		break;
 	case 7:
 	default:
-		/* V7 uses pixel clock in 100Hz units */
 		args.v7.ulPixelClock = (uint32_t)pixel_clock_10khz * 100;
 		args.v7.ucCRTC = crtc_id;
 		args.v7.ucPpll = crtc_id;
@@ -982,7 +1971,7 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 
 	return atom_execute_table(ctx, cmd_idx.set_pixel_clock,
 				  (uint32_t *)&args,
-				  sizeof(args) / sizeof(uint32_t));
+				  sizeof(args));
 }
 
 /* ---- DAC Encoder Control (VGA/CRT) ---- */
@@ -1019,7 +2008,7 @@ static int atombios_dac_encoder_setup(struct atom_context *ctx,
 	       pixel_clock_10khz);
 
 	return atom_execute_table(ctx, index, (uint32_t *)&args,
-				  sizeof(args) / sizeof(uint32_t));
+				  sizeof(args));
 }
 
 /* ---- DAC Load Detection (VGA/CRT) ---- */
@@ -1050,7 +2039,148 @@ static int atombios_dac_load_detect(struct atom_context *ctx,
 
 	return atom_execute_table(ctx, cmd_idx.dac_load_detect,
 				  (uint32_t *)&args,
-				  sizeof(args) / sizeof(uint32_t));
+				  sizeof(args));
+}
+
+static int atombios_device_tag_index(uint16_t device_tag)
+{
+	int i;
+
+	for (i = 0; i < ATOM_MAX_SUPPORTED_DEVICE; i++) {
+		if (device_tag & (1 << i))
+			return i;
+	}
+
+	return -1;
+}
+
+static void atombios_apply_supported_device_info(struct atom_context *ctx,
+						 struct atombios_display_path *paths,
+						 int count)
+{
+	ATOM_SUPPORTED_DEVICES_INFO_2d1 *supported;
+	uint16_t data_offset, device_support;
+	uint8_t frev, crev;
+	int max_device;
+	int i;
+
+	if (cmd_idx.data_supported_devices < 0)
+		return;
+
+	if (!atom_parse_data_header(ctx, cmd_idx.data_supported_devices,
+				    NULL, &frev, &crev, &data_offset))
+		return;
+
+	supported = (ATOM_SUPPORTED_DEVICES_INFO_2d1 *)
+		((uint8_t *)ctx->bios + data_offset);
+	device_support = supported->usDeviceSupport;
+	max_device = (frev > 1) ? ATOM_MAX_SUPPORTED_DEVICE : ATOM_MAX_SUPPORTED_DEVICE_INFO;
+
+	printk(BIOS_INFO,
+	       "ATOMBIOS: SupportedDevicesInfo frev=%d crev=%d support=0x%04x\n",
+	       frev, crev, device_support);
+
+	for (i = 0; i < count; i++) {
+		ATOM_CONNECTOR_INFO_I2C *conn;
+		uint8_t conn_type;
+		uint8_t dac;
+		int dev_index = atombios_device_tag_index(paths[i].device_tag);
+
+		if (dev_index < 0 || dev_index >= max_device)
+			continue;
+		if (!(device_support & (1 << dev_index)))
+			continue;
+
+		conn = &supported->asConnInfo[dev_index];
+		conn_type = conn->sucConnectorInfo.sbfAccess.bfConnectorType;
+		dac = conn->sucConnectorInfo.sbfAccess.bfAssociatedDAC;
+
+		paths[i].i2c_line = conn->sucI2cId.ucAccess;
+		paths[i].i2c_valid = 1;
+
+		switch (conn_type) {
+		case 1: /* VGA */
+		case 4: /* DVI-A */
+			paths[i].connector_type = 4;
+			paths[i].encoder_mode = ATOM_ENCODER_MODE_CRT;
+			paths[i].is_dac = 1;
+			paths[i].dac_type = (dac == 2) ? ATOM_DAC_B : ATOM_DAC_A;
+			break;
+		case 2: /* DVI-I */
+		case 3: /* DVI-D */
+		case 8: /* digital link */
+			paths[i].connector_type = 3;
+			paths[i].encoder_mode = ATOM_ENCODER_MODE_DVI;
+			break;
+		case 7: /* LVDS */
+			paths[i].connector_type = 2;
+			paths[i].encoder_mode = ATOM_ENCODER_MODE_LVDS;
+			break;
+		case 0x0a: /* HDMI type A */
+		case 0x0b: /* HDMI type B */
+			paths[i].connector_type = 1;
+			paths[i].encoder_mode = ATOM_ENCODER_MODE_HDMI;
+			break;
+		default:
+			break;
+		}
+
+		printk(BIOS_INFO,
+		       "ATOMBIOS: supported dev %d tag=0x%04x conn_type=0x%x i2c=0x%02x dac=%d\n",
+		       dev_index, paths[i].device_tag, conn_type, paths[i].i2c_line, dac);
+	}
+}
+
+static void atombios_read_connector_records(struct atom_context *ctx,
+					    ATOM_OBJECT_HEADER *obj_hdr,
+					    uint16_t data_offset,
+					    struct atombios_display_path *path)
+{
+	ATOM_OBJECT_TABLE *con_obj;
+	uint8_t *base = (uint8_t *)ctx->bios;
+	int i;
+
+	if (!obj_hdr->usConnectorObjectTableOffset)
+		return;
+
+	con_obj = (ATOM_OBJECT_TABLE *)
+		(base + data_offset + obj_hdr->usConnectorObjectTableOffset);
+
+	for (i = 0; i < con_obj->ucNumberOfObjects; i++) {
+		ATOM_COMMON_RECORD_HEADER *record;
+
+		if (con_obj->asObjects[i].usObjectID != path->connector_obj_id)
+			continue;
+		if (!con_obj->asObjects[i].usRecordOffset)
+			return;
+
+		record = (ATOM_COMMON_RECORD_HEADER *)
+			(base + data_offset + con_obj->asObjects[i].usRecordOffset);
+
+		while (record->ucRecordSize > 0 &&
+		       record->ucRecordType > 0 &&
+		       record->ucRecordType <= ATOM_MAX_OBJECT_RECORD_NUMBER) {
+			switch (record->ucRecordType) {
+			case ATOM_I2C_RECORD_TYPE: {
+				ATOM_I2C_RECORD *i2c_record = (ATOM_I2C_RECORD *)record;
+				ATOM_I2C_ID_CONFIG_ACCESS *i2c_id =
+					(ATOM_I2C_ID_CONFIG_ACCESS *)&i2c_record->sucI2cId;
+				path->i2c_line = i2c_id->ucAccess;
+				path->i2c_valid = 1;
+				break;
+			}
+			case ATOM_HPD_INT_RECORD_TYPE: {
+				ATOM_HPD_INT_RECORD *hpd_record = (ATOM_HPD_INT_RECORD *)record;
+				path->hpd_id = hpd_record->ucHPDIntGPIOID;
+				break;
+			}
+			}
+
+			record = (ATOM_COMMON_RECORD_HEADER *)
+				((uint8_t *)record + record->ucRecordSize);
+		}
+		return;
+	}
 }
 
 /* ---- Display path discovery from ATOM object tables ---- */
@@ -1105,17 +2235,19 @@ static int atombios_discover_display_paths(struct atom_context *ctx,
 		disp_path = (ATOM_DISPLAY_OBJECT_PATH *)(base + path_offset);
 
 		conn_obj_id = disp_path->usConnObjectId;
-		obj_type = (conn_obj_id >> 12) & 0xF;
+		obj_type = (conn_obj_id & OBJECT_TYPE_MASK) >> OBJECT_TYPE_SHIFT;
 
-		if (obj_type != GRAPH_OBJECT_TYPE_CONNECTOR) {
+		if (obj_type != GRAPH_OBJECT_TYPE_CONNECTOR ||
+		    !(obj_hdr->usDeviceSupport & disp_path->usDeviceTag)) {
 			/* Skip to next path using usSize */
 			path_offset += disp_path->usSize;
 			continue;
 		}
 
-		obj_id = (conn_obj_id >> 8) & 0xF;
+		obj_id = (conn_obj_id & OBJECT_ID_MASK) >> OBJECT_ID_SHIFT;
 
 		paths[count].connector_obj_id = conn_obj_id;
+		paths[count].device_tag = disp_path->usDeviceTag;
 
 		/* Map ATOM connector object ID to a simple type */
 		switch (obj_id) {
@@ -1127,6 +2259,11 @@ static int atombios_discover_display_paths(struct atom_context *ctx,
 		case CONNECTOR_OBJECT_ID_eDP:
 			paths[count].connector_type = 2; /* DP/eDP */
 			paths[count].encoder_mode = ATOM_ENCODER_MODE_DP;
+			break;
+		case CONNECTOR_OBJECT_ID_LVDS:
+		case CONNECTOR_OBJECT_ID_LVDS_eDP:
+			paths[count].connector_type = 2; /* internal panel */
+			paths[count].encoder_mode = ATOM_ENCODER_MODE_LVDS;
 			break;
 		case CONNECTOR_OBJECT_ID_SINGLE_LINK_DVI_D:
 		case CONNECTOR_OBJECT_ID_DUAL_LINK_DVI_D:
@@ -1146,18 +2283,40 @@ static int atombios_discover_display_paths(struct atom_context *ctx,
 		}
 
 		/* Walk graphic objects in the path to find encoder */
-		for (j = 0; j < (disp_path->usSize - 4) / 2; j++) {
+		for (j = 0; j < (disp_path->usSize - 8) / 2; j++) {
 			enc_obj_id = disp_path->usGraphicObjIds[j];
-			obj_type = (enc_obj_id >> 12) & 0xF;
+			obj_type = (enc_obj_id & OBJECT_TYPE_MASK) >> OBJECT_TYPE_SHIFT;
 
 			if (obj_type != GRAPH_OBJECT_TYPE_ENCODER)
 				continue;
 
-			enc_id = (enc_obj_id >> 8) & 0xF;
+			enc_id = (enc_obj_id & OBJECT_ID_MASK) >> OBJECT_ID_SHIFT;
 			paths[count].encoder_obj_id = enc_id;
 
 			/* Determine encoder type from encoder object ID */
 			switch (enc_id) {
+			case ENCODER_OBJECT_ID_INTERNAL_LVDS:
+				paths[count].encoder_mode = ATOM_ENCODER_MODE_LVDS;
+				break;
+			case ENCODER_OBJECT_ID_INTERNAL_TMDS1:
+			case ENCODER_OBJECT_ID_INTERNAL_TMDS2:
+			case ENCODER_OBJECT_ID_INTERNAL_KLDSCP_TMDS1:
+				paths[count].is_legacy_tmds = 1;
+				paths[count].encoder_mode = ATOM_ENCODER_MODE_DVI;
+				break;
+			case ENCODER_OBJECT_ID_INTERNAL_KLDSCP_DVO1:
+				paths[count].encoder_mode = ATOM_ENCODER_MODE_DVI;
+				break;
+			case ENCODER_OBJECT_ID_INTERNAL_LVTM1:
+				paths[count].is_legacy_tmds = 1;
+				paths[count].encoder_mode = ATOM_ENCODER_MODE_DVI;
+				break;
+			case ENCODER_OBJECT_ID_INTERNAL_KLDSCP_LVTMA:
+				paths[count].dig_encoder = 1; /* DIG2 on DCE3 */
+				paths[count].phy_id = 1;      /* LVTMA */
+				if (paths[count].connector_type == 2)
+					paths[count].encoder_mode = ATOM_ENCODER_MODE_LVDS;
+				break;
 			case ENCODER_OBJECT_ID_INTERNAL_UNIPHY:
 				paths[count].dig_encoder = 0; /* DIG1 */
 				paths[count].phy_id = 0;      /* UNIPHY_A */
@@ -1192,29 +2351,20 @@ static int atombios_discover_display_paths(struct atom_context *ctx,
 
 			/* For DIG encoders, check link B (ENUM_ID_2) */
 			if (!paths[count].is_dac &&
-			    ((enc_obj_id >> 4) & 0xF) == 2) {
+			    ((enc_obj_id & ENUM_ID_MASK) >> ENUM_ID_SHIFT) == GRAPH_OBJECT_ENUM_ID2) {
 				paths[count].dig_encoder += 1;
 				paths[count].phy_id += 1;
 			}
 			break; /* use first encoder found */
 		}
 
-		if (paths[count].is_dac)
-			printk(BIOS_INFO,
-			       "ATOMBIOS: path %d: conn=0x%04x type=%d DAC-%c mode=CRT\n",
-			       count, conn_obj_id, paths[count].connector_type,
-			       paths[count].dac_type == ATOM_DAC_A ? 'A' : 'B');
-		else
-			printk(BIOS_INFO,
-			       "ATOMBIOS: path %d: conn=0x%04x type=%d enc=%d dig=%d phy=%d mode=%d\n",
-			       count, conn_obj_id, paths[count].connector_type,
-			       paths[count].encoder_obj_id,
-			       paths[count].dig_encoder, paths[count].phy_id,
-			       paths[count].encoder_mode);
+		atombios_read_connector_records(ctx, obj_hdr, data_offset, &paths[count]);
 
 		count++;
 		path_offset += disp_path->usSize;
 	}
+
+	atombios_apply_supported_device_info(ctx, paths, count);
 
 	/* Look up I2C lines from GPIO_I2C_Info table */
 	if (atom_parse_data_header(ctx, cmd_idx.data_gpio_i2c,
@@ -1222,21 +2372,124 @@ static int atombios_discover_display_paths(struct atom_context *ctx,
 		ATOM_GPIO_I2C_INFO *i2c_info;
 		i2c_info = (ATOM_GPIO_I2C_INFO *)(base + data_offset);
 
-		/*
-		 * Assign I2C line IDs to paths. The typical mapping is
-		 * path index -> I2C line index, but this is a heuristic.
-		 * The proper approach would be to parse connector records
-		 * from the object table, but for initial bring-up we use
-		 * the I2C entries in order.
-		 */
+		/* Use GPIO_I2C_Info as a fallback if connector records had no DDC. */
 		for (i = 0; i < count; i++) {
-			if (i < ATOM_MAX_SUPPORTED_DEVICE)
+			if (paths[i].i2c_valid)
+				continue;
+			if (i < ATOM_MAX_SUPPORTED_DEVICE) {
 				paths[i].i2c_line =
-					i2c_info->asGPIO_Info[i].sucI2cId.ucAccess & 0xF;
+					i2c_info->asGPIO_Info[i].sucI2cId.ucAccess;
+				paths[i].i2c_valid = 1;
+			}
 		}
 	}
 
+	for (i = 0; i < count; i++) {
+		if (paths[i].is_dac)
+			printk(BIOS_INFO,
+			       "ATOMBIOS: path %d: tag=0x%04x conn=0x%04x type=%d i2c=0x%02x DAC-%c mode=CRT\n",
+			       i, paths[i].device_tag, paths[i].connector_obj_id,
+			       paths[i].connector_type, paths[i].i2c_line,
+			       paths[i].dac_type == ATOM_DAC_A ? 'A' : 'B');
+		else if (paths[i].is_legacy_tmds)
+			printk(BIOS_INFO,
+			       "ATOMBIOS: path %d: tag=0x%04x conn=0x%04x type=%d "
+			       "i2c=0x%02x enc=0x%02x legacy TMDS mode=%d\n",
+			       i, paths[i].device_tag, paths[i].connector_obj_id,
+			       paths[i].connector_type, paths[i].i2c_line,
+			       paths[i].encoder_obj_id, paths[i].encoder_mode);
+		else
+			printk(BIOS_INFO,
+			       "ATOMBIOS: path %d: tag=0x%04x conn=0x%04x type=%d "
+			       "i2c=0x%02x enc=0x%02x dig=%d phy=%d mode=%d\n",
+			       i, paths[i].device_tag, paths[i].connector_obj_id,
+			       paths[i].connector_type, paths[i].i2c_line,
+			       paths[i].encoder_obj_id, paths[i].dig_encoder,
+			       paths[i].phy_id, paths[i].encoder_mode);
+	}
+
 	return count;
+}
+
+
+/* ---- Legacy TMDS/LVTMA Encoder Control ---- */
+
+static int atombios_legacy_tmds_encoder_index(const struct atombios_display_path *path)
+{
+	switch (path->encoder_obj_id) {
+	case ENCODER_OBJECT_ID_INTERNAL_TMDS1:
+	case ENCODER_OBJECT_ID_INTERNAL_KLDSCP_TMDS1:
+		return cmd_idx.tmds1_encoder_ctrl;
+	case ENCODER_OBJECT_ID_INTERNAL_TMDS2:
+	case ENCODER_OBJECT_ID_INTERNAL_LVTM1:
+		return cmd_idx.tmds2_encoder_ctrl;
+	default:
+		return -1;
+	}
+}
+
+static int atombios_legacy_tmds_output_index(const struct atombios_display_path *path)
+{
+	switch (path->encoder_obj_id) {
+	case ENCODER_OBJECT_ID_INTERNAL_TMDS1:
+	case ENCODER_OBJECT_ID_INTERNAL_KLDSCP_TMDS1:
+		return cmd_idx.tmds1_output_ctrl;
+	case ENCODER_OBJECT_ID_INTERNAL_TMDS2:
+	case ENCODER_OBJECT_ID_INTERNAL_LVTM1:
+		return cmd_idx.tmds2_output_ctrl;
+	default:
+		return -1;
+	}
+}
+
+static int atombios_legacy_tmds_encoder_setup(struct atom_context *ctx,
+					      const struct atombios_display_path *path,
+					      uint16_t pixel_clock_10khz,
+					      uint8_t action)
+{
+	uint8_t frev, crev;
+	int index = atombios_legacy_tmds_encoder_index(path);
+	union {
+		LVDS_ENCODER_CONTROL_PARAMETERS v1;
+		LVDS_ENCODER_CONTROL_PARAMETERS_V2 v2;
+	} args;
+
+	if (index < 0)
+		return -1;
+	if (!atom_parse_cmd_header(ctx, index, &frev, &crev))
+		return -1;
+
+	memset(&args, 0, sizeof(args));
+	args.v1.usPixelClock = pixel_clock_10khz;
+	args.v1.ucAction = action;
+	args.v1.ucMisc = ATOM_PANEL_MISC_888RGB;
+	if (pixel_clock_10khz > 16500)
+		args.v1.ucMisc |= PANEL_ENCODER_MISC_DUAL;
+
+	printk(BIOS_DEBUG,
+	       "ATOMBIOS: legacy TMDS encoder setup table=%d frev=%d crev=%d action=%d clock=%d*10kHz\n",
+	       index, frev, crev, action, pixel_clock_10khz);
+
+	return atom_execute_table(ctx, index, (uint32_t *)&args, sizeof(args));
+}
+
+static int atombios_legacy_tmds_output_control(struct atom_context *ctx,
+					       const struct atombios_display_path *path,
+					       uint8_t action)
+{
+	DISPLAY_DEVICE_OUTPUT_CONTROL_PS_ALLOCATION args;
+	int index = atombios_legacy_tmds_output_index(path);
+
+	if (index < 0)
+		return -1;
+
+	memset(&args, 0, sizeof(args));
+	args.ucAction = action;
+
+	printk(BIOS_DEBUG, "ATOMBIOS: legacy TMDS output table=%d action=%d\n",
+	       index, action);
+
+	return atom_execute_table(ctx, index, (uint32_t *)&args, sizeof(args));
 }
 
 /* ---- DIG Encoder Control ---- */
@@ -1306,7 +2559,7 @@ static int atombios_dig_encoder_setup(struct atom_context *ctx,
 
 	return atom_execute_table(ctx, cmd_idx.dig_encoder_ctrl,
 				  (uint32_t *)&args,
-				  sizeof(args) / sizeof(uint32_t));
+				  sizeof(args));
 }
 
 /* ---- UNIPHY Transmitter Control ---- */
@@ -1426,7 +2679,7 @@ static int atombios_transmitter_control(struct atom_context *ctx,
 
 	return atom_execute_table(ctx, cmd_idx.dig1_xmtr_ctrl,
 				  (uint32_t *)&args,
-				  sizeof(args) / sizeof(uint32_t));
+				  sizeof(args));
 }
 
 /* ---- CRTC Source Selection ---- */
@@ -1443,7 +2696,8 @@ static int atombios_select_crtc_source(struct atom_context *ctx,
 		SELECT_CRTC_SOURCE_PARAMETERS    v1;
 		SELECT_CRTC_SOURCE_PARAMETERS_V2 v2;
 	} args;
-	uint8_t enc_id;
+	uint8_t enc_id = ASIC_INT_DIG1_ENCODER_ID;
+	int dev_index;
 
 	if (!atom_parse_cmd_header(ctx, cmd_idx.select_crtc_source,
 				   &frev, &crev))
@@ -1451,11 +2705,14 @@ static int atombios_select_crtc_source(struct atom_context *ctx,
 
 	memset(&args, 0, sizeof(args));
 
-	/* Map encoder to the hardware encoder ID */
+	/* Map encoder to the hardware encoder ID. Legacy TMDS paths use
+	 * SelectCRTC_Source v1 on the hardware this driver currently targets. */
 	if (path->is_dac) {
 		enc_id = (path->dac_type == ATOM_DAC_A)
 			 ? ASIC_INT_DAC1_ENCODER_ID
 			 : ASIC_INT_DAC2_ENCODER_ID;
+	} else if (path->is_legacy_tmds) {
+		enc_id = ASIC_INT_DIG1_ENCODER_ID;
 	} else {
 		switch (path->dig_encoder) {
 		case 0: enc_id = ASIC_INT_DIG1_ENCODER_ID; break;
@@ -1468,10 +2725,14 @@ static int atombios_select_crtc_source(struct atom_context *ctx,
 		}
 	}
 
+	dev_index = atombios_device_tag_index(path->device_tag);
+
 	switch (crev) {
 	case 1:
 		args.v1.ucCRTC = crtc_id;
-		if (path->is_dac)
+		if (dev_index >= 0)
+			args.v1.ucDevice = dev_index;
+		else if (path->is_dac)
 			args.v1.ucDevice = (path->dac_type == ATOM_DAC_A)
 					   ? ATOM_DEVICE_CRT1_INDEX
 					   : ATOM_DEVICE_CRT2_INDEX;
@@ -1493,7 +2754,7 @@ static int atombios_select_crtc_source(struct atom_context *ctx,
 
 	return atom_execute_table(ctx, cmd_idx.select_crtc_source,
 				  (uint32_t *)&args,
-				  sizeof(args) / sizeof(uint32_t));
+				  sizeof(args));
 }
 
 /* ---- Basic CRTC operations ---- */
@@ -1502,24 +2763,37 @@ static int atombios_set_crtc_dtd_timing(struct atom_context *ctx,
 					 const struct edid_mode *mode,
 					 int crtc_id)
 {
-	uint32_t params[8];
-	uint8_t misc_flags = 0;
+	SET_CRTC_USING_DTD_TIMING_PARAMETERS args;
+	uint16_t misc_flags = 0;
 
-	memset(params, 0, sizeof(params));
+	memset(&args, 0, sizeof(args));
 
-	if (mode->phsync)
-		misc_flags |= 0x02;
-	if (mode->pvsync)
-		misc_flags |= 0x04;
+	/* ATOM polarity bits mean active low. */
+	if (!mode->phsync)
+		misc_flags |= ATOM_HSYNC_POLARITY;
+	if (!mode->pvsync)
+		misc_flags |= ATOM_VSYNC_POLARITY;
 
-	params[0] = mode->ha | ((uint32_t)mode->hbl << 16);
-	params[1] = mode->va | ((uint32_t)mode->vbl << 16);
-	params[2] = mode->hso | ((uint32_t)mode->hspw << 16);
-	params[3] = mode->vso | ((uint32_t)mode->vspw << 16);
-	params[4] = misc_flags | ((uint32_t)crtc_id << 24);
+	args.usH_Size = mode->ha;
+	args.usH_Blanking_Time = mode->hbl;
+	args.usV_Size = mode->va;
+	args.usV_Blanking_Time = mode->vbl;
+	args.usH_SyncOffset = mode->hso;
+	args.usH_SyncWidth = mode->hspw;
+	args.usV_SyncOffset = mode->vso;
+	args.usV_SyncWidth = mode->vspw;
+	args.susModeMiscInfo.usAccess = misc_flags;
+	args.ucH_Border = mode->hborder;
+	args.ucV_Border = mode->vborder;
+	args.ucCRTC = crtc_id;
 
-	return atombios_exec(ctx, cmd_idx.set_crtc_using_dtd, params,
-			     sizeof(params) / sizeof(uint32_t));
+	printk(BIOS_DEBUG,
+	       "ATOMBIOS: DTD h=%u+%u sync=%u/%u v=%u+%u sync=%u/%u misc=0x%04x crtc=%u\n",
+	       mode->ha, mode->hbl, mode->hso, mode->hspw, mode->va,
+	       mode->vbl, mode->vso, mode->vspw, misc_flags, crtc_id);
+
+	return atombios_exec(ctx, cmd_idx.set_crtc_using_dtd,
+			     (uint32_t *)&args, sizeof(args));
 }
 
 static int atombios_enable_crtc(struct atom_context *ctx, int crtc_id,
@@ -1527,14 +2801,14 @@ static int atombios_enable_crtc(struct atom_context *ctx, int crtc_id,
 {
 	uint32_t params[1];
 	params[0] = crtc_id | ((enable ? ATOM_ENABLE : ATOM_DISABLE) << 8);
-	return atombios_exec(ctx, cmd_idx.enable_crtc, params, 1);
+	return atombios_exec(ctx, cmd_idx.enable_crtc, params, sizeof(params));
 }
 
 static int atombios_blank_crtc(struct atom_context *ctx, int crtc_id, int blank)
 {
 	uint32_t params[1];
 	params[0] = crtc_id | ((blank ? ATOM_BLANKING : ATOM_BLANKING_OFF) << 8);
-	return atombios_exec(ctx, cmd_idx.blank_crtc, params, 1);
+	return atombios_exec(ctx, cmd_idx.blank_crtc, params, sizeof(params));
 }
 
 static int atombios_disp_power_gating(struct atom_context *ctx, int crtc_id,
@@ -1542,7 +2816,85 @@ static int atombios_disp_power_gating(struct atom_context *ctx, int crtc_id,
 {
 	uint32_t params[1];
 	params[0] = crtc_id | ((gate ? ATOM_DISABLE : ATOM_ENABLE) << 8);
-	return atombios_exec(ctx, cmd_idx.enable_disp_power_gating, params, 1);
+	return atombios_exec(ctx, cmd_idx.enable_disp_power_gating, params, sizeof(params));
+}
+
+static int atombios_set_crtc_overscan(struct atom_context *ctx, int crtc_id)
+{
+	SET_CRTC_OVERSCAN_PARAMETERS args;
+
+	if (cmd_idx.set_crtc_overscan < 0)
+		return 0;
+
+	memset(&args, 0, sizeof(args));
+	args.ucCRTC = crtc_id;
+	printk(BIOS_DEBUG, "ATOMBIOS: disabling CRTC overscan\n");
+	return atombios_exec(ctx, cmd_idx.set_crtc_overscan,
+			     (uint32_t *)&args, sizeof(args));
+}
+
+static int atombios_disable_scaler(struct atom_context *ctx, int crtc_id)
+{
+	ENABLE_SCALER_PARAMETERS args;
+
+	if (cmd_idx.enable_scaler < 0)
+		return 0;
+
+	memset(&args, 0, sizeof(args));
+	args.ucScaler = crtc_id;
+	args.ucEnable = ATOM_SCALER_DISABLE;
+	printk(BIOS_DEBUG, "ATOMBIOS: disabling scaler %d\n", crtc_id);
+	return atombios_exec(ctx, cmd_idx.enable_scaler,
+			     (uint32_t *)&args, sizeof(args));
+}
+
+static int atombios_yuv_setup(struct atom_context *ctx, int crtc_id, bool enable)
+{
+	ENABLE_YUV_PARAMETERS args;
+	uint32_t scratch;
+	int ret;
+
+	if (cmd_idx.enable_yuv < 0)
+		return 0;
+
+	memset(&args, 0, sizeof(args));
+	args.ucEnable = enable ? ATOM_ENABLE : ATOM_DISABLE;
+	args.ucCRTC = crtc_id;
+
+	/* Linux clears BIOS_3_SCRATCH while disabling YUV for RGB outputs. */
+	scratch = atombios_scratch_read(ctx, R600_BIOS_3_SCRATCH);
+	atombios_scratch_write(ctx, R600_BIOS_3_SCRATCH, 0);
+	printk(BIOS_DEBUG, "ATOMBIOS: %s YUV on CRTC %d\n",
+	       enable ? "enabling" : "disabling", crtc_id);
+	ret = atombios_exec(ctx, cmd_idx.enable_yuv,
+			    (uint32_t *)&args, sizeof(args));
+	atombios_scratch_write(ctx, R600_BIOS_3_SCRATCH, scratch);
+
+	return ret;
+}
+
+static void atombios_program_crtc_postmode(struct atom_context *ctx, int crtc_id)
+{
+	atombios_yuv_setup(ctx, crtc_id, false);
+	atombios_set_crtc_overscan(ctx, crtc_id);
+	atombios_disable_scaler(ctx, crtc_id);
+}
+
+static resource_t atombios_get_bar(struct device *dev, unsigned int bar)
+{
+	struct resource *res = probe_resource(dev, bar);
+	uint32_t lo;
+	resource_t base;
+
+	if (res && res->base)
+		return res->base;
+
+	lo = pci_read_config32(dev, bar);
+	base = lo & ~0xfu;
+	if ((lo & PCI_BASE_ADDRESS_MEM_LIMIT_MASK) == PCI_BASE_ADDRESS_MEM_LIMIT_64)
+		base |= (resource_t)pci_read_config32(dev, bar + 4) << 32;
+
+	return base;
 }
 
 /* ---- Main init entry point ---- */
@@ -1552,7 +2904,7 @@ static void atombios_init(struct device *dev)
 	struct card_info *card;
 	struct atom_context *ctx;
 	void *vbios;
-	uint32_t mmio_bar, fb_bar;
+	resource_t mmio_bar, fb_bar;
 	void *mmio_base;
 	uint32_t *scratch;
 	int crtc_id = ATOM_CRTC1;
@@ -1563,18 +2915,16 @@ static void atombios_init(struct device *dev)
 	uint8_t edid_raw[EDID_BLOCK_SIZE];
 	struct edid edid;
 	uint16_t pixel_clock_10khz;
+	bool asic_init_ok = false;
 	int i;
 
 	printk(BIOS_INFO, "ATOMBIOS: initializing AMD GPU %04x:%04x\n",
 	       dev->vendor, dev->device);
 
 	/* Map MMIO BAR */
-	mmio_bar = pci_read_config32(dev, AMD_GPU_MMIO_BAR);
-	mmio_bar &= ~0xFu;
-	if (!mmio_bar) {
-		mmio_bar = pci_read_config32(dev, PCI_BASE_ADDRESS_2);
-		mmio_bar &= ~0xFu;
-	}
+	mmio_bar = atombios_get_bar(dev, AMD_GPU_MMIO_BAR);
+	if (!mmio_bar)
+		mmio_bar = atombios_get_bar(dev, PCI_BASE_ADDRESS_2);
 	if (!mmio_bar) {
 		printk(BIOS_ERR, "ATOMBIOS: could not find MMIO BAR\n");
 		return;
@@ -1582,14 +2932,14 @@ static void atombios_init(struct device *dev)
 	mmio_base = (void *)(uintptr_t)mmio_bar;
 	printk(BIOS_INFO, "ATOMBIOS: MMIO base at %p\n", mmio_base);
 
-	/* Get framebuffer BAR */
-	fb_bar = pci_read_config32(dev, AMD_GPU_FB_BAR);
-	fb_bar &= ~0xFu;
+	/* Get framebuffer BAR.  This is often a 64-bit BAR above 4 GiB. */
+	fb_bar = atombios_get_bar(dev, AMD_GPU_FB_BAR);
 	if (!fb_bar) {
 		printk(BIOS_ERR, "ATOMBIOS: could not find FB BAR\n");
 		return;
 	}
-	printk(BIOS_INFO, "ATOMBIOS: framebuffer aperture at 0x%08x\n", fb_bar);
+	printk(BIOS_INFO, "ATOMBIOS: framebuffer aperture at 0x%llx\n",
+	       (unsigned long long)fb_bar);
 
 	/* Load VBIOS */
 	vbios = load_vbios(dev);
@@ -1644,6 +2994,8 @@ static void atombios_init(struct device *dev)
 	printk(BIOS_INFO, "ATOMBIOS: executing AsicInit...\n");
 	if (atom_asic_init(ctx))
 		printk(BIOS_WARNING, "ATOMBIOS: AsicInit failed or not present\n");
+	else
+		asic_init_ok = true;
 
 	/* Discover display paths from ATOM object tables */
 	memset(paths, 0, sizeof(paths));
@@ -1654,13 +3006,15 @@ static void atombios_init(struct device *dev)
 		goto use_defaults;
 	}
 
-	/*
-	 * Try to read EDID on each path to find a connected display.
-	 * For VGA/CRT paths, also try DAC load detection since some
-	 * CRT monitors may not support DDC/EDID.
-	 */
+	if (!asic_init_ok) {
+		printk(BIOS_WARNING,
+		       "ATOMBIOS: skipping EDID probe because AsicInit failed\n");
+		goto use_defaults;
+	}
+
+	/* Try to read EDID on digital paths to find a connected display. */
 	for (i = 0; i < num_paths; i++) {
-		if (paths[i].connector_type == 0)
+		if (paths[i].connector_type == 0 || paths[i].is_dac)
 			continue;
 
 		if (atombios_read_edid(ctx, paths[i].i2c_line, edid_raw) == 0) {
@@ -1673,21 +3027,11 @@ static void atombios_init(struct device *dev)
 				break;
 			}
 		}
-
-		/* For VGA/CRT without EDID, try DAC load detection */
-		if (paths[i].is_dac) {
-			atombios_dac_load_detect(ctx, &paths[i]);
-			/* If load detected, use this path with default mode */
-			printk(BIOS_INFO,
-			       "ATOMBIOS: DAC load detection on path %d (VGA/CRT)\n", i);
-			active_path = i;
-			break;
-		}
 	}
 
 	if (active_path < 0) {
 		printk(BIOS_WARNING,
-		       "ATOMBIOS: no connected display found via EDID or DAC detect\n");
+		       "ATOMBIOS: no connected display found via EDID\n");
 		goto use_defaults;
 	}
 
@@ -1710,13 +3054,39 @@ use_defaults:
 	mode.vspw = 6;
 	pixel_clock_10khz = 6500;
 
-	/* If we have at least one path, use it even without EDID */
-	if (num_paths > 0 && active_path < 0)
-		active_path = 0;
+	/* If EDID failed, prefer a digital path.  This matches Linux DVI
+	 * behavior: DDC/EDID decides digital first; DAC load detect is only an
+	 * analog fallback for DVI-I/VGA. */
+	if (active_path < 0) {
+		for (i = 0; i < num_paths; i++) {
+			if (paths[i].connector_type != 0 && !paths[i].is_dac) {
+				active_path = i;
+				break;
+			}
+		}
+	}
+	if (active_path < 0) {
+		for (i = 0; i < num_paths; i++) {
+			if (paths[i].connector_type != 0 && paths[i].is_dac) {
+				atombios_dac_load_detect(ctx, &paths[i]);
+				printk(BIOS_INFO,
+				       "ATOMBIOS: DAC load detection on path %d (VGA/CRT)\n",
+				       i);
+				active_path = i;
+				break;
+			}
+		}
+	}
 
 do_modeset:
 	printk(BIOS_INFO, "ATOMBIOS: modesetting %ux%u @ %u kHz\n",
 	       mode.ha, mode.va, mode.pixel_clock);
+
+	if (active_path >= 0) {
+		atombios_update_scratch_for_path(ctx, &paths[active_path],
+						 crtc_id, true, false);
+		atombios_output_lock(ctx, true);
+	}
 
 	/* Step 1: Power up display pipe */
 	atombios_disp_power_gating(ctx, crtc_id, 0);
@@ -1740,6 +3110,10 @@ do_modeset:
 		printk(BIOS_INFO, "ATOMBIOS: programming CRTC timing...\n");
 		atombios_set_crtc_dtd_timing(ctx, &mode, crtc_id);
 
+		/* Program CRTC scanout surface */
+		atombios_program_avivo_framebuffer(ctx, fb_bar, &mode);
+		atombios_program_crtc_postmode(ctx, crtc_id);
+
 		/* Enable CRTC */
 		atombios_enable_crtc(ctx, crtc_id, 1);
 
@@ -1749,6 +3123,50 @@ do_modeset:
 
 		/* Unblank */
 		atombios_blank_crtc(ctx, crtc_id, 0);
+		atombios_update_scratch_for_path(ctx, &paths[active_path],
+						 crtc_id, true, true);
+		atombios_output_lock(ctx, false);
+	} else if (active_path >= 0 && paths[active_path].is_legacy_tmds) {
+		/*
+		 * Legacy DVI/TMDS output path (pre-UNIPHY).  Linux handles these
+		 * with TMDSA/LVTMA encoder and output-control tables, not DIGx
+		 * encoder or UNIPHY transmitter tables.
+		 */
+		printk(BIOS_INFO, "ATOMBIOS: DVI output via legacy TMDS encoder 0x%02x\n",
+		       paths[active_path].encoder_obj_id);
+
+		atombios_legacy_tmds_output_control(ctx, &paths[active_path],
+						    ATOM_DISABLE);
+
+		/* Route CRTC to TMDS device */
+		atombios_select_crtc_source(ctx, &paths[active_path], crtc_id);
+
+		/* Program pixel clock */
+		atombios_set_pixel_clock(ctx, &paths[active_path],
+					 pixel_clock_10khz, crtc_id);
+
+		/* Program CRTC timing */
+		printk(BIOS_INFO, "ATOMBIOS: programming CRTC timing...\n");
+		atombios_set_crtc_dtd_timing(ctx, &mode, crtc_id);
+
+		/* Program CRTC scanout surface */
+		atombios_program_avivo_framebuffer(ctx, fb_bar, &mode);
+		atombios_program_crtc_postmode(ctx, crtc_id);
+
+		/* Enable CRTC */
+		atombios_enable_crtc(ctx, crtc_id, 1);
+
+		/* Setup TMDS encoder and enable output */
+		atombios_legacy_tmds_encoder_setup(ctx, &paths[active_path],
+						   pixel_clock_10khz, ATOM_ENABLE);
+		atombios_legacy_tmds_output_control(ctx, &paths[active_path],
+						    ATOM_ENABLE);
+
+		/* Unblank */
+		atombios_blank_crtc(ctx, crtc_id, 0);
+		atombios_update_scratch_for_path(ctx, &paths[active_path],
+						 crtc_id, true, true);
+		atombios_output_lock(ctx, false);
 	} else {
 		/*
 		 * Digital output path: DIG encoder + UNIPHY transmitter.
@@ -1796,6 +3214,10 @@ do_modeset:
 		printk(BIOS_INFO, "ATOMBIOS: programming CRTC timing...\n");
 		atombios_set_crtc_dtd_timing(ctx, &mode, crtc_id);
 
+		/* Program CRTC scanout surface */
+		atombios_program_avivo_framebuffer(ctx, fb_bar, &mode);
+		atombios_program_crtc_postmode(ctx, crtc_id);
+
 		/* Enable CRTC */
 		atombios_enable_crtc(ctx, crtc_id, 1);
 
@@ -1821,6 +3243,11 @@ do_modeset:
 
 		/* Unblank */
 		atombios_blank_crtc(ctx, crtc_id, 0);
+		if (active_path >= 0) {
+			atombios_update_scratch_for_path(ctx, &paths[active_path],
+						     crtc_id, true, true);
+			atombios_output_lock(ctx, false);
+		}
 	}
 
 	/* Register framebuffer with coreboot */
@@ -1829,8 +3256,8 @@ do_modeset:
 				mode.ha * BYTES_PER_PIXEL,
 				DEFAULT_BPP);
 
-	printk(BIOS_INFO, "ATOMBIOS: framebuffer %ux%u @ 0x%08x registered\n",
-	       mode.ha, mode.va, fb_bar);
+	printk(BIOS_INFO, "ATOMBIOS: framebuffer %ux%u @ 0x%llx registered\n",
+	       mode.ha, mode.va, (unsigned long long)fb_bar);
 }
 
 static struct device_operations atombios_gfx_ops = {

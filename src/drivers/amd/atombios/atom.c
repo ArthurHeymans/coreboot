@@ -60,7 +60,7 @@
 #define PLL_INDEX	2
 #define PLL_DATA	3
 
-#define ATOM_CMD_TIMEOUT_SEC	20
+#define ATOM_CMD_TIMEOUT_SEC	5
 
 typedef struct {
 	struct atom_context *ctx;
@@ -69,7 +69,7 @@ typedef struct {
 	int ps_shift;
 	uint16_t start;
 	unsigned int last_jump;
-	long last_jump_time_us;
+	uint64_t last_jump_time_us;
 	bool abort;
 } atom_exec_context;
 
@@ -734,7 +734,6 @@ static void atom_op_eot(atom_exec_context *ctx, int *ptr, int arg)
 static void atom_op_jump(atom_exec_context *ctx, int *ptr, int arg)
 {
 	int execute = 0, target = U16(*ptr);
-	long now_us;
 
 	(*ptr) += 2;
 	switch (arg) {
@@ -767,18 +766,16 @@ static void atom_op_jump(atom_exec_context *ctx, int *ptr, int arg)
 		if (ctx->last_jump == (unsigned int)(ctx->start + target)) {
 			struct mono_time now;
 			timer_monotonic_get(&now);
-			now_us = now.microseconds;
-			if (now_us > ctx->last_jump_time_us) {
-				long elapsed_ms = (now_us - ctx->last_jump_time_us) / 1000;
-				if (elapsed_ms > ATOM_CMD_TIMEOUT_SEC * 1000L) {
+			if (now.microseconds > ctx->last_jump_time_us) {
+				uint64_t elapsed_us = now.microseconds - ctx->last_jump_time_us;
+				if (elapsed_us > ATOM_CMD_TIMEOUT_SEC * USECS_PER_SEC) {
 					printk(BIOS_ERR,
-					       "ATOM: stuck in loop for more than %ds, aborting\n",
-					       ATOM_CMD_TIMEOUT_SEC);
+					       "ATOM: stuck in loop, aborting\n");
 					ctx->abort = true;
 				}
 			} else {
 				/* Timer wrap-around; reset reference */
-				ctx->last_jump_time_us = now_us;
+				ctx->last_jump_time_us = now.microseconds;
 			}
 		} else {
 			struct mono_time now;

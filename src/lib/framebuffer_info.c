@@ -86,7 +86,7 @@ fb_add_framebuffer_info_ex(const struct lb_framebuffer *fb)
  * Complex drivers should use fb_add_framebuffer_info_ex() instead.
  */
 struct fb_info *
-fb_add_framebuffer_info(uintptr_t fb_addr, uint32_t x_resolution,
+fb_add_framebuffer_info(uint64_t fb_addr, uint32_t x_resolution,
 			uint32_t y_resolution, uint32_t bytes_per_line,
 			uint8_t bits_per_pixel)
 {
