@@ -46,6 +46,7 @@
 /* Default framebuffer settings */
 #define DEFAULT_BPP	32
 #define BYTES_PER_PIXEL	(DEFAULT_BPP / 8)
+#define DEFAULT_DCE_DISPCLK_10KHZ 60000
 
 /*
  * ATOM command and data table indices.
@@ -298,6 +299,35 @@ struct atombios_i2c_bus_rec {
 	uint8_t valid;
 };
 
+enum atombios_mc_reg_layout {
+	ATOMBIOS_MC_R600,
+	ATOMBIOS_MC_R700,
+};
+
+enum atombios_scanout_layout {
+	ATOMBIOS_SCANOUT_AVIVO,
+	ATOMBIOS_SCANOUT_EVERGREEN,
+};
+
+enum atombios_si_pipe_config {
+	ATOMBIOS_SI_PIPE_NONE = 0,
+	ATOMBIOS_SI_PIPE_P4_8X16 = 4,
+	ATOMBIOS_SI_PIPE_P8_32X32_8X16 = 10,
+};
+
+struct atombios_gpu_profile {
+	enum atombios_mc_reg_layout mc;
+	enum atombios_scanout_layout scanout;
+	enum atombios_si_pipe_config si_pipe;
+	uint8_t dispclk_ppll;
+	uint8_t pixel_clock_ppll;
+	bool use_cik_desktop_height;
+	bool use_tile_mode_pipe_config;
+	bool config_memsize_in_mb;
+	bool has_display;
+	bool supported;
+};
+
 /* Forward declarations for functions used by DP link training */
 static int atombios_dig_encoder_setup(struct atom_context *ctx,
 				      const struct atombios_display_path *path,
@@ -307,6 +337,144 @@ static int atombios_transmitter_control(struct atom_context *ctx,
 					const struct atombios_display_path *path,
 					uint16_t pixel_clock_10khz,
 					uint8_t action);
+
+static struct atombios_gpu_profile atombios_get_gpu_profile(uint16_t device_id)
+{
+	struct atombios_gpu_profile profile = {
+		.mc = ATOMBIOS_MC_R700,
+		.scanout = ATOMBIOS_SCANOUT_EVERGREEN,
+		.si_pipe = ATOMBIOS_SI_PIPE_NONE,
+		.dispclk_ppll = ATOM_DCPLL,
+		.pixel_clock_ppll = ATOM_PPLL1,
+		.use_cik_desktop_height = false,
+		.use_tile_mode_pipe_config = false,
+		.config_memsize_in_mb = true,
+		.has_display = true,
+		.supported = true,
+	};
+
+	switch (device_id) {
+	/* R600/RV6xx/RS780/RS880 use R600 MC registers and AVIVO scanout. */
+	case 0x9400: case 0x9401: case 0x9402: case 0x9403:
+	case 0x9405: case 0x940A: case 0x940B: case 0x940F:
+	case 0x94C0: case 0x94C1: case 0x94C3: case 0x94C4:
+	case 0x94C5: case 0x94C6: case 0x94C7: case 0x94C8:
+	case 0x94C9: case 0x94CB: case 0x94CC: case 0x94CD:
+	case 0x9580: case 0x9581: case 0x9583: case 0x9586:
+	case 0x9587: case 0x9588: case 0x9589: case 0x958A:
+	case 0x958B: case 0x958C: case 0x958D: case 0x958E: case 0x958F:
+	case 0x95C0: case 0x95C2: case 0x95C4: case 0x95C5:
+	case 0x95C6: case 0x95C7: case 0x95C9: case 0x95CC:
+	case 0x95CD: case 0x95CE: case 0x95CF:
+	case 0x9590: case 0x9591: case 0x9593: case 0x9595:
+	case 0x9596: case 0x9597: case 0x9598: case 0x9599: case 0x959B:
+	case 0x9500: case 0x9501: case 0x9504: case 0x9505:
+	case 0x9506: case 0x9507: case 0x9508: case 0x9509:
+	case 0x950F: case 0x9511: case 0x9515: case 0x9517: case 0x9519:
+	case 0x9610: case 0x9611: case 0x9612: case 0x9613:
+	case 0x9614: case 0x9615: case 0x9616:
+	case 0x9710: case 0x9711: case 0x9712: case 0x9713:
+	case 0x9714: case 0x9715:
+		profile.mc = ATOMBIOS_MC_R600;
+		profile.scanout = ATOMBIOS_SCANOUT_AVIVO;
+		profile.config_memsize_in_mb = false;
+		break;
+
+	/* RV7xx uses the R700 MC location but keeps the AVIVO display registers. */
+	case 0x9440: case 0x9441: case 0x9442: case 0x9443:
+	case 0x9444: case 0x9446: case 0x944A: case 0x944B:
+	case 0x944C: case 0x944E: case 0x9450: case 0x9452:
+	case 0x9456: case 0x945A: case 0x945B: case 0x945E:
+	case 0x9460: case 0x9462: case 0x946A: case 0x946B:
+	case 0x947A: case 0x947B:
+	case 0x9480: case 0x9487: case 0x9488: case 0x9489:
+	case 0x948A: case 0x948F: case 0x9490: case 0x9491:
+	case 0x9495: case 0x9498: case 0x949C: case 0x949E: case 0x949F:
+	case 0x9540: case 0x9541: case 0x9542: case 0x954E:
+	case 0x954F: case 0x9552: case 0x9553: case 0x9555:
+	case 0x9557: case 0x955F:
+	case 0x94A0: case 0x94A1: case 0x94A3: case 0x94B1:
+	case 0x94B3: case 0x94B4: case 0x94B5: case 0x94B9:
+		profile.scanout = ATOMBIOS_SCANOUT_AVIVO;
+		profile.config_memsize_in_mb = false;
+		break;
+
+	/* Southern Islands needs the SI pipe field in GRPH_CONTROL. */
+	case 0x6780: case 0x6784: case 0x6788: case 0x678A:
+	case 0x6790: case 0x6791: case 0x6792: case 0x6798:
+	case 0x6799: case 0x679A: case 0x679B: case 0x679E: case 0x679F:
+	case 0x6800: case 0x6801: case 0x6802: case 0x6806:
+	case 0x6808: case 0x6809: case 0x6810: case 0x6811:
+	case 0x6816: case 0x6817: case 0x6818: case 0x6819:
+		profile.si_pipe = ATOMBIOS_SI_PIPE_P8_32X32_8X16;
+		profile.dispclk_ppll = ATOM_PPLL0;
+		break;
+	case 0x6820: case 0x6821: case 0x6822: case 0x6823:
+	case 0x6824: case 0x6825: case 0x6826: case 0x6827:
+	case 0x6828: case 0x6829: case 0x682A: case 0x682B:
+	case 0x682C: case 0x682D: case 0x682F: case 0x6830:
+	case 0x6831: case 0x6835: case 0x6837: case 0x6838:
+	case 0x6839: case 0x683B: case 0x683D: case 0x683F:
+	case 0x6600: case 0x6601: case 0x6602: case 0x6603:
+	case 0x6604: case 0x6605: case 0x6606: case 0x6607:
+	case 0x6608: case 0x6610: case 0x6611: case 0x6613:
+	case 0x6617: case 0x6620: case 0x6621: case 0x6623: case 0x6631:
+		profile.si_pipe = ATOMBIOS_SI_PIPE_P4_8X16;
+		profile.dispclk_ppll = ATOM_PPLL0;
+		break;
+	case 0x6660: case 0x6663: case 0x6664: case 0x6665:
+	case 0x6667: case 0x666F:
+		profile.has_display = false;
+		profile.supported = false;
+		break;
+
+	/* CIK/DCE8 and VI/DCE10 use the CIK desktop-height register. */
+	case 0x6640: case 0x6641: case 0x6646: case 0x6647: case 0x6649:
+	case 0x6650: case 0x6651: case 0x6658: case 0x665C: case 0x665D: case 0x665F:
+	case 0x1304: case 0x1305: case 0x1306: case 0x1307: case 0x1309: case 0x130A: case 0x130B:
+	case 0x130C: case 0x130D: case 0x130E: case 0x130F: case 0x1310: case 0x1311: case 0x1312:
+	case 0x1313: case 0x1315: case 0x1316: case 0x1317: case 0x1318: case 0x131B: case 0x131C: case 0x131D:
+		profile.si_pipe = ATOMBIOS_SI_PIPE_P4_8X16;
+		profile.dispclk_ppll = ATOM_EXT_PLL1;
+		profile.pixel_clock_ppll = ATOM_PPLL2;
+		profile.use_cik_desktop_height = true;
+		profile.use_tile_mode_pipe_config = true;
+		break;
+	case 0x67A0: case 0x67A1: case 0x67A2: case 0x67A8: case 0x67A9: case 0x67AA:
+	case 0x67B0: case 0x67B1: case 0x67B8: case 0x67B9: case 0x67BA: case 0x67BE:
+	case 0x6920: case 0x6921: case 0x6928: case 0x6929: case 0x692B: case 0x692F:
+	case 0x6930: case 0x6938: case 0x6939: case 0x7300: case 0x730F:
+		profile.si_pipe = ATOMBIOS_SI_PIPE_P8_32X32_8X16;
+		profile.dispclk_ppll = ATOM_EXT_PLL1;
+		profile.pixel_clock_ppll = ATOM_PPLL2;
+		profile.use_cik_desktop_height = true;
+		profile.use_tile_mode_pipe_config = true;
+		break;
+	case 0x9830: case 0x9831: case 0x9832: case 0x9833: case 0x9834: case 0x9835: case 0x9836: case 0x9837:
+	case 0x9838: case 0x9839: case 0x983A: case 0x983B: case 0x983C: case 0x983D: case 0x983E: case 0x983F:
+	case 0x9850: case 0x9851: case 0x9852: case 0x9853: case 0x9854: case 0x9855: case 0x9856: case 0x9857:
+	case 0x9858: case 0x9859: case 0x985A: case 0x985B: case 0x985C: case 0x985D: case 0x985E: case 0x985F:
+		profile.dispclk_ppll = ATOM_EXT_PLL1;
+		profile.pixel_clock_ppll = ATOM_PPLL2;
+		profile.use_cik_desktop_height = true;
+		profile.use_tile_mode_pipe_config = true;
+		break;
+	/* These GPUs have no legacy DCE block in the Linux amdgpu path used as
+	 * reference here. Do not try the DCE register path on them. */
+	case 0x6900: case 0x6901: case 0x6902: case 0x6903: case 0x6907:
+	case 0x9870: case 0x9874: case 0x9875: case 0x9876: case 0x9877: case 0x98E4:
+	case 0x67C0: case 0x67C1: case 0x67C2: case 0x67C4: case 0x67C7: case 0x67C8: case 0x67C9:
+	case 0x67CA: case 0x67CC: case 0x67CF: case 0x67D0: case 0x67DF: case 0x6FDF:
+	case 0x67E0: case 0x67E1: case 0x67E3: case 0x67E7: case 0x67E8: case 0x67E9:
+	case 0x67EB: case 0x67EF: case 0x67FF:
+	case 0x6980: case 0x6981: case 0x6985: case 0x6986: case 0x6987: case 0x6995: case 0x6997: case 0x699F:
+	case 0x694C: case 0x694E: case 0x694F:
+		profile.supported = false;
+		break;
+	}
+
+	return profile;
+}
 
 /* ---- card_info MMIO callbacks ---- */
 
@@ -327,14 +495,25 @@ static uint32_t cail_reg_read(struct card_info *info, uint32_t reg)
 
 #define VGA_HDP_CONTROL			0x0328
 #define VGA_MEMORY_DISABLE		(1 << 4)
-#define MC_VM_FB_LOCATION		0x2180
-#define MC_VM_SYSTEM_APERTURE_LOW_ADDR	0x2190
-#define MC_VM_SYSTEM_APERTURE_HIGH_ADDR	0x2194
-#define MC_VM_SYSTEM_APERTURE_DEFAULT_ADDR 0x2198
+#define R600_MC_VM_FB_LOCATION		0x2180
+#define R600_MC_VM_SYSTEM_APERTURE_LOW_ADDR 0x2190
+#define R600_MC_VM_SYSTEM_APERTURE_HIGH_ADDR 0x2194
+#define R600_MC_VM_SYSTEM_APERTURE_DEFAULT_ADDR 0x2198
+#define R700_MC_VM_FB_LOCATION		0x2024
+#define R700_MC_VM_SYSTEM_APERTURE_LOW_ADDR 0x2034
+#define R700_MC_VM_SYSTEM_APERTURE_HIGH_ADDR 0x2038
+#define R700_MC_VM_SYSTEM_APERTURE_DEFAULT_ADDR 0x203c
 #define HDP_NONSURFACE_BASE		0x2c04
 #define HDP_NONSURFACE_INFO		0x2c08
+#define HDP_NONSURFACE_INFO_32BPP	(2 << 7)
+#define HDP_NONSURFACE_INFO_EG_LINEAR	(1 << 30)
 #define HDP_NONSURFACE_SIZE		0x2c0c
+#define MC_SHARED_BLACKOUT_CNTL		0x20ac
+#define BLACKOUT_MODE_MASK		0x00000007
 #define CONFIG_MEMSIZE			0x5428
+#define BIF_FB_EN			0x5490
+#define FB_READ_EN			(1 << 0)
+#define FB_WRITE_EN			(1 << 1)
 #define HDP_MEM_COHERENCY_FLUSH_CNTL	0x5480
 
 #define AVIVO_D1VGA_CONTROL			0x0330
@@ -374,6 +553,55 @@ static uint32_t cail_reg_read(struct card_info *info, uint32_t reg)
 #define AVIVO_DC_LUTA_WHITE_OFFSET_BLUE		0x64d0
 #define AVIVO_DC_LUTA_WHITE_OFFSET_GREEN	0x64d4
 #define AVIVO_DC_LUTA_WHITE_OFFSET_RED		0x64d8
+
+#define EVERGREEN_GRPH_ENABLE			0x6800
+#define EVERGREEN_GRPH_CONTROL			0x6804
+#define EVERGREEN_GRPH_LUT_10BIT_BYPASS_CONTROL 0x6808
+#define EVERGREEN_GRPH_SWAP_CONTROL		0x680c
+#define EVERGREEN_GRPH_PRIMARY_SURFACE_ADDRESS	0x6810
+#define EVERGREEN_GRPH_SECONDARY_SURFACE_ADDRESS 0x6814
+#define EVERGREEN_GRPH_PITCH			0x6818
+#define EVERGREEN_GRPH_PRIMARY_SURFACE_ADDRESS_HIGH 0x681c
+#define EVERGREEN_GRPH_SECONDARY_SURFACE_ADDRESS_HIGH 0x6820
+#define EVERGREEN_GRPH_SURFACE_OFFSET_X		0x6824
+#define EVERGREEN_GRPH_SURFACE_OFFSET_Y		0x6828
+#define EVERGREEN_GRPH_X_START			0x682c
+#define EVERGREEN_GRPH_Y_START			0x6830
+#define EVERGREEN_GRPH_X_END			0x6834
+#define EVERGREEN_GRPH_Y_END			0x6838
+#define EVERGREEN_GRPH_FLIP_CONTROL		0x6848
+#define EVERGREEN_DESKTOP_HEIGHT		0x6b04
+#define CIK_LB_DESKTOP_HEIGHT			0x6b0c
+#define EVERGREEN_VIEWPORT_START		0x6d70
+#define EVERGREEN_VIEWPORT_SIZE			0x6d74
+#define EVERGREEN_CRTC_CONTROL			0x6e70
+#define EVERGREEN_CRTC_DISP_READ_REQUEST_DISABLE (1 << 24)
+#define EVERGREEN_CRTC_BLANK_CONTROL		0x6e74
+#define EVERGREEN_CRTC_BLANK_DATA_EN		(1 << 8)
+#define EVERGREEN_CRTC_UPDATE_LOCK		0x6ed4
+#define EVERGREEN_MASTER_UPDATE_LOCK		0x6ef4
+#define EVERGREEN_MASTER_UPDATE_MODE		0x6ef8
+#define GB_TILE_MODE0				0x9910
+#define GB_TILE_MODE_SCANOUT_INDEX		10
+#define GB_TILE_MODE_PIPE_CONFIG_SHIFT		6
+#define GB_TILE_MODE_PIPE_CONFIG_MASK		0x1f
+#define EVERGREEN_GRPH_DEPTH_32BPP		(2 << 0)
+#define EVERGREEN_GRPH_FORMAT_ARGB8888		(0 << 8)
+#define EVERGREEN_GRPH_ARRAY_LINEAR_GENERAL	(0 << 20)
+#define EVERGREEN_GRPH_PIPE_CONFIG(x)		(((x) & 0x1f) << 24)
+#define EVERGREEN_GRPH_SURFACE_ADDRESS_MASK	0xffffff00
+#define EVERGREEN_GRPH_ENDIAN_NONE		0
+#define EVERGREEN_DC_LUT_RW_MODE		0x69e0
+#define EVERGREEN_DC_LUT_RW_INDEX		0x69e4
+#define EVERGREEN_DC_LUT_30_COLOR		0x69f0
+#define EVERGREEN_DC_LUT_WRITE_EN_MASK		0x69f8
+#define EVERGREEN_DC_LUT_CONTROL		0x6a00
+#define EVERGREEN_DC_LUT_BLACK_OFFSET_BLUE	0x6a04
+#define EVERGREEN_DC_LUT_BLACK_OFFSET_GREEN	0x6a08
+#define EVERGREEN_DC_LUT_BLACK_OFFSET_RED	0x6a0c
+#define EVERGREEN_DC_LUT_WHITE_OFFSET_BLUE	0x6a10
+#define EVERGREEN_DC_LUT_WHITE_OFFSET_GREEN	0x6a14
+#define EVERGREEN_DC_LUT_WHITE_OFFSET_RED	0x6a18
 
 static uint32_t atombios_scratch_read(struct atom_context *ctx, uint32_t reg)
 {
@@ -528,46 +756,117 @@ static void atombios_load_identity_lut(struct atom_context *ctx, int crtc_id)
 			   (crtc_id & 1));
 }
 
-static uint32_t atombios_r600_vram_size(struct atom_context *ctx)
+static uint64_t atombios_vram_size(struct atom_context *ctx,
+					   const struct atombios_gpu_profile *profile)
 {
-	uint32_t size = atombios_mmio_read(ctx, CONFIG_MEMSIZE);
+	uint32_t raw_size = atombios_mmio_read(ctx, CONFIG_MEMSIZE);
+	uint64_t size = raw_size;
 
-	if (!size || size == 0xffffffff)
-		size = 256u * 1024u * 1024u;
+	/* R600/R700 report bytes. Evergreen and newer discrete GPUs report MiB. */
+	if (profile->config_memsize_in_mb && raw_size != 0xffffffff)
+		size *= 1024ULL * 1024ULL;
+
+	if (!size || raw_size == 0xffffffff)
+		size = 256ULL * 1024ULL * 1024ULL;
 	return size;
 }
 
-static void atombios_program_r600_mc_aperture(struct atom_context *ctx)
+static uint32_t atombios_mc_fb_location_reg(const struct atombios_gpu_profile *profile)
 {
-	uint32_t old_fb = atombios_mmio_read(ctx, MC_VM_FB_LOCATION);
-	uint32_t vram_size = atombios_r600_vram_size(ctx);
-	uint32_t vram_start = 0;
-	uint32_t vram_end = vram_size - 1;
+	return profile->mc == ATOMBIOS_MC_R600 ? R600_MC_VM_FB_LOCATION : R700_MC_VM_FB_LOCATION;
+}
+
+static void atombios_mc_regs(const struct atombios_gpu_profile *profile,
+				     uint32_t *fb_location, uint32_t *low,
+				     uint32_t *high, uint32_t *default_addr)
+{
+	if (profile->mc == ATOMBIOS_MC_R600) {
+		*fb_location = R600_MC_VM_FB_LOCATION;
+		*low = R600_MC_VM_SYSTEM_APERTURE_LOW_ADDR;
+		*high = R600_MC_VM_SYSTEM_APERTURE_HIGH_ADDR;
+		*default_addr = R600_MC_VM_SYSTEM_APERTURE_DEFAULT_ADDR;
+	} else {
+		*fb_location = R700_MC_VM_FB_LOCATION;
+		*low = R700_MC_VM_SYSTEM_APERTURE_LOW_ADDR;
+		*high = R700_MC_VM_SYSTEM_APERTURE_HIGH_ADDR;
+		*default_addr = R700_MC_VM_SYSTEM_APERTURE_DEFAULT_ADDR;
+	}
+}
+
+static void atombios_program_mc_aperture(struct atom_context *ctx,
+					 const struct atombios_gpu_profile *profile)
+{
+	uint32_t fb_location_reg, aperture_low_reg, aperture_high_reg, default_addr_reg;
+	uint32_t old_fb;
+	uint64_t vram_size = atombios_vram_size(ctx, profile);
+	uint64_t vram_start = 0;
+	uint64_t vram_end = vram_size - 1;
 	uint32_t fb_location;
 
-	/* Match Linux r600_mc_program() for discrete PCIe cards: GPU VRAM
+	atombios_mc_regs(profile, &fb_location_reg, &aperture_low_reg,
+			 &aperture_high_reg, &default_addr_reg);
+	old_fb = atombios_mmio_read(ctx, fb_location_reg);
+
+	/* Match Linux MC programming for discrete PCIe cards: GPU VRAM
 	 * addresses start at 0, while the CPU accesses VRAM through PCI BAR0. */
 	fb_location = ((vram_end >> 24) & 0xffff) << 16;
 	fb_location |= (vram_start >> 24) & 0xffff;
 
 	atombios_mmio_write(ctx, VGA_HDP_CONTROL, VGA_MEMORY_DISABLE);
-	atombios_mmio_write(ctx, MC_VM_SYSTEM_APERTURE_LOW_ADDR,
-			   vram_start >> 12);
-	atombios_mmio_write(ctx, MC_VM_SYSTEM_APERTURE_HIGH_ADDR,
-			   vram_end >> 12);
-	atombios_mmio_write(ctx, MC_VM_SYSTEM_APERTURE_DEFAULT_ADDR, 0);
-	atombios_mmio_write(ctx, MC_VM_FB_LOCATION, fb_location);
+	atombios_mmio_write(ctx, aperture_low_reg, vram_start >> 12);
+	atombios_mmio_write(ctx, aperture_high_reg, vram_end >> 12);
+	atombios_mmio_write(ctx, default_addr_reg, 0);
+	atombios_mmio_write(ctx, fb_location_reg, fb_location);
 	atombios_mmio_write(ctx, HDP_NONSURFACE_BASE, vram_start >> 8);
-	atombios_mmio_write(ctx, HDP_NONSURFACE_INFO, 2 << 7);
+	atombios_mmio_write(ctx, HDP_NONSURFACE_INFO, HDP_NONSURFACE_INFO_32BPP |
+		(profile->scanout == ATOMBIOS_SCANOUT_EVERGREEN ?
+		 HDP_NONSURFACE_INFO_EG_LINEAR : 0));
 	atombios_mmio_write(ctx, HDP_NONSURFACE_SIZE, 0x3fffffff);
 
+	if (profile->scanout == ATOMBIOS_SCANOUT_EVERGREEN) {
+		uint32_t blackout = atombios_mmio_read(ctx, MC_SHARED_BLACKOUT_CNTL);
+
+		atombios_mmio_write(ctx, MC_SHARED_BLACKOUT_CNTL,
+				   blackout & ~BLACKOUT_MODE_MASK);
+		atombios_mmio_write(ctx, BIF_FB_EN, FB_READ_EN | FB_WRITE_EN);
+	}
+
 	printk(BIOS_INFO,
-	       "ATOMBIOS: MC VRAM %u MiB old_fb=0x%08x new_fb=0x%08x hdp_base=0x%08x\n",
-	       vram_size / (1024u * 1024u), old_fb, fb_location,
-	       atombios_mmio_read(ctx, HDP_NONSURFACE_BASE));
+	       "ATOMBIOS: MC VRAM %llu MiB layout=%s old_fb=0x%08x new_fb=0x%08x hdp_base=0x%08x hdp_info=0x%08x\n",
+	       (unsigned long long)(vram_size / (1024ULL * 1024ULL)),
+	       profile->mc == ATOMBIOS_MC_R600 ? "R600" : "R700+",
+	       old_fb, fb_location, atombios_mmio_read(ctx, HDP_NONSURFACE_BASE),
+	       atombios_mmio_read(ctx, HDP_NONSURFACE_INFO));
+}
+
+static void atombios_load_evergreen_identity_lut(struct atom_context *ctx)
+{
+	int i;
+
+	printk(BIOS_DEBUG, "ATOMBIOS: loading DCE4+ identity CRTC LUT\n");
+
+	atombios_mmio_write(ctx, EVERGREEN_DC_LUT_CONTROL, 0);
+	atombios_mmio_write(ctx, EVERGREEN_DC_LUT_BLACK_OFFSET_BLUE, 0);
+	atombios_mmio_write(ctx, EVERGREEN_DC_LUT_BLACK_OFFSET_GREEN, 0);
+	atombios_mmio_write(ctx, EVERGREEN_DC_LUT_BLACK_OFFSET_RED, 0);
+	atombios_mmio_write(ctx, EVERGREEN_DC_LUT_WHITE_OFFSET_BLUE, 0xffff);
+	atombios_mmio_write(ctx, EVERGREEN_DC_LUT_WHITE_OFFSET_GREEN, 0xffff);
+	atombios_mmio_write(ctx, EVERGREEN_DC_LUT_WHITE_OFFSET_RED, 0xffff);
+	atombios_mmio_write(ctx, EVERGREEN_DC_LUT_RW_MODE, 0);
+	atombios_mmio_write(ctx, EVERGREEN_DC_LUT_WRITE_EN_MASK, 0x0000003f);
+	atombios_mmio_write(ctx, EVERGREEN_DC_LUT_RW_INDEX, 0);
+
+	for (i = 0; i < 256; i++) {
+		uint16_t v = (i << 8) | i;
+		uint32_t color = ((v & 0xffc0) << 14) |
+			((v & 0xffc0) << 4) | (v >> 6);
+
+		atombios_mmio_write(ctx, EVERGREEN_DC_LUT_30_COLOR, color);
+	}
 }
 
 static void atombios_program_avivo_framebuffer(struct atom_context *ctx,
+					       const struct atombios_gpu_profile *profile,
 					       resource_t fb_bar,
 					       const struct edid_mode *mode)
 {
@@ -578,13 +877,13 @@ static void atombios_program_avivo_framebuffer(struct atom_context *ctx,
 		AVIVO_D1GRPH_CONTROL_32BPP_ARGB8888;
 	uint32_t surface_addr = 0;
 
-	atombios_program_r600_mc_aperture(ctx);
+	atombios_program_mc_aperture(ctx, profile);
 
 	printk(BIOS_INFO,
 	       "ATOMBIOS: programming AVIVO scanout %ux%u pitch=%u gpu_addr=0x%08x cpu_addr=0x%llx mc_fb=0x%08x\n",
 	       width, height, pitch_pixels, surface_addr,
 	       (unsigned long long)fb_bar,
-	       atombios_mmio_read(ctx, MC_VM_FB_LOCATION));
+	       atombios_mmio_read(ctx, atombios_mc_fb_location_reg(profile)));
 
 	memset((void *)(uintptr_t)fb_bar, 0, width * height * BYTES_PER_PIXEL);
 	atombios_mmio_write(ctx, HDP_MEM_COHERENCY_FLUSH_CNTL, 1);
@@ -592,13 +891,10 @@ static void atombios_program_avivo_framebuffer(struct atom_context *ctx,
 	atombios_mmio_write(ctx, AVIVO_D1VGA_CONTROL, 0);
 	atombios_mmio_write(ctx, AVIVO_D1CRTC_UPDATE_LOCK, 1);
 	atombios_mmio_write(ctx, AVIVO_D1GRPH_FLIP_CONTROL, 0);
-	atombios_mmio_write(ctx, AVIVO_D1GRPH_PRIMARY_SURFACE_ADDRESS,
-			   surface_addr);
-	atombios_mmio_write(ctx, AVIVO_D1GRPH_SECONDARY_SURFACE_ADDRESS,
-			   surface_addr);
+	atombios_mmio_write(ctx, AVIVO_D1GRPH_PRIMARY_SURFACE_ADDRESS, surface_addr);
+	atombios_mmio_write(ctx, AVIVO_D1GRPH_SECONDARY_SURFACE_ADDRESS, surface_addr);
 	atombios_mmio_write(ctx, AVIVO_D1GRPH_CONTROL, fb_format);
-	atombios_mmio_write(ctx, R600_D1GRPH_SWAP_CONTROL,
-			   R600_D1GRPH_SWAP_ENDIAN_NONE);
+	atombios_mmio_write(ctx, R600_D1GRPH_SWAP_CONTROL, R600_D1GRPH_SWAP_ENDIAN_NONE);
 	atombios_load_identity_lut(ctx, 0);
 	atombios_mmio_write(ctx, AVIVO_D1GRPH_SURFACE_OFFSET_X, 0);
 	atombios_mmio_write(ctx, AVIVO_D1GRPH_SURFACE_OFFSET_Y, 0);
@@ -614,6 +910,110 @@ static void atombios_program_avivo_framebuffer(struct atom_context *ctx,
 			   (width << 16) | ((height + 1) & ~1u));
 	atombios_mmio_write(ctx, AVIVO_D1MODE_MASTER_UPDATE_MODE, 3);
 	atombios_mmio_write(ctx, AVIVO_D1CRTC_UPDATE_LOCK, 0);
+}
+
+static void atombios_program_evergreen_framebuffer(struct atom_context *ctx,
+						   const struct atombios_gpu_profile *profile,
+						   resource_t fb_bar,
+						   const struct edid_mode *mode)
+{
+	uint32_t width = mode->ha;
+	uint32_t height = mode->va;
+	uint32_t pitch_pixels = width;
+	uint32_t surface_addr = 0;
+	uint32_t pipe_config = profile->si_pipe;
+	uint32_t fb_format = EVERGREEN_GRPH_DEPTH_32BPP |
+		EVERGREEN_GRPH_FORMAT_ARGB8888 |
+		EVERGREEN_GRPH_ARRAY_LINEAR_GENERAL;
+
+	if (profile->use_tile_mode_pipe_config) {
+		uint32_t tile_mode = atombios_mmio_read(ctx, GB_TILE_MODE0 +
+			GB_TILE_MODE_SCANOUT_INDEX * sizeof(uint32_t));
+		uint32_t reg_pipe = (tile_mode >> GB_TILE_MODE_PIPE_CONFIG_SHIFT) &
+			GB_TILE_MODE_PIPE_CONFIG_MASK;
+
+		if (reg_pipe)
+			pipe_config = reg_pipe;
+	}
+
+	if (pipe_config != ATOMBIOS_SI_PIPE_NONE)
+		fb_format |= EVERGREEN_GRPH_PIPE_CONFIG(pipe_config);
+
+	atombios_program_mc_aperture(ctx, profile);
+
+	printk(BIOS_INFO,
+	       "ATOMBIOS: programming DCE4+ scanout %ux%u pitch=%u gpu_addr=0x%08x cpu_addr=0x%llx mc_fb=0x%08x pipe=%d\n",
+	       width, height, pitch_pixels, surface_addr,
+	       (unsigned long long)fb_bar,
+	       atombios_mmio_read(ctx, atombios_mc_fb_location_reg(profile)),
+	       pipe_config);
+
+	memset((void *)(uintptr_t)fb_bar, 0, width * height * BYTES_PER_PIXEL);
+	atombios_mmio_write(ctx, HDP_MEM_COHERENCY_FLUSH_CNTL, 1);
+
+	atombios_mmio_write(ctx, AVIVO_D1VGA_CONTROL, 0);
+	atombios_mmio_write(ctx, EVERGREEN_MASTER_UPDATE_LOCK, 1);
+	atombios_mmio_write(ctx, EVERGREEN_GRPH_FLIP_CONTROL, 0);
+	atombios_mmio_write(ctx, EVERGREEN_GRPH_PRIMARY_SURFACE_ADDRESS_HIGH, 0);
+	atombios_mmio_write(ctx, EVERGREEN_GRPH_SECONDARY_SURFACE_ADDRESS_HIGH, 0);
+	atombios_mmio_write(ctx, EVERGREEN_GRPH_PRIMARY_SURFACE_ADDRESS,
+			   surface_addr & EVERGREEN_GRPH_SURFACE_ADDRESS_MASK);
+	atombios_mmio_write(ctx, EVERGREEN_GRPH_SECONDARY_SURFACE_ADDRESS,
+			   surface_addr & EVERGREEN_GRPH_SURFACE_ADDRESS_MASK);
+	atombios_mmio_write(ctx, EVERGREEN_GRPH_CONTROL, fb_format);
+	atombios_mmio_write(ctx, EVERGREEN_GRPH_SWAP_CONTROL, EVERGREEN_GRPH_ENDIAN_NONE);
+	atombios_load_evergreen_identity_lut(ctx);
+	atombios_mmio_write(ctx, EVERGREEN_GRPH_SURFACE_OFFSET_X, 0);
+	atombios_mmio_write(ctx, EVERGREEN_GRPH_SURFACE_OFFSET_Y, 0);
+	atombios_mmio_write(ctx, EVERGREEN_GRPH_X_START, 0);
+	atombios_mmio_write(ctx, EVERGREEN_GRPH_Y_START, 0);
+	atombios_mmio_write(ctx, EVERGREEN_GRPH_X_END, width);
+	atombios_mmio_write(ctx, EVERGREEN_GRPH_Y_END, height);
+	atombios_mmio_write(ctx, EVERGREEN_GRPH_PITCH, pitch_pixels);
+	atombios_mmio_write(ctx, EVERGREEN_GRPH_ENABLE, 1);
+	atombios_mmio_write(ctx, profile->use_cik_desktop_height ?
+			   CIK_LB_DESKTOP_HEIGHT : EVERGREEN_DESKTOP_HEIGHT, height);
+	atombios_mmio_write(ctx, EVERGREEN_VIEWPORT_START, 0);
+	atombios_mmio_write(ctx, EVERGREEN_VIEWPORT_SIZE,
+			   (width << 16) | ((height + 1) & ~1u));
+	atombios_mmio_write(ctx, EVERGREEN_MASTER_UPDATE_MODE, 0);
+	atombios_mmio_write(ctx, EVERGREEN_MASTER_UPDATE_LOCK, 0);
+}
+
+static void atombios_program_framebuffer(struct atom_context *ctx,
+					 const struct atombios_gpu_profile *profile,
+					 resource_t fb_bar,
+					 const struct edid_mode *mode)
+{
+	if (profile->scanout == ATOMBIOS_SCANOUT_AVIVO)
+		atombios_program_avivo_framebuffer(ctx, profile, fb_bar, mode);
+	else
+		atombios_program_evergreen_framebuffer(ctx, profile, fb_bar, mode);
+}
+
+static void atombios_evergreen_unblank_scanout(struct atom_context *ctx,
+					       const struct atombios_gpu_profile *profile)
+{
+	uint32_t crtc_control;
+	uint32_t blank_control;
+
+	if (profile->scanout != ATOMBIOS_SCANOUT_EVERGREEN)
+		return;
+
+	crtc_control = atombios_mmio_read(ctx, EVERGREEN_CRTC_CONTROL);
+	blank_control = atombios_mmio_read(ctx, EVERGREEN_CRTC_BLANK_CONTROL);
+
+	atombios_mmio_write(ctx, EVERGREEN_CRTC_UPDATE_LOCK, 1);
+	atombios_mmio_write(ctx, EVERGREEN_CRTC_BLANK_CONTROL,
+			   blank_control & ~EVERGREEN_CRTC_BLANK_DATA_EN);
+	atombios_mmio_write(ctx, EVERGREEN_CRTC_CONTROL,
+			   crtc_control & ~EVERGREEN_CRTC_DISP_READ_REQUEST_DISABLE);
+	atombios_mmio_write(ctx, EVERGREEN_CRTC_UPDATE_LOCK, 0);
+
+	printk(BIOS_DEBUG,
+	       "ATOMBIOS: CRTC ctrl=0x%08x blank=0x%08x after unblank\n",
+	       atombios_mmio_read(ctx, EVERGREEN_CRTC_CONTROL),
+	       atombios_mmio_read(ctx, EVERGREEN_CRTC_BLANK_CONTROL));
 }
 
 static void atombios_output_lock(struct atom_context *ctx, bool lock)
@@ -1975,6 +2375,49 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 				  sizeof(args));
 }
 
+static int atombios_set_disp_eng_clock(struct atom_context *ctx,
+					       const struct atombios_gpu_profile *profile)
+{
+	uint8_t frev, crev;
+	union {
+		PIXEL_CLOCK_PARAMETERS_V5 v5;
+		PIXEL_CLOCK_PARAMETERS_V6 v6;
+	} args;
+
+	if (profile->scanout != ATOMBIOS_SCANOUT_EVERGREEN)
+		return 0;
+
+	if (!atom_parse_cmd_header(ctx, cmd_idx.set_pixel_clock, &frev, &crev))
+		return -1;
+
+	memset(&args, 0, sizeof(args));
+
+	/* Match Linux radeon/amdgpu disp_eng_pll_init(). DCE4+ needs the
+	 * display engine clock programmed before the CRTC pixel clock, but the
+	 * PLL id differs by generation. */
+	switch (crev) {
+	case 5:
+		args.v5.ucCRTC = ATOM_CRTC_INVALID;
+		args.v5.usPixelClock = DEFAULT_DCE_DISPCLK_10KHZ;
+		args.v5.ucPpll = ATOM_DCPLL;
+		break;
+	case 6:
+		args.v6.ulDispEngClkFreq = DEFAULT_DCE_DISPCLK_10KHZ;
+		args.v6.ucPpll = profile->dispclk_ppll;
+		break;
+	default:
+		return 0;
+	}
+
+	printk(BIOS_DEBUG,
+	       "ATOMBIOS: SetPixelClock dispclk=%u*10kHz ppll=%u crev=%u\n",
+	       DEFAULT_DCE_DISPCLK_10KHZ,
+	       crev == 6 ? profile->dispclk_ppll : ATOM_DCPLL, crev);
+
+	return atom_execute_table(ctx, cmd_idx.set_pixel_clock,
+				  (uint32_t *)&args, sizeof(args));
+}
+
 /* ---- DAC Encoder Control (VGA/CRT) ---- */
 
 /*
@@ -2917,10 +3360,18 @@ static void atombios_init(struct device *dev)
 	struct edid edid;
 	uint16_t pixel_clock_10khz;
 	bool asic_init_ok = false;
+	struct atombios_gpu_profile gpu = atombios_get_gpu_profile(dev->device);
 	int i;
 
 	printk(BIOS_INFO, "ATOMBIOS: initializing AMD GPU %04x:%04x\n",
 	       dev->vendor, dev->device);
+
+	if (!gpu.supported || !gpu.has_display) {
+		printk(BIOS_WARNING,
+		       "ATOMBIOS: GPU %04x has no supported display engine\n",
+		       dev->device);
+		return;
+	}
 
 	/* Map MMIO BAR */
 	mmio_bar = atombios_get_bar(dev, AMD_GPU_MMIO_BAR);
@@ -2971,15 +3422,19 @@ static void atombios_init(struct device *dev)
 	printk(BIOS_INFO, "ATOMBIOS: VBIOS \"%s\" date %s version 0x%08x\n",
 	       ctx->name, ctx->date, ctx->version);
 
-	/* Detect v1 (atombios.h) vs v2 (atomfirmware.h) table format
-	 * and initialize command table indices accordingly */
+	/* Detect v1 (atombios.h) vs v2 (atomfirmware.h) table format.
+	 * v2 display object parsing is different, so fail safely until that
+	 * path is implemented instead of using v1 object-table casts. */
 	if (atombios_detect_v2(ctx)) {
 		atombios_init_cmd_indices_v2(&cmd_idx);
-		printk(BIOS_INFO, "ATOMBIOS: using atomfirmware.h (v2) table format\n");
-	} else {
-		atombios_init_cmd_indices_v1(&cmd_idx);
-		printk(BIOS_INFO, "ATOMBIOS: using atombios.h (v1) table format\n");
+		printk(BIOS_WARNING,
+		       "ATOMBIOS: atomfirmware.h (v2) display tables are not supported yet\n");
+		atom_destroy(ctx);
+		return;
 	}
+
+	atombios_init_cmd_indices_v1(&cmd_idx);
+	printk(BIOS_INFO, "ATOMBIOS: using atombios.h (v1) table format\n");
 
 	/* Allocate scratch memory */
 	scratch = calloc(ATOM_SCRATCH_SIZE_DWORDS, sizeof(uint32_t));
@@ -3091,6 +3546,7 @@ do_modeset:
 
 	/* Step 1: Power up display pipe */
 	atombios_disp_power_gating(ctx, crtc_id, 0);
+	atombios_set_disp_eng_clock(ctx, &gpu);
 
 	if (active_path >= 0 && paths[active_path].is_dac) {
 		/*
@@ -3112,7 +3568,7 @@ do_modeset:
 		atombios_set_crtc_dtd_timing(ctx, &mode, crtc_id);
 
 		/* Program CRTC scanout surface */
-		atombios_program_avivo_framebuffer(ctx, fb_bar, &mode);
+		atombios_program_framebuffer(ctx, &gpu, fb_bar, &mode);
 		atombios_program_crtc_postmode(ctx, crtc_id);
 
 		/* Enable CRTC */
@@ -3124,6 +3580,7 @@ do_modeset:
 
 		/* Unblank */
 		atombios_blank_crtc(ctx, crtc_id, 0);
+		atombios_evergreen_unblank_scanout(ctx, &gpu);
 		atombios_update_scratch_for_path(ctx, &paths[active_path],
 						 crtc_id, true, true);
 		atombios_output_lock(ctx, false);
@@ -3151,7 +3608,7 @@ do_modeset:
 		atombios_set_crtc_dtd_timing(ctx, &mode, crtc_id);
 
 		/* Program CRTC scanout surface */
-		atombios_program_avivo_framebuffer(ctx, fb_bar, &mode);
+		atombios_program_framebuffer(ctx, &gpu, fb_bar, &mode);
 		atombios_program_crtc_postmode(ctx, crtc_id);
 
 		/* Enable CRTC */
@@ -3165,6 +3622,7 @@ do_modeset:
 
 		/* Unblank */
 		atombios_blank_crtc(ctx, crtc_id, 0);
+		atombios_evergreen_unblank_scanout(ctx, &gpu);
 		atombios_update_scratch_for_path(ctx, &paths[active_path],
 						 crtc_id, true, true);
 		atombios_output_lock(ctx, false);
@@ -3216,7 +3674,7 @@ do_modeset:
 		atombios_set_crtc_dtd_timing(ctx, &mode, crtc_id);
 
 		/* Program CRTC scanout surface */
-		atombios_program_avivo_framebuffer(ctx, fb_bar, &mode);
+		atombios_program_framebuffer(ctx, &gpu, fb_bar, &mode);
 		atombios_program_crtc_postmode(ctx, crtc_id);
 
 		/* Enable CRTC */
@@ -3244,6 +3702,7 @@ do_modeset:
 
 		/* Unblank */
 		atombios_blank_crtc(ctx, crtc_id, 0);
+		atombios_evergreen_unblank_scanout(ctx, &gpu);
 		if (active_path >= 0) {
 			atombios_update_scratch_for_path(ctx, &paths[active_path],
 						     crtc_id, true, true);
