@@ -79,6 +79,7 @@
 struct atombios_cmd_indices {
 	int asic_init;
 	int set_pixel_clock;
+	int set_dce_clock;
 	int set_crtc_using_dtd;
 	int enable_crtc;
 	int blank_crtc;
@@ -110,6 +111,7 @@ static void atombios_init_cmd_indices_v1(struct atombios_cmd_indices *idx)
 	idx->is_v2 = false;
 	idx->asic_init              = CMD_IDX_V1(ASIC_Init);
 	idx->set_pixel_clock        = CMD_IDX_V1(SetPixelClock);
+	idx->set_dce_clock          = CMD_IDX_V1(SetDCEClock);
 	idx->set_crtc_using_dtd     = CMD_IDX_V1(SetCRTC_UsingDTDTiming);
 	idx->enable_crtc            = CMD_IDX_V1(EnableCRTC);
 	idx->blank_crtc             = CMD_IDX_V1(BlankCRTC);
@@ -140,6 +142,7 @@ static void atombios_init_cmd_indices_v2(struct atombios_cmd_indices *idx)
 	idx->is_v2 = true;
 	idx->asic_init              = CMD_IDX_V2(asic_init);
 	idx->set_pixel_clock        = CMD_IDX_V2(setpixelclock);
+	idx->set_dce_clock          = CMD_IDX_V2(setdceclock);
 	idx->set_crtc_using_dtd     = CMD_IDX_V2(setcrtc_usingdtdtiming);
 	idx->enable_crtc            = CMD_IDX_V2(enablecrtc);
 	idx->blank_crtc             = CMD_IDX_V2(blankcrtc);
@@ -321,6 +324,8 @@ struct atombios_gpu_profile {
 	enum atombios_si_pipe_config si_pipe;
 	uint8_t dispclk_ppll;
 	uint8_t pixel_clock_ppll;
+	bool use_set_dce_clock;
+	bool use_combo_phy_pixel_clock;
 	bool use_cik_desktop_height;
 	bool use_tile_mode_pipe_config;
 	bool config_memsize_in_mb;
@@ -346,6 +351,8 @@ static struct atombios_gpu_profile atombios_get_gpu_profile(uint16_t device_id)
 		.si_pipe = ATOMBIOS_SI_PIPE_NONE,
 		.dispclk_ppll = ATOM_DCPLL,
 		.pixel_clock_ppll = ATOM_PPLL1,
+		.use_set_dce_clock = false,
+		.use_combo_phy_pixel_clock = false,
 		.use_cik_desktop_height = false,
 		.use_tile_mode_pipe_config = false,
 		.config_memsize_in_mb = true,
@@ -459,16 +466,40 @@ static struct atombios_gpu_profile atombios_get_gpu_profile(uint16_t device_id)
 		profile.use_cik_desktop_height = true;
 		profile.use_tile_mode_pipe_config = true;
 		break;
-	/* These GPUs have no legacy DCE block in the Linux amdgpu path used as
-	 * reference here. Do not try the DCE register path on them. */
-	case 0x6900: case 0x6901: case 0x6902: case 0x6903: case 0x6907:
-	case 0x9870: case 0x9874: case 0x9875: case 0x9876: case 0x9877: case 0x98E4:
+	/* DCE11.0 uses the DCE clock manager but still programs DISPCLK via
+	 * SetPixelClock, with DFS selected as ATOM_EXT_PLL1. */
+	case 0x9870: case 0x9874: case 0x9875: case 0x9876: case 0x9877:
+	case 0x98E4:
+		profile.dispclk_ppll = ATOM_EXT_PLL1;
+		profile.pixel_clock_ppll = ATOM_PPLL0;
+		profile.use_cik_desktop_height = true;
+		profile.use_tile_mode_pipe_config = true;
+		break;
 	case 0x67C0: case 0x67C1: case 0x67C2: case 0x67C4: case 0x67C7: case 0x67C8: case 0x67C9:
 	case 0x67CA: case 0x67CC: case 0x67CF: case 0x67D0: case 0x67DF: case 0x6FDF:
+	case 0x694C: case 0x694E: case 0x694F:
+		profile.si_pipe = ATOMBIOS_SI_PIPE_P8_32X32_8X16;
+		profile.dispclk_ppll = ATOM_GCK_DFS;
+		profile.pixel_clock_ppll = ATOM_COMBOPHY_PLL0;
+		profile.use_set_dce_clock = true;
+		profile.use_combo_phy_pixel_clock = true;
+		profile.use_cik_desktop_height = true;
+		profile.use_tile_mode_pipe_config = true;
+		break;
 	case 0x67E0: case 0x67E1: case 0x67E3: case 0x67E7: case 0x67E8: case 0x67E9:
 	case 0x67EB: case 0x67EF: case 0x67FF:
 	case 0x6980: case 0x6981: case 0x6985: case 0x6986: case 0x6987: case 0x6995: case 0x6997: case 0x699F:
-	case 0x694C: case 0x694E: case 0x694F:
+		profile.si_pipe = ATOMBIOS_SI_PIPE_P4_8X16;
+		profile.dispclk_ppll = ATOM_GCK_DFS;
+		profile.pixel_clock_ppll = ATOM_COMBOPHY_PLL0;
+		profile.use_set_dce_clock = true;
+		profile.use_combo_phy_pixel_clock = true;
+		profile.use_cik_desktop_height = true;
+		profile.use_tile_mode_pipe_config = true;
+		break;
+	/* Topaz has no DCE in Linux amdgpu. */
+	case 0x6900: case 0x6901: case 0x6902: case 0x6903: case 0x6907:
+		profile.has_display = false;
 		profile.supported = false;
 		break;
 	}
@@ -2288,6 +2319,9 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 	uint8_t pll_id = profile->pixel_clock_ppll;
 	uint32_t dot_clock, fb_div, frac_fb_div, ref_div, post_div;
 
+	if (profile->use_combo_phy_pixel_clock && path->phy_id < 6)
+		pll_id = ATOM_COMBOPHY_PLL0 + path->phy_id;
+
 	if (!atom_parse_cmd_header(ctx, cmd_idx.set_pixel_clock, &frev, &crev))
 		return -1;
 
@@ -2376,6 +2410,52 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 				  sizeof(args));
 }
 
+static int atombios_set_dce_clock(struct atom_context *ctx,
+					  const struct atombios_gpu_profile *profile)
+{
+	uint8_t frev, crev;
+	union {
+		SET_DCE_CLOCK_PS_ALLOCATION_V1_1 v1;
+		SET_DCE_CLOCK_PS_ALLOCATION_V2_1 v2;
+	} args;
+
+	if (!atom_parse_cmd_header(ctx, cmd_idx.set_dce_clock, &frev, &crev))
+		return -1;
+
+	memset(&args, 0, sizeof(args));
+
+	if (frev == 1 && crev == 1) {
+		args.v1.asParam.ulDISPClkFreq = DEFAULT_DCE_DISPCLK_10KHZ;
+		printk(BIOS_DEBUG,
+		       "ATOMBIOS: SetDCEClock dispclk=%u*10kHz crev=%u\n",
+		       DEFAULT_DCE_DISPCLK_10KHZ, crev);
+		return atom_execute_table(ctx, cmd_idx.set_dce_clock,
+					  (uint32_t *)&args, sizeof(args));
+	}
+
+	if (frev == 2 && crev == 1) {
+		int ret;
+
+		args.v2.asParam.ulDCEClkFreq = DEFAULT_DCE_DISPCLK_10KHZ;
+		args.v2.asParam.ucDCEClkType = DCE_CLOCK_TYPE_DISPCLK;
+		args.v2.asParam.ucDCEClkSrc = profile->dispclk_ppll;
+		printk(BIOS_DEBUG,
+		       "ATOMBIOS: SetDCEClock dispclk=%u*10kHz src=%u crev=%u\n",
+		       DEFAULT_DCE_DISPCLK_10KHZ, profile->dispclk_ppll, crev);
+		ret = atom_execute_table(ctx, cmd_idx.set_dce_clock,
+					 (uint32_t *)&args, sizeof(args));
+
+		memset(&args, 0, sizeof(args));
+		args.v2.asParam.ucDCEClkType = DCE_CLOCK_TYPE_DPREFCLK;
+		args.v2.asParam.ucDCEClkSrc = profile->dispclk_ppll;
+		atom_execute_table(ctx, cmd_idx.set_dce_clock,
+				   (uint32_t *)&args, sizeof(args));
+		return ret;
+	}
+
+	return 0;
+}
+
 static int atombios_set_disp_eng_clock(struct atom_context *ctx,
 					       const struct atombios_gpu_profile *profile)
 {
@@ -2387,6 +2467,9 @@ static int atombios_set_disp_eng_clock(struct atom_context *ctx,
 
 	if (profile->scanout != ATOMBIOS_SCANOUT_EVERGREEN)
 		return 0;
+
+	if (profile->use_set_dce_clock)
+		return atombios_set_dce_clock(ctx, profile);
 
 	if (!atom_parse_cmd_header(ctx, cmd_idx.set_pixel_clock, &frev, &crev))
 		return -1;
