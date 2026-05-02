@@ -2285,6 +2285,7 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 		PIXEL_CLOCK_PARAMETERS_V7 v7;
 	} args;
 	uint8_t encoder_id;
+	uint8_t pll_id = profile->pixel_clock_ppll;
 	uint32_t dot_clock, fb_div, frac_fb_div, ref_div, post_div;
 
 	if (!atom_parse_cmd_header(ctx, cmd_idx.set_pixel_clock, &frev, &crev))
