@@ -319,7 +319,10 @@ struct atombios_gpu_profile {
 	enum atombios_mc_reg_layout mc;
 	enum atombios_scanout_layout scanout;
 	enum atombios_si_pipe_config si_pipe;
+	uint8_t dispclk_ppll;
+	uint8_t pixel_clock_ppll;
 	bool use_cik_desktop_height;
+	bool use_tile_mode_pipe_config;
 	bool config_memsize_in_mb;
 	bool has_display;
 	bool supported;
@@ -341,7 +344,10 @@ static struct atombios_gpu_profile atombios_get_gpu_profile(uint16_t device_id)
 		.mc = ATOMBIOS_MC_R700,
 		.scanout = ATOMBIOS_SCANOUT_EVERGREEN,
 		.si_pipe = ATOMBIOS_SI_PIPE_NONE,
+		.dispclk_ppll = ATOM_DCPLL,
+		.pixel_clock_ppll = ATOM_PPLL1,
 		.use_cik_desktop_height = false,
+		.use_tile_mode_pipe_config = false,
 		.config_memsize_in_mb = true,
 		.has_display = true,
 		.supported = true,
@@ -401,6 +407,7 @@ static struct atombios_gpu_profile atombios_get_gpu_profile(uint16_t device_id)
 	case 0x6808: case 0x6809: case 0x6810: case 0x6811:
 	case 0x6816: case 0x6817: case 0x6818: case 0x6819:
 		profile.si_pipe = ATOMBIOS_SI_PIPE_P8_32X32_8X16;
+		profile.dispclk_ppll = ATOM_PPLL0;
 		break;
 	case 0x6820: case 0x6821: case 0x6822: case 0x6823:
 	case 0x6824: case 0x6825: case 0x6826: case 0x6827:
@@ -413,6 +420,7 @@ static struct atombios_gpu_profile atombios_get_gpu_profile(uint16_t device_id)
 	case 0x6608: case 0x6610: case 0x6611: case 0x6613:
 	case 0x6617: case 0x6620: case 0x6621: case 0x6623: case 0x6631:
 		profile.si_pipe = ATOMBIOS_SI_PIPE_P4_8X16;
+		profile.dispclk_ppll = ATOM_PPLL0;
 		break;
 	case 0x6660: case 0x6663: case 0x6664: case 0x6665:
 	case 0x6667: case 0x666F:
@@ -420,21 +428,40 @@ static struct atombios_gpu_profile atombios_get_gpu_profile(uint16_t device_id)
 		profile.supported = false;
 		break;
 
-	/* CIK and newer pre-v2 DCE paths use the CIK desktop-height register. */
+	/* CIK/DCE8 and VI/DCE10 use the CIK desktop-height register. */
 	case 0x6640: case 0x6641: case 0x6646: case 0x6647: case 0x6649:
 	case 0x6650: case 0x6651: case 0x6658: case 0x665C: case 0x665D: case 0x665F:
-	case 0x67A0: case 0x67A1: case 0x67A2: case 0x67A8: case 0x67A9: case 0x67AA:
-	case 0x67B0: case 0x67B1: case 0x67B8: case 0x67B9: case 0x67BA: case 0x67BE:
 	case 0x1304: case 0x1305: case 0x1306: case 0x1307: case 0x1309: case 0x130A: case 0x130B:
 	case 0x130C: case 0x130D: case 0x130E: case 0x130F: case 0x1310: case 0x1311: case 0x1312:
 	case 0x1313: case 0x1315: case 0x1316: case 0x1317: case 0x1318: case 0x131B: case 0x131C: case 0x131D:
+		profile.si_pipe = ATOMBIOS_SI_PIPE_P4_8X16;
+		profile.dispclk_ppll = ATOM_EXT_PLL1;
+		profile.pixel_clock_ppll = ATOM_PPLL2;
+		profile.use_cik_desktop_height = true;
+		profile.use_tile_mode_pipe_config = true;
+		break;
+	case 0x67A0: case 0x67A1: case 0x67A2: case 0x67A8: case 0x67A9: case 0x67AA:
+	case 0x67B0: case 0x67B1: case 0x67B8: case 0x67B9: case 0x67BA: case 0x67BE:
+	case 0x6920: case 0x6921: case 0x6928: case 0x6929: case 0x692B: case 0x692F:
+	case 0x6930: case 0x6938: case 0x6939: case 0x7300: case 0x730F:
+		profile.si_pipe = ATOMBIOS_SI_PIPE_P8_32X32_8X16;
+		profile.dispclk_ppll = ATOM_EXT_PLL1;
+		profile.pixel_clock_ppll = ATOM_PPLL2;
+		profile.use_cik_desktop_height = true;
+		profile.use_tile_mode_pipe_config = true;
+		break;
 	case 0x9830: case 0x9831: case 0x9832: case 0x9833: case 0x9834: case 0x9835: case 0x9836: case 0x9837:
 	case 0x9838: case 0x9839: case 0x983A: case 0x983B: case 0x983C: case 0x983D: case 0x983E: case 0x983F:
 	case 0x9850: case 0x9851: case 0x9852: case 0x9853: case 0x9854: case 0x9855: case 0x9856: case 0x9857:
 	case 0x9858: case 0x9859: case 0x985A: case 0x985B: case 0x985C: case 0x985D: case 0x985E: case 0x985F:
+		profile.dispclk_ppll = ATOM_EXT_PLL1;
+		profile.pixel_clock_ppll = ATOM_PPLL2;
+		profile.use_cik_desktop_height = true;
+		profile.use_tile_mode_pipe_config = true;
+		break;
+	/* These GPUs have no legacy DCE block in the Linux amdgpu path used as
+	 * reference here. Do not try the DCE register path on them. */
 	case 0x6900: case 0x6901: case 0x6902: case 0x6903: case 0x6907:
-	case 0x6920: case 0x6921: case 0x6928: case 0x6929: case 0x692B: case 0x692F:
-	case 0x6930: case 0x6938: case 0x6939: case 0x7300: case 0x730F:
 	case 0x9870: case 0x9874: case 0x9875: case 0x9876: case 0x9877: case 0x98E4:
 	case 0x67C0: case 0x67C1: case 0x67C2: case 0x67C4: case 0x67C7: case 0x67C8: case 0x67C9:
 	case 0x67CA: case 0x67CC: case 0x67CF: case 0x67D0: case 0x67DF: case 0x6FDF:
@@ -442,8 +469,7 @@ static struct atombios_gpu_profile atombios_get_gpu_profile(uint16_t device_id)
 	case 0x67EB: case 0x67EF: case 0x67FF:
 	case 0x6980: case 0x6981: case 0x6985: case 0x6986: case 0x6987: case 0x6995: case 0x6997: case 0x699F:
 	case 0x694C: case 0x694E: case 0x694F:
-		profile.si_pipe = ATOMBIOS_SI_PIPE_P4_8X16;
-		profile.use_cik_desktop_height = true;
+		profile.supported = false;
 		break;
 	}
 
@@ -555,6 +581,10 @@ static uint32_t cail_reg_read(struct card_info *info, uint32_t reg)
 #define EVERGREEN_CRTC_UPDATE_LOCK		0x6ed4
 #define EVERGREEN_MASTER_UPDATE_LOCK		0x6ef4
 #define EVERGREEN_MASTER_UPDATE_MODE		0x6ef8
+#define GB_TILE_MODE0				0x9910
+#define GB_TILE_MODE_SCANOUT_INDEX		10
+#define GB_TILE_MODE_PIPE_CONFIG_SHIFT		6
+#define GB_TILE_MODE_PIPE_CONFIG_MASK		0x1f
 #define EVERGREEN_GRPH_DEPTH_32BPP		(2 << 0)
 #define EVERGREEN_GRPH_FORMAT_ARGB8888		(0 << 8)
 #define EVERGREEN_GRPH_ARRAY_LINEAR_GENERAL	(0 << 20)
@@ -891,12 +921,23 @@ static void atombios_program_evergreen_framebuffer(struct atom_context *ctx,
 	uint32_t height = mode->va;
 	uint32_t pitch_pixels = width;
 	uint32_t surface_addr = 0;
+	uint32_t pipe_config = profile->si_pipe;
 	uint32_t fb_format = EVERGREEN_GRPH_DEPTH_32BPP |
 		EVERGREEN_GRPH_FORMAT_ARGB8888 |
 		EVERGREEN_GRPH_ARRAY_LINEAR_GENERAL;
 
-	if (profile->si_pipe != ATOMBIOS_SI_PIPE_NONE)
-		fb_format |= EVERGREEN_GRPH_PIPE_CONFIG(profile->si_pipe);
+	if (profile->use_tile_mode_pipe_config) {
+		uint32_t tile_mode = atombios_mmio_read(ctx, GB_TILE_MODE0 +
+			GB_TILE_MODE_SCANOUT_INDEX * sizeof(uint32_t));
+		uint32_t reg_pipe = (tile_mode >> GB_TILE_MODE_PIPE_CONFIG_SHIFT) &
+			GB_TILE_MODE_PIPE_CONFIG_MASK;
+
+		if (reg_pipe)
+			pipe_config = reg_pipe;
+	}
+
+	if (pipe_config != ATOMBIOS_SI_PIPE_NONE)
+		fb_format |= EVERGREEN_GRPH_PIPE_CONFIG(pipe_config);
 
 	atombios_program_mc_aperture(ctx, profile);
 
@@ -905,7 +946,7 @@ static void atombios_program_evergreen_framebuffer(struct atom_context *ctx,
 	       width, height, pitch_pixels, surface_addr,
 	       (unsigned long long)fb_bar,
 	       atombios_mmio_read(ctx, atombios_mc_fb_location_reg(profile)),
-	       profile->si_pipe);
+	       pipe_config);
 
 	memset((void *)(uintptr_t)fb_bar, 0, width * height * BYTES_PER_PIXEL);
 	atombios_mmio_write(ctx, HDP_MEM_COHERENCY_FLUSH_CNTL, 1);
@@ -2229,6 +2270,7 @@ static void atombios_compute_avivo_pll(struct atom_context *ctx,
  * revisions 1.1 through 1.3; do the same here for older AVIVO chips.
  */
 static int atombios_set_pixel_clock(struct atom_context *ctx,
+				    const struct atombios_gpu_profile *profile,
 				    const struct atombios_display_path *path,
 				    uint16_t pixel_clock_10khz,
 				    int crtc_id)
@@ -2243,6 +2285,7 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 		PIXEL_CLOCK_PARAMETERS_V7 v7;
 	} args;
 	uint8_t encoder_id;
+	uint8_t pll_id = profile->pixel_clock_ppll;
 	uint32_t dot_clock, fb_div, frac_fb_div, ref_div, post_div;
 
 	if (!atom_parse_cmd_header(ctx, cmd_idx.set_pixel_clock, &frev, &crev))
@@ -2256,8 +2299,8 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 				 &fb_div, &frac_fb_div, &ref_div, &post_div);
 
 	printk(BIOS_DEBUG,
-	       "ATOMBIOS: SetPixelClock frev=%d crev=%d clock=%d*10kHz crtc=%d\n",
-	       frev, crev, pixel_clock_10khz, crtc_id);
+	       "ATOMBIOS: SetPixelClock frev=%d crev=%d clock=%d*10kHz crtc=%d ppll=%u\n",
+	       frev, crev, pixel_clock_10khz, crtc_id, pll_id);
 
 	switch (crev) {
 	case 1:
@@ -2300,19 +2343,19 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 		args.v5.usFbDiv = fb_div;
 		args.v5.ulFbDivDecFrac = frac_fb_div * 100000;
 		args.v5.ucPostDiv = post_div;
-		args.v5.ucPpll = crtc_id;
+		args.v5.ucPpll = pll_id;
 		args.v5.ucTransmitterID = encoder_id;
 		args.v5.ucEncoderMode = path->encoder_mode;
 		args.v5.ucMiscInfo = 0;
 		break;
 	case 6:
-		args.v6.ulCrtcPclkFreq.ulPixelClock = pixel_clock_10khz;
-		args.v6.ulCrtcPclkFreq.ucCRTC = crtc_id;
+		args.v6.ulDispEngClkFreq = ((uint32_t)crtc_id << 24) |
+			pixel_clock_10khz;
 		args.v6.ucRefDiv = ref_div;
 		args.v6.usFbDiv = fb_div;
 		args.v6.ulFbDivDecFrac = frac_fb_div * 100000;
 		args.v6.ucPostDiv = post_div;
-		args.v6.ucPpll = crtc_id;
+		args.v6.ucPpll = pll_id;
 		args.v6.ucTransmitterID = encoder_id;
 		args.v6.ucEncoderMode = path->encoder_mode;
 		args.v6.ucMiscInfo = 0;
@@ -2321,7 +2364,7 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 	default:
 		args.v7.ulPixelClock = (uint32_t)pixel_clock_10khz * 100;
 		args.v7.ucCRTC = crtc_id;
-		args.v7.ucPpll = crtc_id;
+		args.v7.ucPpll = pll_id;
 		args.v7.ucTransmitterID = encoder_id;
 		args.v7.ucEncoderMode = path->encoder_mode;
 		args.v7.ucMiscInfo = 0;
@@ -2350,8 +2393,9 @@ static int atombios_set_disp_eng_clock(struct atom_context *ctx,
 
 	memset(&args, 0, sizeof(args));
 
-	/* Match Linux radeon_atom_disp_eng_pll_init(). DCE6 needs the display
-	 * engine clock programmed separately before the CRTC pixel clock. */
+	/* Match Linux radeon/amdgpu disp_eng_pll_init(). DCE4+ needs the
+	 * display engine clock programmed before the CRTC pixel clock, but the
+	 * PLL id differs by generation. */
 	switch (crev) {
 	case 5:
 		args.v5.ucCRTC = ATOM_CRTC_INVALID;
@@ -2360,7 +2404,7 @@ static int atombios_set_disp_eng_clock(struct atom_context *ctx,
 		break;
 	case 6:
 		args.v6.ulDispEngClkFreq = DEFAULT_DCE_DISPCLK_10KHZ;
-		args.v6.ucPpll = ATOM_PPLL0;
+		args.v6.ucPpll = profile->dispclk_ppll;
 		break;
 	default:
 		return 0;
@@ -2369,7 +2413,7 @@ static int atombios_set_disp_eng_clock(struct atom_context *ctx,
 	printk(BIOS_DEBUG,
 	       "ATOMBIOS: SetPixelClock dispclk=%u*10kHz ppll=%u crev=%u\n",
 	       DEFAULT_DCE_DISPCLK_10KHZ,
-	       crev == 6 ? ATOM_PPLL0 : ATOM_DCPLL, crev);
+	       crev == 6 ? profile->dispclk_ppll : ATOM_DCPLL, crev);
 
 	return atom_execute_table(ctx, cmd_idx.set_pixel_clock,
 				  (uint32_t *)&args, sizeof(args));
@@ -3517,7 +3561,7 @@ do_modeset:
 		atombios_select_crtc_source(ctx, &paths[active_path], crtc_id);
 
 		/* Program pixel clock */
-		atombios_set_pixel_clock(ctx, &paths[active_path],
+		atombios_set_pixel_clock(ctx, &gpu, &paths[active_path],
 					 pixel_clock_10khz, crtc_id);
 
 		/* Program CRTC timing */
@@ -3557,7 +3601,7 @@ do_modeset:
 		atombios_select_crtc_source(ctx, &paths[active_path], crtc_id);
 
 		/* Program pixel clock */
-		atombios_set_pixel_clock(ctx, &paths[active_path],
+		atombios_set_pixel_clock(ctx, &gpu, &paths[active_path],
 					 pixel_clock_10khz, crtc_id);
 
 		/* Program CRTC timing */
@@ -3623,7 +3667,7 @@ do_modeset:
 
 		/* Program pixel clock PLL */
 		if (active_path >= 0)
-			atombios_set_pixel_clock(ctx, &paths[active_path],
+			atombios_set_pixel_clock(ctx, &gpu, &paths[active_path],
 						 pixel_clock_10khz, crtc_id);
 
 		/* Program CRTC timing */
