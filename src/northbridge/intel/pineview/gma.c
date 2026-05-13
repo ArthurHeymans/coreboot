@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
 #include <arch/io.h>
+#include <bootmode.h>
 #include <device/mmio.h>
 #include <console/console.h>
 #include <delay.h>
@@ -12,6 +13,7 @@
 #include <drivers/intel/gma/intel_bios.h>
 #include <drivers/intel/gma/i915.h>
 #include <drivers/intel/gma/opregion.h>
+#include <drivers/intel/gma/libgfxinit.h>
 #include <pc80/vga.h>
 #include <pc80/vga_io.h>
 #include <types.h>
@@ -39,6 +41,16 @@
 
 static struct resource *gtt_res  = NULL;
 static struct resource *mmio_res = NULL;
+
+u32 gtt_read(u32 reg)
+{
+	return read32(res2mmio(gtt_res, reg, 0));
+}
+
+void gtt_write(u32 reg, u32 data)
+{
+	write32(res2mmio(gtt_res, reg, 0), data);
+}
 
 static int gtt_setup(u8 *mmiobase)
 {
@@ -223,7 +235,7 @@ static void gma_func0_init(struct device *dev)
 	if (!CONFIG(NO_GFX_INIT))
 		pci_or_config16(dev, PCI_COMMAND, PCI_COMMAND_MASTER);
 
-	if (!CONFIG(MAINBOARD_DO_NATIVE_VGA_INIT)) {
+	if (!CONFIG(MAINBOARD_DO_NATIVE_VGA_INIT) && !CONFIG(MAINBOARD_USE_LIBGFXINIT)) {
 		/* PCI init, will run VBIOS */
 		pci_dev_init(dev);
 	} else {
@@ -239,7 +251,20 @@ static void gma_func0_init(struct device *dev)
 		pio_res  = find_resource(dev, PCI_BASE_ADDRESS_1);
 		physbase = pci_read_config32(dev, 0x5c) & ~0xf;
 
-		if (gtt_res && gtt_res->base && physbase && pio_res && pio_res->base) {
+		if (CONFIG(MAINBOARD_USE_LIBGFXINIT)) {
+			if (vga_disable) {
+				printk(BIOS_INFO,
+				       "IGD is not decoding legacy VGA MEM and IO: skipping libgfxinit\n");
+			} else if (acpi_is_wakeup_s3()) {
+				printk(BIOS_INFO,
+				       "Skipping libgfxinit when resuming from ACPI S3.\n");
+			} else {
+				int lightup_ok;
+
+				gma_gfxinit(&lightup_ok);
+				generate_fake_intel_oprom(&conf->gfx, dev, "$VBT PINEVIEW");
+			}
+		} else if (gtt_res && gtt_res->base && physbase && pio_res && pio_res->base) {
 			if (vga_disable) {
 				printk(BIOS_INFO, "IGD is not decoding legacy VGA MEM and IO: "
 						  "skipping NATIVE graphic init\n");
@@ -253,8 +278,9 @@ static void gma_func0_init(struct device *dev)
 			}
 		}
 
-		/* Linux relies on VBT for panel info.  */
-		generate_fake_intel_oprom(&conf->gfx, dev, "$VBT PINEVIEW");
+		/* Linux relies on VBT for panel info. */
+		if (!CONFIG(MAINBOARD_USE_LIBGFXINIT))
+			generate_fake_intel_oprom(&conf->gfx, dev, "$VBT PINEVIEW");
 	}
 }
 

@@ -8,6 +8,7 @@ bootblock-y += bootblock.c
 ramstage-y += memmap.c
 ramstage-y += northbridge.c
 ramstage-y += gma.c
+ramstage-$(CONFIG_MAINBOARD_USE_LIBGFXINIT) += gma-mainboard.ads
 
 romstage-y += romstage.c
 romstage-y += memmap.c
