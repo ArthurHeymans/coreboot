@@ -102,6 +102,7 @@ struct atombios_cmd_indices {
 	int process_aux;
 	int data_object_header;
 	int data_gpio_i2c;
+	int data_gpio_pin;
 	int data_supported_devices;
 	int data_firmware_info;
 	bool is_v2;
@@ -135,6 +136,7 @@ static void atombios_init_cmd_indices_v1(struct atombios_cmd_indices *idx)
 	idx->process_aux            = CMD_IDX_V1(ProcessAuxChannelTransaction);
 	idx->data_object_header     = DATA_IDX_V1(Object_Header);
 	idx->data_gpio_i2c          = DATA_IDX_V1(GPIO_I2C_Info);
+	idx->data_gpio_pin          = DATA_IDX_V1(GPIO_Pin_LUT);
 	idx->data_supported_devices = DATA_IDX_V1(SupportedDevicesInfo);
 	idx->data_firmware_info     = DATA_IDX_V1(FirmwareInfo);
 }
@@ -167,6 +169,7 @@ static void atombios_init_cmd_indices_v2(struct atombios_cmd_indices *idx)
 	idx->process_aux            = CMD_IDX_V2(processauxchanneltransaction);
 	idx->data_object_header     = DATA_IDX_V2(displayobjectinfo);
 	idx->data_gpio_i2c          = DATA_IDX_V2(gpio_pin_lut);
+	idx->data_gpio_pin          = DATA_IDX_V2(gpio_pin_lut);
 	idx->data_supported_devices = -1;
 	idx->data_firmware_info     = DATA_IDX_V2(firmwareinfo);
 }
@@ -264,6 +267,16 @@ static struct atombios_cmd_indices cmd_idx;
 /* DP link status size (0x202-0x207) */
 #define DP_LINK_STATUS_SIZE		6
 
+static uint32_t dp_link_bw_code_to_clock_khz(uint8_t link_bw)
+{
+	return (uint32_t)link_bw * 27000;
+}
+
+static uint16_t dp_link_bw_code_to_clock_10khz(uint8_t link_bw)
+{
+	return (uint16_t)((uint32_t)link_bw * 2700);
+}
+
 /* ---- Display path info discovered from ATOM tables ---- */
 
 struct atombios_display_path {
@@ -272,10 +285,12 @@ struct atombios_display_path {
 	uint8_t  encoder_type;		/* GRAPH_OBJECT_ENUM_ID */
 	uint8_t  i2c_line;		/* ATOM I2C line ID for DDC */
 	uint8_t  i2c_valid;		/* DDC line was found in connector records */
-	uint8_t  hpd_id;		/* HPD pin ID (1-6, 0=none) */
+	uint8_t  hpd_id;		/* normalized HPD pin (0-5, ATOMBIOS_HPD_NONE if none) */
 	uint8_t  dig_encoder;		/* DIG index (0=DIG1, ...) for digital */
 	uint8_t  phy_id;		/* UNIPHY ID (0=A, 1=B, ...) for digital */
 	uint8_t  encoder_mode;		/* ATOM_ENCODER_MODE_* */
+	uint8_t  dp_lane_count;		/* negotiated DP lane count */
+	uint8_t  dp_link_bw;		/* DPCD DP_LINK_BW_* code */
 	uint16_t connector_obj_id;	/* Full connector object ID */
 	uint8_t  is_dac;		/* 1 if DAC encoder (VGA/CRT), 0 if digital */
 	uint8_t  is_legacy_tmds;	/* 1 for pre-UNIPHY TMDS/LVTMA encoders */
@@ -344,7 +359,8 @@ static int atombios_dig_encoder_setup(struct atom_context *ctx,
 static int atombios_transmitter_control(struct atom_context *ctx,
 					const struct atombios_display_path *path,
 					uint16_t pixel_clock_10khz,
-					uint8_t action);
+					uint8_t action,
+					uint8_t lane_num, uint8_t lane_set);
 
 static struct atombios_gpu_profile atombios_get_gpu_profile(uint16_t device_id)
 {
@@ -406,6 +422,16 @@ static struct atombios_gpu_profile atombios_get_gpu_profile(uint16_t device_id)
 	case 0x94A0: case 0x94A1: case 0x94A3: case 0x94B1:
 	case 0x94B3: case 0x94B4: case 0x94B5: case 0x94B9:
 		profile.scanout = ATOMBIOS_SCANOUT_AVIVO;
+		profile.config_memsize_in_mb = false;
+		break;
+
+	/* Palm/Sumo report the VRAM size register in bytes, not MiB. */
+	case 0x9802: case 0x9803: case 0x9804: case 0x9805:
+	case 0x9806: case 0x9807: case 0x9808: case 0x9809: case 0x980A:
+	case 0x9640: case 0x9641: case 0x9642: case 0x9643:
+	case 0x9644: case 0x9645: case 0x9647: case 0x9648:
+	case 0x9649: case 0x964A: case 0x964B: case 0x964C:
+	case 0x964E: case 0x964F:
 		profile.config_memsize_in_mb = false;
 		break;
 
@@ -527,6 +553,11 @@ static uint32_t cail_reg_read(struct card_info *info, uint32_t reg)
 #define R600_BIOS_3_SCRATCH	0x1730
 #define R600_BIOS_6_SCRATCH	0x173c
 
+#define ATOMBIOS_HPD_NONE	0xff
+#define AVIVO_DC_GPIO_HPD_A	0x7e94
+#define EVERGREEN_DC_GPIO_HPD_A	0x64b4
+#define SI_DC_GPIO_HPD_A	0x65b4
+
 #define VGA_HDP_CONTROL			0x0328
 #define VGA_MEMORY_DISABLE		(1 << 4)
 #define R600_MC_VM_FB_LOCATION		0x2180
@@ -544,7 +575,7 @@ static uint32_t cail_reg_read(struct card_info *info, uint32_t reg)
 #define HDP_NONSURFACE_SIZE		0x2c0c
 #define MC_SHARED_BLACKOUT_CNTL		0x20ac
 #define BLACKOUT_MODE_MASK		0x00000007
-#define CONFIG_MEMSIZE			0x5428
+#define ATOMBIOS_CONFIG_MEMSIZE		0x5428
 #define BIF_FB_EN			0x5490
 #define FB_READ_EN			(1 << 0)
 #define FB_WRITE_EN			(1 << 1)
@@ -798,7 +829,7 @@ static void atombios_load_identity_lut(struct atom_context *ctx, int crtc_id)
 static uint64_t atombios_vram_size(struct atom_context *ctx,
 					   const struct atombios_gpu_profile *profile)
 {
-	uint32_t raw_size = atombios_mmio_read(ctx, CONFIG_MEMSIZE);
+	uint32_t raw_size = atombios_mmio_read(ctx, ATOMBIOS_CONFIG_MEMSIZE);
 	uint64_t size = raw_size;
 
 	/* R600/R700 report bytes. Evergreen and newer discrete GPUs report MiB. */
@@ -1688,7 +1719,8 @@ static int atombios_dp_aux_transfer(struct atom_context *ctx,
 	int tx_size;
 	int recv_bytes;
 
-	if (send_len > 16)
+	/* The ATOM AUX request buffer is 16 bytes including the 4-byte header. */
+	if (send_len > 12)
 		return -1;
 
 	/* Build 4-byte AUX request header */
@@ -1716,7 +1748,7 @@ static int atombios_dp_aux_transfer(struct atom_context *ctx,
 	args.ucDataOutLen = 0;
 	args.ucChannelID = aux_id;
 	args.ucDelay = 0;
-	args.ucHPD_ID = hpd_id;
+	args.ucHPD_ID = hpd_id <= 5 ? hpd_id : 0;
 
 	if (atom_execute_table(ctx, cmd_idx.process_aux,
 			       (uint32_t *)&args,
@@ -1812,25 +1844,73 @@ static bool dp_channel_eq_ok(const uint8_t link_status[DP_LINK_STATUS_SIZE],
 static void dp_get_adjust_train(const uint8_t link_status[DP_LINK_STATUS_SIZE],
 				int lane_count, uint8_t train_set[4])
 {
+	uint8_t voltage = 0;
+	uint8_t pre_emph = 0;
 	int lane;
-	uint8_t adj_req;
-	uint8_t voltage, pre_emph;
 
 	for (lane = 0; lane < lane_count; lane++) {
 		int idx = (lane >> 1) + (DP_ADJUST_REQUEST_LANE0_1 - DP_LANE0_1_STATUS);
 		int shift = (lane & 1) * 4;
-		adj_req = (link_status[idx] >> shift) & 0xF;
+		uint8_t adj_req = (link_status[idx] >> shift) & 0xF;
+		uint8_t lane_voltage = adj_req & DP_TRAIN_VOLTAGE_SWING_MASK;
+		uint8_t lane_pre_emph = (adj_req & 0xc) << 1;
 
-		voltage = adj_req & 0x3;
-		pre_emph = (adj_req >> 2) & 0x3;
-
-		train_set[lane] = voltage;
-		if (voltage == 0x3)
-			train_set[lane] |= DP_TRAIN_MAX_SWING_REACHED;
-		train_set[lane] |= (pre_emph << DP_TRAIN_PRE_EMPHASIS_SHIFT);
-		if (pre_emph == 0x3)
-			train_set[lane] |= DP_TRAIN_MAX_PRE_REACHED;
+		if (lane_voltage > voltage)
+			voltage = lane_voltage;
+		if (lane_pre_emph > pre_emph)
+			pre_emph = lane_pre_emph;
 	}
+
+	if (voltage == DP_TRAIN_VOLTAGE_SWING_MASK)
+		voltage |= DP_TRAIN_MAX_SWING_REACHED;
+	if (pre_emph == DP_TRAIN_PRE_EMPHASIS_MASK)
+		pre_emph |= DP_TRAIN_MAX_PRE_REACHED;
+
+	for (lane = 0; lane < 4; lane++)
+		train_set[lane] = voltage | pre_emph;
+}
+
+static int atombios_dp_get_link_config(const uint8_t dpcd[DP_RECEIVER_CAP_SIZE],
+					       uint32_t pixel_clock_khz,
+					       uint8_t *lane_count,
+					       uint8_t *link_bw)
+{
+	static const uint8_t link_bw_codes[] = {
+		DP_LINK_BW_1_62,
+		DP_LINK_BW_2_7,
+		DP_LINK_BW_5_4,
+	};
+	uint8_t max_link_bw = dpcd[DP_MAX_LINK_RATE];
+	uint8_t max_lanes = dpcd[DP_MAX_LANE_COUNT] & 0x1f;
+	int i;
+
+	if (max_lanes > 4)
+		max_lanes = 4;
+	if (max_lanes == 0)
+		max_lanes = 1;
+
+	for (i = 0; i < ARRAY_SIZE(link_bw_codes); i++) {
+		uint8_t bw = link_bw_codes[i];
+		uint32_t link_clock_khz;
+		uint8_t lanes;
+
+		if (bw > max_link_bw)
+			continue;
+
+		link_clock_khz = dp_link_bw_code_to_clock_khz(bw);
+		for (lanes = 1; lanes <= max_lanes; lanes <<= 1) {
+			/* 8b/10b link coding, 24 bpp framebuffer. */
+			uint32_t max_pixel_clock = (lanes * link_clock_khz * 8) / 24;
+
+			if (max_pixel_clock >= pixel_clock_khz) {
+				*lane_count = lanes;
+				*link_bw = bw;
+				return 0;
+			}
+		}
+	}
+
+	return -1;
 }
 
 /* ---- DP Link Training ---- */
@@ -1876,10 +1956,11 @@ static void dp_set_training_pattern(struct dp_link_train_info *info, int pattern
 
 static void dp_update_vs_emph(struct dp_link_train_info *info)
 {
-	/* Set voltage swing and pre-emphasis on source transmitter */
+	/* Set voltage swing and pre-emphasis on source transmitter. */
 	atombios_transmitter_control(info->ctx, info->path,
 				     info->pixel_clock_10khz,
-				     ATOM_TRANSMITTER_ACTION_SETUP_VSEMPH);
+				     ATOM_TRANSMITTER_ACTION_SETUP_VSEMPH,
+				     info->dp_lane_count, info->train_set[0]);
 
 	/* Set on sink (write lane training registers) */
 	dp_aux_native_write(info->ctx, info->aux_id, info->hpd_id,
@@ -1891,10 +1972,12 @@ static int dp_link_train_init(struct dp_link_train_info *info)
 {
 	uint8_t tmp;
 
-	/* Power up the sink */
-	dp_dpcd_writeb(info->ctx, info->aux_id, info->hpd_id,
-		       DP_SET_POWER, DP_SET_POWER_D0);
-	mdelay(1);
+	/* Power up DP 1.1+ sinks. */
+	if (info->dpcd[DP_DPCD_REV] >= 0x11) {
+		dp_dpcd_writeb(info->ctx, info->aux_id, info->hpd_id,
+			       DP_SET_POWER, DP_SET_POWER_D0);
+		mdelay(1);
+	}
 
 	/* Enable downspread if supported */
 	if (info->dpcd[DP_MAX_DOWNSPREAD] & 0x01)
@@ -2048,11 +2131,12 @@ static int atombios_dp_link_train(struct atom_context *ctx,
 				  uint8_t aux_id, uint8_t hpd_id)
 {
 	struct dp_link_train_info info;
+	struct atombios_display_path train_path = *path;
 	int ret;
 
 	memset(&info, 0, sizeof(info));
 	info.ctx = ctx;
-	info.path = path;
+	info.path = &train_path;
 	info.aux_id = aux_id;
 	info.hpd_id = hpd_id;
 	info.pixel_clock_10khz = pixel_clock_10khz;
@@ -2069,11 +2153,30 @@ static int atombios_dp_link_train(struct atom_context *ctx,
 	       info.dpcd[DP_MAX_LINK_RATE],
 	       info.dpcd[DP_MAX_LANE_COUNT] & 0x1F);
 
-	info.dp_link_bw = info.dpcd[DP_MAX_LINK_RATE];
-	info.dp_lane_count = info.dpcd[DP_MAX_LANE_COUNT] & 0x1F;
-	if (info.dp_lane_count > 4)
-		info.dp_lane_count = 4;
-	info.tp3_supported = !!(info.dpcd[DP_MAX_LANE_COUNT] & DP_TPS3_SUPPORTED);
+	if (path->dp_link_bw && path->dp_lane_count) {
+		info.dp_link_bw = path->dp_link_bw;
+		info.dp_lane_count = path->dp_lane_count;
+	} else if (atombios_dp_get_link_config(info.dpcd,
+					       (uint32_t)pixel_clock_10khz * 10,
+					       &info.dp_lane_count,
+					       &info.dp_link_bw)) {
+		printk(BIOS_WARNING,
+		       "ATOMBIOS: failed to choose DP link config, using sink maximum\n");
+		info.dp_link_bw = info.dpcd[DP_MAX_LINK_RATE];
+		info.dp_lane_count = info.dpcd[DP_MAX_LANE_COUNT] & 0x1F;
+		if (info.dp_lane_count > 4)
+			info.dp_lane_count = 4;
+	}
+	if (!info.dp_lane_count)
+		info.dp_lane_count = 1;
+	if (!info.dp_link_bw)
+		info.dp_link_bw = DP_LINK_BW_1_62;
+	train_path.dp_lane_count = info.dp_lane_count;
+	train_path.dp_link_bw = info.dp_link_bw;
+
+	/* Only use TPS3 on HBR2 links; older sources cannot generate it. */
+	info.tp3_supported = info.dp_link_bw >= DP_LINK_BW_5_4 &&
+		!!(info.dpcd[DP_MAX_LANE_COUNT] & DP_TPS3_SUPPORTED);
 
 	/* Init */
 	ret = dp_link_train_init(&info);
@@ -2094,7 +2197,7 @@ done:
 
 	if (ret == 0) {
 		/* Enable video on source */
-		atombios_dig_encoder_setup(ctx, path, pixel_clock_10khz,
+		atombios_dig_encoder_setup(ctx, info.path, pixel_clock_10khz,
 					   ATOM_ENCODER_CMD_DP_VIDEO_ON,
 					   PANEL_8BIT_PER_COLOR);
 		printk(BIOS_INFO, "ATOMBIOS: DP link training succeeded (%d lanes @ 0x%02x)\n",
@@ -2104,6 +2207,33 @@ done:
 	}
 
 	return ret;
+}
+
+static void atombios_dp_prepare_link(struct atom_context *ctx,
+					     struct atombios_display_path *path,
+					     uint32_t pixel_clock_khz)
+{
+	uint8_t dpcd[DP_RECEIVER_CAP_SIZE];
+
+	if (path->encoder_mode != ATOM_ENCODER_MODE_DP || !path->i2c_valid)
+		return;
+
+	if (dp_aux_native_read(ctx, path->i2c_line, path->hpd_id, DP_DPCD_REV,
+			       dpcd, sizeof(dpcd)) < 0) {
+		printk(BIOS_WARNING, "ATOMBIOS: failed to read DP DPCD caps\n");
+		return;
+	}
+
+	if (atombios_dp_get_link_config(dpcd, pixel_clock_khz,
+				       &path->dp_lane_count, &path->dp_link_bw)) {
+		printk(BIOS_WARNING,
+		       "ATOMBIOS: no DP link config for %u kHz pixel clock\n",
+		       pixel_clock_khz);
+		return;
+	}
+
+	printk(BIOS_INFO, "ATOMBIOS: selected DP link %d lanes @ 0x%02x\n",
+	       path->dp_lane_count, path->dp_link_bw);
 }
 
 /* ---- eDP panel power control ---- */
@@ -2121,7 +2251,7 @@ static int atombios_edp_panel_power(struct atom_context *ctx,
 	printk(BIOS_INFO, "ATOMBIOS: eDP panel power %s\n",
 	       power_on ? "ON" : "OFF");
 
-	return atombios_transmitter_control(ctx, path, 0, action);
+	return atombios_transmitter_control(ctx, path, 0, action, 0, 0);
 }
 
 /* ---- SetPixelClock ---- */
@@ -2408,7 +2538,7 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 		args.v1.usFbDiv = fb_div;
 		args.v1.ucFracFbDiv = frac_fb_div;
 		args.v1.ucPostDiv = post_div;
-		args.v1.ucPpll = crtc_id;
+		args.v1.ucPpll = pll_id;
 		args.v1.ucCRTC = crtc_id;
 		args.v1.ucRefDivSrc = 1;
 		break;
@@ -2418,7 +2548,7 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 		args.v2.usFbDiv = fb_div;
 		args.v2.ucFracFbDiv = frac_fb_div;
 		args.v2.ucPostDiv = post_div;
-		args.v2.ucPpll = crtc_id;
+		args.v2.ucPpll = pll_id;
 		args.v2.ucCRTC = crtc_id;
 		args.v2.ucRefDivSrc = 1;
 		break;
@@ -2428,7 +2558,7 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 		args.v3.usFbDiv = fb_div;
 		args.v3.ucFracFbDiv = frac_fb_div;
 		args.v3.ucPostDiv = post_div;
-		args.v3.ucPpll = crtc_id;
+		args.v3.ucPpll = pll_id;
 		args.v3.ucTransmitterId = encoder_id;
 		args.v3.ucEncoderMode = path->encoder_mode;
 		args.v3.ucMiscInfo = crtc_id == ATOM_CRTC2 ?
@@ -2691,8 +2821,15 @@ static void atombios_apply_supported_device_info(struct atom_context *ctx,
 		conn_type = conn->sucConnectorInfo.sbfAccess.bfConnectorType;
 		dac = conn->sucConnectorInfo.sbfAccess.bfAssociatedDAC;
 
-		paths[i].i2c_line = conn->sucI2cId.ucAccess;
-		paths[i].i2c_valid = 1;
+		if (!paths[i].i2c_valid) {
+			paths[i].i2c_line = conn->sucI2cId.ucAccess;
+			paths[i].i2c_valid = 1;
+		}
+
+		/* Linux uses SupportedDevicesInfo as an old-table fallback, not
+		 * as an override for Object_Header-derived connector paths. */
+		if (paths[i].connector_type != 0)
+			goto log_supported_device;
 
 		switch (conn_type) {
 		case 1: /* VGA */
@@ -2722,10 +2859,58 @@ static void atombios_apply_supported_device_info(struct atom_context *ctx,
 			break;
 		}
 
+log_supported_device:
 		printk(BIOS_INFO,
 		       "ATOMBIOS: supported dev %d tag=0x%04x conn_type=0x%x i2c=0x%02x dac=%d\n",
 		       dev_index, paths[i].device_tag, conn_type, paths[i].i2c_line, dac);
 	}
+}
+
+static uint8_t atombios_hpd_from_gpio(struct atom_context *ctx, uint8_t gpio_id)
+{
+	ATOM_GPIO_PIN_LUT *gpio_info;
+	ATOM_GPIO_PIN_ASSIGNMENT *pin;
+	uint16_t data_offset, size;
+	int num_indices;
+	int i;
+
+	if (!atom_parse_data_header(ctx, cmd_idx.data_gpio_pin, &size, NULL,
+				    NULL, &data_offset))
+		return ATOMBIOS_HPD_NONE;
+
+	gpio_info = (ATOM_GPIO_PIN_LUT *)((uint8_t *)ctx->bios + data_offset);
+	num_indices = (size - sizeof(ATOM_COMMON_TABLE_HEADER)) /
+		sizeof(ATOM_GPIO_PIN_ASSIGNMENT);
+	pin = &gpio_info->asGPIO_Pin[0];
+
+	for (i = 0; i < num_indices; i++) {
+		uint32_t reg;
+		uint32_t mask;
+
+		if (pin->ucGPIO_ID != gpio_id) {
+			pin = (ATOM_GPIO_PIN_ASSIGNMENT *)
+				((uint8_t *)pin + sizeof(ATOM_GPIO_PIN_ASSIGNMENT));
+			continue;
+		}
+
+		reg = pin->usGpioPin_AIndex * 4;
+		mask = 1u << pin->ucGpioPinBitShift;
+		if (reg != AVIVO_DC_GPIO_HPD_A &&
+		    reg != EVERGREEN_DC_GPIO_HPD_A && reg != SI_DC_GPIO_HPD_A)
+			return ATOMBIOS_HPD_NONE;
+
+		switch (mask) {
+		case (1 << 0): return 0;
+		case (1 << 8): return 1;
+		case (1 << 16): return 2;
+		case (1 << 24): return 3;
+		case (1 << 26): return 4;
+		case (1 << 28): return 5;
+		default: return ATOMBIOS_HPD_NONE;
+		}
+	}
+
+	return ATOMBIOS_HPD_NONE;
 }
 
 static void atombios_read_connector_records(struct atom_context *ctx,
@@ -2768,7 +2953,8 @@ static void atombios_read_connector_records(struct atom_context *ctx,
 			}
 			case ATOM_HPD_INT_RECORD_TYPE: {
 				ATOM_HPD_INT_RECORD *hpd_record = (ATOM_HPD_INT_RECORD *)record;
-				path->hpd_id = hpd_record->ucHPDIntGPIOID;
+				path->hpd_id = atombios_hpd_from_gpio(ctx,
+						hpd_record->ucHPDIntGPIOID);
 				break;
 			}
 			}
@@ -2845,6 +3031,7 @@ static int atombios_discover_display_paths(struct atom_context *ctx,
 
 		paths[count].connector_obj_id = conn_obj_id;
 		paths[count].device_tag = disp_path->usDeviceTag;
+		paths[count].hpd_id = ATOMBIOS_HPD_NONE;
 
 		/* Map ATOM connector object ID to a simple type */
 		switch (obj_id) {
@@ -3104,6 +3291,7 @@ static int atombios_dig_encoder_setup(struct atom_context *ctx,
 				      uint8_t action, uint8_t bpc)
 {
 	uint8_t frev, crev;
+	uint8_t lane_num;
 	union {
 		DIG_ENCODER_CONTROL_PARAMETERS      v1;
 		DIG_ENCODER_CONTROL_PARAMETERS_V2   v2;
@@ -3117,41 +3305,75 @@ static int atombios_dig_encoder_setup(struct atom_context *ctx,
 
 	memset(&args, 0, sizeof(args));
 
+	if (path->encoder_mode == ATOM_ENCODER_MODE_DP && path->dp_lane_count)
+		lane_num = path->dp_lane_count;
+	else if (path->encoder_mode == ATOM_ENCODER_MODE_DVI && pixel_clock_10khz > 16500)
+		lane_num = 8;
+	else
+		lane_num = 4;
+
 	printk(BIOS_DEBUG,
-	       "ATOMBIOS: DIG encoder setup frev=%d crev=%d action=0x%02x mode=%d\n",
-	       frev, crev, action, path->encoder_mode);
+	       "ATOMBIOS: DIG encoder setup frev=%d crev=%d action=0x%02x "
+	       "mode=%d lanes=%d link_bw=0x%02x\n",
+	       frev, crev, action, path->encoder_mode, lane_num, path->dp_link_bw);
 
 	switch (crev) {
 	case 1:
 		args.v1.ucAction = action;
 		args.v1.usPixelClock = pixel_clock_10khz;
 		args.v1.ucEncoderMode = path->encoder_mode;
-		args.v1.ucLaneNum = 4;
+		args.v1.ucLaneNum = lane_num;
+		if (path->phy_id / 2 == 1)
+			args.v1.ucConfig |= ATOM_ENCODER_CONFIG_TRANSMITTER2;
+		else if (path->phy_id / 2 == 2)
+			args.v1.ucConfig |= 0x10;
+		if (path->dig_encoder & 1)
+			args.v1.ucConfig |= ATOM_ENCODER_CONFIG_LINKB;
+		if (path->encoder_mode == ATOM_ENCODER_MODE_DP &&
+		    path->dp_link_bw >= DP_LINK_BW_2_7)
+			args.v1.ucConfig |= ATOM_ENCODER_CONFIG_DPLINKRATE_2_70GHZ;
 		break;
 	case 2:
 		args.v2.ucAction = action;
 		args.v2.usPixelClock = pixel_clock_10khz;
 		args.v2.ucEncoderMode = path->encoder_mode;
-		args.v2.ucLaneNum = 4;
+		args.v2.ucLaneNum = lane_num;
 		args.v2.acConfig.ucLinkSel = path->dig_encoder & 1;
 		args.v2.acConfig.ucTransmitterSel = path->phy_id / 2;
+		if (path->encoder_mode == ATOM_ENCODER_MODE_DP &&
+		    path->dp_link_bw >= DP_LINK_BW_2_7)
+			args.v2.acConfig.ucDPLinkRate = 1;
 		break;
 	case 3:
 		args.v3.ucAction = action;
 		args.v3.usPixelClock = pixel_clock_10khz;
 		args.v3.ucEncoderMode = path->encoder_mode;
-		args.v3.ucLaneNum = 4;
+		args.v3.ucLaneNum = lane_num;
 		args.v3.ucBitPerColor = bpc;
 		args.v3.acConfig.ucDigSel = path->dig_encoder;
+		if (path->encoder_mode == ATOM_ENCODER_MODE_DP &&
+		    path->dp_link_bw >= DP_LINK_BW_2_7)
+			args.v3.acConfig.ucDPLinkRate = 1;
 		break;
 	case 4:
 		args.v4.ucAction = action;
 		args.v4.usPixelClock = pixel_clock_10khz;
 		args.v4.ucEncoderMode = path->encoder_mode;
-		args.v4.ucLaneNum = 4;
+		args.v4.ucLaneNum = lane_num;
 		args.v4.ucBitPerColor = bpc;
-		args.v4.ucHPD_ID = path->hpd_id;
+		args.v4.ucHPD_ID = path->hpd_id <= 5 ? path->hpd_id + 1 : 0;
 		args.v4.acConfig.ucDigSel = path->dig_encoder;
+		if (path->encoder_mode == ATOM_ENCODER_MODE_DP) {
+			if (path->dp_link_bw >= DP_LINK_BW_5_4)
+				args.v4.acConfig.ucDPLinkRate =
+					ATOM_ENCODER_CONFIG_V4_DPLINKRATE_5_40GHZ;
+			else if (path->dp_link_bw >= DP_LINK_BW_2_7)
+				args.v4.acConfig.ucDPLinkRate =
+					ATOM_ENCODER_CONFIG_V4_DPLINKRATE_2_70GHZ;
+			else
+				args.v4.acConfig.ucDPLinkRate =
+					ATOM_ENCODER_CONFIG_V4_DPLINKRATE_1_62GHZ;
+		}
 		break;
 	case 5:
 	default:
@@ -3159,9 +3381,11 @@ static int atombios_dig_encoder_setup(struct atom_context *ctx,
 			args.v5.asStreamParam.ucDigId = path->dig_encoder;
 			args.v5.asStreamParam.ucAction = action;
 			args.v5.asStreamParam.ucDigMode = path->encoder_mode;
-			args.v5.asStreamParam.ucLaneNum = 4;
+			args.v5.asStreamParam.ucLaneNum = lane_num;
 			args.v5.asStreamParam.ulPixelClock = pixel_clock_10khz;
 			args.v5.asStreamParam.ucBitPerColor = bpc;
+			if (path->encoder_mode == ATOM_ENCODER_MODE_DP)
+				args.v5.asStreamParam.ucLinkRateIn270Mhz = path->dp_link_bw;
 		} else {
 			args.v5.asCmdParam.ucDigId = path->dig_encoder;
 			args.v5.asCmdParam.ucAction = action;
@@ -3186,9 +3410,12 @@ static int atombios_dig_encoder_setup(struct atom_context *ctx,
 static int atombios_transmitter_control(struct atom_context *ctx,
 					const struct atombios_display_path *path,
 					uint16_t pixel_clock_10khz,
-					uint8_t action)
+					uint8_t action,
+					uint8_t lane_num, uint8_t lane_set)
 {
 	uint8_t frev, crev;
+	uint8_t transmitter_lane_num;
+	uint16_t sym_clock_10khz;
 	union {
 		DIG_TRANSMITTER_CONTROL_PARAMETERS       v1;
 		DIG_TRANSMITTER_CONTROL_PARAMETERS_V2    v2;
@@ -3203,28 +3430,52 @@ static int atombios_transmitter_control(struct atom_context *ctx,
 
 	memset(&args, 0, sizeof(args));
 
+	transmitter_lane_num = lane_num;
+	if (!transmitter_lane_num) {
+		if (path->encoder_mode == ATOM_ENCODER_MODE_DP && path->dp_lane_count)
+			transmitter_lane_num = path->dp_lane_count;
+		else if (path->encoder_mode == ATOM_ENCODER_MODE_DVI &&
+			 pixel_clock_10khz > 16500)
+			transmitter_lane_num = 8;
+		else
+			transmitter_lane_num = 4;
+	}
+
+	sym_clock_10khz = pixel_clock_10khz;
+	if (path->encoder_mode == ATOM_ENCODER_MODE_DP && path->dp_link_bw)
+		sym_clock_10khz = dp_link_bw_code_to_clock_10khz(path->dp_link_bw);
+
 	printk(BIOS_DEBUG,
-	       "ATOMBIOS: transmitter ctrl frev=%d crev=%d action=%d phy=%d\n",
-	       frev, crev, action, path->phy_id);
+	       "ATOMBIOS: transmitter ctrl frev=%d crev=%d action=%d "
+	       "phy=%d lanes=%d symclk=%d*10kHz\n",
+	       frev, crev, action, path->phy_id, transmitter_lane_num,
+	       sym_clock_10khz);
 
 	switch (crev) {
 	case 1:
 		args.v1.ucAction = action;
-		if (action == ATOM_TRANSMITTER_ACTION_INIT)
+		if (action == ATOM_TRANSMITTER_ACTION_SETUP_VSEMPH) {
+			args.v1.asMode.ucLaneSel = transmitter_lane_num;
+			args.v1.asMode.ucLaneSet = lane_set;
+		} else if (action == ATOM_TRANSMITTER_ACTION_INIT) {
 			args.v1.usInitInfo = path->connector_obj_id;
-		else
-			args.v1.usPixelClock = pixel_clock_10khz;
-		/* Set coherent mode for HDMI/DP */
+		} else {
+			args.v1.usPixelClock = sym_clock_10khz;
+		}
 		if (path->encoder_mode == ATOM_ENCODER_MODE_HDMI ||
 		    path->encoder_mode == ATOM_ENCODER_MODE_DP)
-			args.v1.ucConfig |= (1 << 1); /* COHERENT */
+			args.v1.ucConfig |= (1 << 1);
 		break;
 	case 2:
 		args.v2.ucAction = action;
-		if (action == ATOM_TRANSMITTER_ACTION_INIT)
+		if (action == ATOM_TRANSMITTER_ACTION_SETUP_VSEMPH) {
+			args.v2.asMode.ucLaneSel = transmitter_lane_num;
+			args.v2.asMode.ucLaneSet = lane_set;
+		} else if (action == ATOM_TRANSMITTER_ACTION_INIT) {
 			args.v2.usInitInfo = path->connector_obj_id;
-		else
-			args.v2.usPixelClock = pixel_clock_10khz;
+		} else {
+			args.v2.usPixelClock = sym_clock_10khz;
+		}
 		args.v2.acConfig.ucEncoderSel = (path->dig_encoder & 1);
 		args.v2.acConfig.ucTransmitterSel = path->phy_id / 2;
 		if (path->encoder_mode == ATOM_ENCODER_MODE_DP)
@@ -3235,11 +3486,15 @@ static int atombios_transmitter_control(struct atom_context *ctx,
 		break;
 	case 3:
 		args.v3.ucAction = action;
-		if (action == ATOM_TRANSMITTER_ACTION_INIT)
+		if (action == ATOM_TRANSMITTER_ACTION_SETUP_VSEMPH) {
+			args.v3.asMode.ucLaneSel = transmitter_lane_num;
+			args.v3.asMode.ucLaneSet = lane_set;
+		} else if (action == ATOM_TRANSMITTER_ACTION_INIT) {
 			args.v3.usInitInfo = path->connector_obj_id;
-		else
-			args.v3.usPixelClock = pixel_clock_10khz;
-		args.v3.ucLaneNum = 4;
+		} else {
+			args.v3.usPixelClock = sym_clock_10khz;
+		}
+		args.v3.ucLaneNum = transmitter_lane_num;
 		args.v3.acConfig.ucEncoderSel = (path->dig_encoder & 1);
 		args.v3.acConfig.ucTransmitterSel = path->phy_id / 2;
 		if (path->encoder_mode == ATOM_ENCODER_MODE_HDMI ||
@@ -3248,11 +3503,15 @@ static int atombios_transmitter_control(struct atom_context *ctx,
 		break;
 	case 4:
 		args.v4.ucAction = action;
-		if (action == ATOM_TRANSMITTER_ACTION_INIT)
+		if (action == ATOM_TRANSMITTER_ACTION_SETUP_VSEMPH) {
+			args.v4.asMode.ucLaneSel = transmitter_lane_num;
+			args.v4.asMode.ucLaneSet = lane_set;
+		} else if (action == ATOM_TRANSMITTER_ACTION_INIT) {
 			args.v4.usInitInfo = path->connector_obj_id;
-		else
-			args.v4.usPixelClock = pixel_clock_10khz;
-		args.v4.ucLaneNum = 4;
+		} else {
+			args.v4.usPixelClock = sym_clock_10khz;
+		}
+		args.v4.ucLaneNum = transmitter_lane_num;
 		args.v4.acConfig.ucEncoderSel = (path->dig_encoder & 1);
 		args.v4.acConfig.ucTransmitterSel = path->phy_id / 2;
 		if (path->encoder_mode == ATOM_ENCODER_MODE_HDMI ||
@@ -3261,12 +3520,15 @@ static int atombios_transmitter_control(struct atom_context *ctx,
 		break;
 	case 5:
 		args.v5.ucAction = action;
-		args.v5.usSymClock = pixel_clock_10khz;
+		args.v5.usSymClock = sym_clock_10khz;
 		args.v5.ucPhyId = path->phy_id;
-		args.v5.ucLaneNum = 4;
+		args.v5.ucLaneNum = transmitter_lane_num;
 		args.v5.ucConnObjId = atombios_object_id(path->connector_obj_id);
 		args.v5.ucDigMode = path->encoder_mode;
 		args.v5.ucDigEncoderSel = (1 << path->dig_encoder);
+		args.v5.ucDPLaneSet = lane_set;
+		if (path->hpd_id <= 5)
+			args.v5.asConfig.ucHPDSel = path->hpd_id + 1;
 		if (path->encoder_mode == ATOM_ENCODER_MODE_HDMI ||
 		    path->encoder_mode == ATOM_ENCODER_MODE_DP)
 			args.v5.asConfig.ucCoherentMode = 1;
@@ -3275,11 +3537,16 @@ static int atombios_transmitter_control(struct atom_context *ctx,
 	default:
 		args.v6.ucAction = action;
 		args.v6.ucPhyId = path->phy_id;
-		args.v6.ucDigMode = path->encoder_mode;
-		args.v6.ucLaneNum = 4;
-		args.v6.ulSymClock = pixel_clock_10khz;
+		if (action == ATOM_TRANSMITTER_ACTION_SETUP_VSEMPH)
+			args.v6.ucDPLaneSet = lane_set;
+		else
+			args.v6.ucDigMode = path->encoder_mode;
+		args.v6.ucLaneNum = transmitter_lane_num;
+		args.v6.ulSymClock = sym_clock_10khz;
 		args.v6.ucConnObjId = atombios_object_id(path->connector_obj_id);
 		args.v6.ucDigEncoderSel = (1 << path->dig_encoder);
+		if (path->hpd_id <= 5)
+			args.v6.ucHPDSel = path->hpd_id + 1;
 		break;
 	}
 
@@ -3639,7 +3906,8 @@ static void atombios_init(struct device *dev)
 
 	/* Try to read EDID on digital paths to find a connected display. */
 	for (i = 0; i < num_paths; i++) {
-		if (paths[i].connector_type == 0 || paths[i].is_dac)
+		if (paths[i].connector_type == 0 || paths[i].is_dac ||
+		    !paths[i].i2c_valid)
 			continue;
 
 		if (atombios_read_edid(ctx, paths[i].i2c_line, edid_raw) == 0) {
@@ -3810,13 +4078,17 @@ do_modeset:
 			}
 		}
 
+		if (active_path >= 0)
+			atombios_dp_prepare_link(ctx, &paths[active_path], mode.pixel_clock);
+
 		/* Initialize transmitter PHY */
 		if (active_path >= 0) {
 			printk(BIOS_INFO, "ATOMBIOS: initializing transmitter PHY %d...\n",
 			       paths[active_path].phy_id);
 			atombios_transmitter_control(ctx, &paths[active_path],
 						     pixel_clock_10khz,
-						     ATOM_TRANSMITTER_ACTION_INIT);
+						     ATOM_TRANSMITTER_ACTION_INIT,
+						     0, 0);
 		}
 
 		/* Configure DIG encoder */
@@ -3854,7 +4126,8 @@ do_modeset:
 			printk(BIOS_INFO, "ATOMBIOS: enabling transmitter...\n");
 			atombios_transmitter_control(ctx, &paths[active_path],
 						     pixel_clock_10khz,
-						     ATOM_TRANSMITTER_ACTION_ENABLE);
+						     ATOM_TRANSMITTER_ACTION_ENABLE,
+						     0, 0);
 		}
 
 		/* DP link training */
