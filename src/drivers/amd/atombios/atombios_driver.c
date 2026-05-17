@@ -667,6 +667,14 @@ static uint32_t cail_reg_read(struct card_info *info, uint32_t reg)
 #define EVERGREEN_DC_LUT_WHITE_OFFSET_BLUE	0x6a10
 #define EVERGREEN_DC_LUT_WHITE_OFFSET_GREEN	0x6a14
 #define EVERGREEN_DC_LUT_WHITE_OFFSET_RED	0x6a18
+#define EVERGREEN_PRESCALE_GRPH_CONTROL		0x68b4
+#define EVERGREEN_PRESCALE_OVL_CONTROL		0x68c4
+#define EVERGREEN_INPUT_CSC_CONTROL		0x68d4
+#define EVERGREEN_OUTPUT_CSC_CONTROL		0x68f0
+#define EVERGREEN_DEGAMMA_CONTROL		0x6960
+#define EVERGREEN_GAMUT_REMAP_CONTROL		0x6964
+#define EVERGREEN_REGAMMA_CONTROL		0x6a80
+#define EVERGREEN_PRESCALE_BYPASS		(1 << 4)
 
 static uint32_t atombios_scratch_read(struct atom_context *ctx, uint32_t reg)
 {
@@ -914,6 +922,20 @@ static void atombios_load_evergreen_identity_lut(struct atom_context *ctx)
 	int i;
 
 	printk(BIOS_DEBUG, "ATOMBIOS: loading DCE4+ identity CRTC LUT\n");
+
+	/* Match Linux's DCE color setup: scanout pixels are already RGB,
+	 * so bypass input/output CSC, prescale, degamma, gamut remap, and
+	 * regamma.  Some VBIOS tables leave output CSC in a YCbCr mode,
+	 * which makes black scanout data appear green. */
+	atombios_mmio_write(ctx, EVERGREEN_INPUT_CSC_CONTROL, 0);
+	atombios_mmio_write(ctx, EVERGREEN_OUTPUT_CSC_CONTROL, 0);
+	atombios_mmio_write(ctx, EVERGREEN_PRESCALE_GRPH_CONTROL,
+			   EVERGREEN_PRESCALE_BYPASS);
+	atombios_mmio_write(ctx, EVERGREEN_PRESCALE_OVL_CONTROL,
+			   EVERGREEN_PRESCALE_BYPASS);
+	atombios_mmio_write(ctx, EVERGREEN_DEGAMMA_CONTROL, 0);
+	atombios_mmio_write(ctx, EVERGREEN_GAMUT_REMAP_CONTROL, 0);
+	atombios_mmio_write(ctx, EVERGREEN_REGAMMA_CONTROL, 0);
 
 	atombios_mmio_write(ctx, EVERGREEN_DC_LUT_CONTROL, 0);
 	atombios_mmio_write(ctx, EVERGREEN_DC_LUT_BLACK_OFFSET_BLUE, 0);
