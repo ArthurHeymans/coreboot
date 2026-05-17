@@ -79,6 +79,7 @@
 struct atombios_cmd_indices {
 	int asic_init;
 	int set_pixel_clock;
+	int adjust_display_pll;
 	int set_dce_clock;
 	int set_crtc_using_dtd;
 	int enable_crtc;
@@ -111,6 +112,7 @@ static void atombios_init_cmd_indices_v1(struct atombios_cmd_indices *idx)
 	idx->is_v2 = false;
 	idx->asic_init              = CMD_IDX_V1(ASIC_Init);
 	idx->set_pixel_clock        = CMD_IDX_V1(SetPixelClock);
+	idx->adjust_display_pll     = CMD_IDX_V1(AdjustDisplayPll);
 	idx->set_dce_clock          = CMD_IDX_V1(SetDCEClock);
 	idx->set_crtc_using_dtd     = CMD_IDX_V1(SetCRTC_UsingDTDTiming);
 	idx->enable_crtc            = CMD_IDX_V1(EnableCRTC);
@@ -142,6 +144,7 @@ static void atombios_init_cmd_indices_v2(struct atombios_cmd_indices *idx)
 	idx->is_v2 = true;
 	idx->asic_init              = CMD_IDX_V2(asic_init);
 	idx->set_pixel_clock        = CMD_IDX_V2(setpixelclock);
+	idx->adjust_display_pll     = -1;
 	idx->set_dce_clock          = CMD_IDX_V2(setdceclock);
 	idx->set_crtc_using_dtd     = CMD_IDX_V2(setcrtc_usingdtdtiming);
 	idx->enable_crtc            = CMD_IDX_V2(enablecrtc);
@@ -2300,6 +2303,61 @@ static void atombios_compute_avivo_pll(struct atom_context *ctx,
 	       target_clock, *dot_clock, *fb_div, *ref_div, *post_div);
 }
 
+static uint16_t atombios_adjust_display_pll(struct atom_context *ctx,
+					    const struct atombios_display_path *path,
+					    uint16_t pixel_clock_10khz)
+{
+	uint8_t frev, crev;
+	union {
+		ADJUST_DISPLAY_PLL_PS_ALLOCATION v1;
+		ADJUST_DISPLAY_PLL_PS_ALLOCATION_V3 v3;
+	} args;
+	uint16_t adjusted_clock = pixel_clock_10khz;
+
+	/* Our DP path does not track the trained link clock yet. */
+	if (path->encoder_mode == ATOM_ENCODER_MODE_DP)
+		return adjusted_clock;
+
+	if (cmd_idx.adjust_display_pll < 0)
+		return adjusted_clock;
+	if (!atom_parse_cmd_header(ctx, cmd_idx.adjust_display_pll, &frev, &crev))
+		return adjusted_clock;
+
+	memset(&args, 0, sizeof(args));
+
+	switch (crev) {
+	case 1:
+	case 2:
+		args.v1.usPixelClock = pixel_clock_10khz;
+		args.v1.ucTransmitterID = path->encoder_obj_id;
+		args.v1.ucEncodeMode = path->encoder_mode;
+		if (atom_execute_table(ctx, cmd_idx.adjust_display_pll,
+				       (uint32_t *)&args, sizeof(args)) == 0)
+			adjusted_clock = args.v1.usPixelClock;
+		break;
+	case 3:
+	default:
+		args.v3.sInput.usPixelClock = pixel_clock_10khz;
+		args.v3.sInput.ucTransmitterID = path->encoder_obj_id;
+		args.v3.sInput.ucEncodeMode = path->encoder_mode;
+		if (path->encoder_mode == ATOM_ENCODER_MODE_DVI &&
+		    pixel_clock_10khz > 16500)
+			args.v3.sInput.ucDispPllConfig |= DISPPLL_CONFIG_DUAL_LINK;
+		if (atom_execute_table(ctx, cmd_idx.adjust_display_pll,
+				       (uint32_t *)&args, sizeof(args)) == 0 &&
+		    args.v3.sOutput.ulDispPllFreq)
+			adjusted_clock = args.v3.sOutput.ulDispPllFreq;
+		break;
+	}
+
+	if (adjusted_clock != pixel_clock_10khz)
+		printk(BIOS_DEBUG,
+		       "ATOMBIOS: AdjustDisplayPll %u -> %u *10kHz\n",
+		       pixel_clock_10khz, adjusted_clock);
+
+	return adjusted_clock;
+}
+
 /*
  * Program the pixel clock PLL via the SetPixelClock ATOM command table.
  * Linux computes PLL dividers before calling SetPixelClock on table
@@ -2322,6 +2380,7 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 	} args;
 	uint8_t encoder_id;
 	uint8_t pll_id = profile->pixel_clock_ppll;
+	uint16_t adjusted_clock_10khz;
 	uint32_t dot_clock, fb_div, frac_fb_div, ref_div, post_div;
 
 	if (profile->use_combo_phy_pixel_clock && path->phy_id < 6)
@@ -2334,16 +2393,17 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 
 	/* Linux passes radeon_encoder->encoder_id here. */
 	encoder_id = path->encoder_obj_id;
-	atombios_compute_avivo_pll(ctx, pixel_clock_10khz, &dot_clock,
+	adjusted_clock_10khz = atombios_adjust_display_pll(ctx, path, pixel_clock_10khz);
+	atombios_compute_avivo_pll(ctx, adjusted_clock_10khz, &dot_clock,
 				 &fb_div, &frac_fb_div, &ref_div, &post_div);
 
 	printk(BIOS_DEBUG,
 	       "ATOMBIOS: SetPixelClock frev=%d crev=%d clock=%d*10kHz crtc=%d ppll=%u\n",
-	       frev, crev, pixel_clock_10khz, crtc_id, pll_id);
+	       frev, crev, adjusted_clock_10khz, crtc_id, pll_id);
 
 	switch (crev) {
 	case 1:
-		args.v1.usPixelClock = pixel_clock_10khz;
+		args.v1.usPixelClock = adjusted_clock_10khz;
 		args.v1.usRefDiv = ref_div;
 		args.v1.usFbDiv = fb_div;
 		args.v1.ucFracFbDiv = frac_fb_div;
@@ -2353,7 +2413,7 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 		args.v1.ucRefDivSrc = 1;
 		break;
 	case 2:
-		args.v2.usPixelClock = pixel_clock_10khz;
+		args.v2.usPixelClock = adjusted_clock_10khz;
 		args.v2.usRefDiv = ref_div;
 		args.v2.usFbDiv = fb_div;
 		args.v2.ucFracFbDiv = frac_fb_div;
@@ -2363,7 +2423,7 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 		args.v2.ucRefDivSrc = 1;
 		break;
 	case 3:
-		args.v3.usPixelClock = pixel_clock_10khz;
+		args.v3.usPixelClock = adjusted_clock_10khz;
 		args.v3.usRefDiv = ref_div;
 		args.v3.usFbDiv = fb_div;
 		args.v3.ucFracFbDiv = frac_fb_div;
@@ -2377,7 +2437,7 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 		break;
 	case 5:
 		args.v5.ucCRTC = crtc_id;
-		args.v5.usPixelClock = pixel_clock_10khz;
+		args.v5.usPixelClock = adjusted_clock_10khz;
 		args.v5.ucRefDiv = ref_div;
 		args.v5.usFbDiv = fb_div;
 		args.v5.ulFbDivDecFrac = frac_fb_div * 100000;
@@ -2389,7 +2449,7 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 		break;
 	case 6:
 		args.v6.ulDispEngClkFreq = ((uint32_t)crtc_id << 24) |
-			pixel_clock_10khz;
+			adjusted_clock_10khz;
 		args.v6.ucRefDiv = ref_div;
 		args.v6.usFbDiv = fb_div;
 		args.v6.ulFbDivDecFrac = frac_fb_div * 100000;
@@ -2401,12 +2461,15 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 		break;
 	case 7:
 	default:
-		args.v7.ulPixelClock = (uint32_t)pixel_clock_10khz * 100;
+		args.v7.ulPixelClock = (uint32_t)adjusted_clock_10khz * 100;
 		args.v7.ucCRTC = crtc_id;
 		args.v7.ucPpll = pll_id;
 		args.v7.ucTransmitterID = encoder_id;
 		args.v7.ucEncoderMode = path->encoder_mode;
 		args.v7.ucMiscInfo = 0;
+		if (path->encoder_mode == ATOM_ENCODER_MODE_DVI &&
+		    adjusted_clock_10khz > 16500)
+			args.v7.ucMiscInfo |= PIXEL_CLOCK_V7_MISC_DVI_DUALLINK_EN;
 		break;
 	}
 
@@ -3238,6 +3301,7 @@ static int atombios_select_crtc_source(struct atom_context *ctx,
 	union {
 		SELECT_CRTC_SOURCE_PARAMETERS    v1;
 		SELECT_CRTC_SOURCE_PARAMETERS_V2 v2;
+		SELECT_CRTC_SOURCE_PARAMETERS_V3 v3;
 	} args;
 	uint8_t enc_id = ASIC_INT_DIG1_ENCODER_ID;
 	int dev_index;
@@ -3283,10 +3347,16 @@ static int atombios_select_crtc_source(struct atom_context *ctx,
 			args.v1.ucDevice = ATOM_DEVICE_DFP1_INDEX;
 		break;
 	case 2:
-	default:
 		args.v2.ucCRTC = crtc_id;
 		args.v2.ucEncoderID = enc_id;
 		args.v2.ucEncodeMode = path->encoder_mode;
+		break;
+	case 3:
+	default:
+		args.v3.ucCRTC = crtc_id;
+		args.v3.ucEncoderID = enc_id;
+		args.v3.ucEncodeMode = path->encoder_mode;
+		args.v3.ucDstBpc = PANEL_8BIT_PER_COLOR;
 		break;
 	}
 
