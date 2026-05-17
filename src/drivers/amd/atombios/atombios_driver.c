@@ -738,6 +738,11 @@ static uint32_t atombios_s6_acc_req_bit(uint16_t device_tag)
 	}
 }
 
+static uint8_t atombios_object_id(uint16_t object_id)
+{
+	return (object_id & OBJECT_ID_MASK) >> OBJECT_ID_SHIFT;
+}
+
 static uint32_t atombios_mmio_read(struct atom_context *ctx, uint32_t reg)
 {
 	return read32((uint8_t *)ctx->card->mmio_base + reg);
@@ -2647,7 +2652,8 @@ static void atombios_apply_supported_device_info(struct atom_context *ctx,
 		case 0x0a: /* HDMI type A */
 		case 0x0b: /* HDMI type B */
 			paths[i].connector_type = 1;
-			paths[i].encoder_mode = ATOM_ENCODER_MODE_HDMI;
+			/* Linux drives HDMI as DVI/TMDS when audio/infoframes are off. */
+			paths[i].encoder_mode = ATOM_ENCODER_MODE_DVI;
 			break;
 		default:
 			break;
@@ -2781,7 +2787,8 @@ static int atombios_discover_display_paths(struct atom_context *ctx,
 		switch (obj_id) {
 		case CONNECTOR_OBJECT_ID_HDMI_TYPE_A:
 			paths[count].connector_type = 1; /* HDMI */
-			paths[count].encoder_mode = ATOM_ENCODER_MODE_HDMI;
+			/* Linux drives HDMI as DVI/TMDS when audio/infoframes are off. */
+			paths[count].encoder_mode = ATOM_ENCODER_MODE_DVI;
 			break;
 		case CONNECTOR_OBJECT_ID_DISPLAYPORT:
 		case CONNECTOR_OBJECT_ID_eDP:
@@ -3039,6 +3046,7 @@ static int atombios_dig_encoder_setup(struct atom_context *ctx,
 		DIG_ENCODER_CONTROL_PARAMETERS_V2   v2;
 		DIG_ENCODER_CONTROL_PARAMETERS_V3   v3;
 		DIG_ENCODER_CONTROL_PARAMETERS_V4   v4;
+		DIG_ENCODER_CONTROL_PARAMETERS_V5   v5;
 	} args;
 
 	if (!atom_parse_cmd_header(ctx, cmd_idx.dig_encoder_ctrl, &frev, &crev))
@@ -3074,7 +3082,6 @@ static int atombios_dig_encoder_setup(struct atom_context *ctx,
 		args.v3.acConfig.ucDigSel = path->dig_encoder;
 		break;
 	case 4:
-	default:
 		args.v4.ucAction = action;
 		args.v4.usPixelClock = pixel_clock_10khz;
 		args.v4.ucEncoderMode = path->encoder_mode;
@@ -3082,6 +3089,20 @@ static int atombios_dig_encoder_setup(struct atom_context *ctx,
 		args.v4.ucBitPerColor = bpc;
 		args.v4.ucHPD_ID = path->hpd_id;
 		args.v4.acConfig.ucDigSel = path->dig_encoder;
+		break;
+	case 5:
+	default:
+		if (action == ATOM_ENCODER_CMD_STREAM_SETUP) {
+			args.v5.asStreamParam.ucDigId = path->dig_encoder;
+			args.v5.asStreamParam.ucAction = action;
+			args.v5.asStreamParam.ucDigMode = path->encoder_mode;
+			args.v5.asStreamParam.ucLaneNum = 4;
+			args.v5.asStreamParam.ulPixelClock = pixel_clock_10khz;
+			args.v5.asStreamParam.ucBitPerColor = bpc;
+		} else {
+			args.v5.asCmdParam.ucDigId = path->dig_encoder;
+			args.v5.asCmdParam.ucAction = action;
+		}
 		break;
 	}
 
@@ -3177,13 +3198,10 @@ static int atombios_transmitter_control(struct atom_context *ctx,
 		break;
 	case 5:
 		args.v5.ucAction = action;
-		if (action == ATOM_TRANSMITTER_ACTION_INIT)
-			args.v5.usSymClock = path->connector_obj_id;
-		else
-			args.v5.usSymClock = pixel_clock_10khz;
+		args.v5.usSymClock = pixel_clock_10khz;
 		args.v5.ucPhyId = path->phy_id;
 		args.v5.ucLaneNum = 4;
-		args.v5.ucConnObjId = (path->connector_obj_id >> 8) & 0xFF;
+		args.v5.ucConnObjId = atombios_object_id(path->connector_obj_id);
 		args.v5.ucDigMode = path->encoder_mode;
 		args.v5.ucDigEncoderSel = (1 << path->dig_encoder);
 		if (path->encoder_mode == ATOM_ENCODER_MODE_HDMI ||
@@ -3196,12 +3214,9 @@ static int atombios_transmitter_control(struct atom_context *ctx,
 		args.v6.ucPhyId = path->phy_id;
 		args.v6.ucDigMode = path->encoder_mode;
 		args.v6.ucLaneNum = 4;
-		args.v6.ucConnObjId = (path->connector_obj_id >> 8) & 0xFF;
+		args.v6.ulSymClock = pixel_clock_10khz;
+		args.v6.ucConnObjId = atombios_object_id(path->connector_obj_id);
 		args.v6.ucDigEncoderSel = (1 << path->dig_encoder);
-		if (action == ATOM_TRANSMITTER_ACTION_INIT)
-			args.v6.ulSymClock = path->connector_obj_id;
-		else
-			args.v6.ulSymClock = pixel_clock_10khz;
 		break;
 	}
 
