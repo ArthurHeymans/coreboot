@@ -1,0 +1,28 @@
+## SPDX-License-Identifier: GPL-2.0-only
+
+if BOARD_INTEL_MINNOWMAX
+
+config BOARD_SPECIFIC_OPTIONS
+	def_bool y
+	select BOARD_ROMSIZE_KB_8192
+	select ENABLE_BUILTIN_COM1 if CONSOLE_SERIAL
+	select HAVE_ACPI_RESUME
+	select HAVE_ACPI_TABLES
+	select HAVE_MRC
+	select HAVE_OPTION_TABLE
+	select INTEL_GMA_HAVE_VBT
+	select SOC_INTEL_BAYTRAIL
+
+config CBFS_SIZE
+	hex
+	default 0x00400000
+
+config MAINBOARD_DIR
+	string
+	default "intel/minnowmax"
+
+config MAINBOARD_PART_NUMBER
+	string
+	default "Minnow Max"
+
+endif # BOARD_INTEL_MINNOWMAX

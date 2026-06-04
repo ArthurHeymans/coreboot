@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+# Fake SPD for 2 GiB memory-down (4 x 4Gb x16 DDR3L)
+# Kingston D2516EC4BXGGB-U
+
+92 11 0b 03 04 19 02 02
+03 11 01 08 0a 00 fe 00
+69 78 69 3c 69 11 18 86
+20 08 3c 3c 01 40 83 05
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+00 00 00 00 0f 01 02 00
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+00 00 00 00 00 01 98 00
+00 00 00 00 00 00 19 d2
+44 32 35 31 36 45 43 34
+42 58 47 47 42 2d 55 20
+20 20 45 31 01 98 00 00
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+ff ff ff ff ff ff ff ff
+ff ff ff ff ff ff ff ff
+ff ff ff ff ff ff ff ff
+ff ff ff ff ff ff ff ff
+ff ff ff ff ff ff ff ff
+ff ff ff ff ff ff ff ff
+ff ff ff ff ff ff ff ff
+ff ff ff ff ff ff ff ff
+ff ff ff ff ff ff ff ff
+ff ff ff ff ff ff ff ff
