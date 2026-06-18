@@ -42,6 +42,7 @@ u32 decode_igd_memory_size(const u32 gms);
 u32 decode_igd_gtt_size(const u32 gsm);
 
 /* Mainboard romstage callback functions */
+void mainboard_pre_raminit(void); /* optional */
 void get_mb_spd_addrmap(u8 *spd_addr_map);
 void mb_pirq_setup(void); /* optional */
 

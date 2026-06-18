@@ -4,6 +4,7 @@
 #include <console/console.h>
 #include <cbmem.h>
 #include <cf9_reset.h>
+#include <lib.h>
 #include <romstage_handoff.h>
 #include <southbridge/intel/i82801gx/i82801gx.h>
 #include <southbridge/intel/common/pmclib.h>
@@ -20,6 +21,28 @@ static void rcba_config(void)
 
 __weak void mb_pirq_setup(void)
 {
+}
+
+__weak void mainboard_pre_raminit(void)
+{
+}
+
+static void pineview_lower_memory_test(void)
+{
+	uintptr_t top = cbmem_top();
+	uintptr_t test_addr;
+
+	if (top > (32UL << 20))
+		test_addr = top - (16UL << 20);
+	else
+		test_addr = 1UL << 20;
+
+	printk(BIOS_DEBUG, "Testing lower DRAM at 0x%08lx below cbmem top 0x%08lx\n", test_addr,
+	       top);
+	if (ram_check_nodie(test_addr))
+		printk(BIOS_ERR, "Lower DRAM test failed at 0x%08lx\n", test_addr);
+	else
+		printk(BIOS_DEBUG, "Lower DRAM test passed at 0x%08lx\n", test_addr);
 }
 
 /* The romstage entry point for this platform is not mainboard-specific, hence the name. */
@@ -47,6 +70,8 @@ void mainboard_romstage_entry(void)
 			boot_path = BOOT_PATH_NORMAL;
 	}
 
+	mainboard_pre_raminit();
+
 	get_mb_spd_addrmap(&spd_addrmap[0]);
 
 	printk(BIOS_DEBUG, "Initializing memory\n");
@@ -54,6 +79,8 @@ void mainboard_romstage_entry(void)
 	sdram_initialize(boot_path, spd_addrmap);
 	timestamp_add_now(TS_INITRAM_END);
 	printk(BIOS_DEBUG, "Memory initialized\n");
+
+	pineview_lower_memory_test();
 
 	post_code(0x31);
 

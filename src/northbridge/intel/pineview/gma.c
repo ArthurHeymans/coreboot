@@ -92,6 +92,18 @@ static void gma_func0_init(struct device *dev)
 	}
 }
 
+/* This doesn't reclaim stolen UMA memory, but IGD could still
+   be re-enabled later. */
+static void gma_func0_disable(struct device *dev)
+{
+	struct device *dev_host = pcidev_on_root(0, 0);
+
+	pci_write_config16(dev_host, GGC, 1 << 1);
+	pci_and_config32(dev_host, DEVEN, ~(DEVEN_D2F0 | DEVEN_D2F1));
+
+	dev->enabled = 0;
+}
+
 static void gma_generate_ssdt(const struct device *device)
 {
 	const struct northbridge_intel_pineview_config *chip = device->chip_info;
@@ -110,6 +122,7 @@ static struct device_operations gma_func0_ops = {
 	.enable_resources       = pci_dev_enable_resources,
 	.init                   = gma_func0_init,
 	.acpi_fill_ssdt         = gma_generate_ssdt,
+	.vga_disable            = gma_func0_disable,
 	.ops_pci                = &pci_dev_ops_pci,
 	.acpi_name              = gma_acpi_name,
 };
