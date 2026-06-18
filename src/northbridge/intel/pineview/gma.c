@@ -92,6 +92,13 @@ static void gma_func0_init(struct device *dev)
 	}
 }
 
+static void gma_generate_ssdt(const struct device *device)
+{
+	const struct northbridge_intel_pineview_config *chip = device->chip_info;
+
+	drivers_intel_gma_displays_ssdt_generate(&chip->gfx);
+}
+
 static const char *gma_acpi_name(const struct device *dev)
 {
 	return "GFX0";
@@ -102,13 +109,15 @@ static struct device_operations gma_func0_ops = {
 	.set_resources          = pci_dev_set_resources,
 	.enable_resources       = pci_dev_enable_resources,
 	.init                   = gma_func0_init,
+	.acpi_fill_ssdt         = gma_generate_ssdt,
 	.ops_pci                = &pci_dev_ops_pci,
 	.acpi_name              = gma_acpi_name,
 };
 
-static const unsigned short pci_device_ids[] =
-{
-	0xa001, 0,
+static const unsigned short pci_device_ids[] = {
+	0xa001,
+	0xa011,
+	0,
 };
 
 static const struct pci_driver gma __pci_driver = {
