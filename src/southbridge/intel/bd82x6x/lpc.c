@@ -408,21 +408,6 @@ static void pch_fixups(struct device *dev)
 	RCBA32_OR(LCTL, 0x3);
 }
 
-static void pch_spi_init(const struct device *const dev)
-{
-	const config_t *const config = dev->chip_info;
-
-	printk(BIOS_DEBUG, "%s\n", __func__);
-
-	if (config->spi_uvscc)
-		RCBA32(0x3800 + 0xc8) = config->spi_uvscc;
-	if (config->spi_lvscc)
-		RCBA32(0x3800 + 0xc4) = config->spi_lvscc;
-
-	if (config->spi_uvscc || config->spi_lvscc)
-		RCBA32_OR(0x3800 + 0xc4, 1 << 23); /* lock both UVSCC + LVSCC */
-}
-
 static const struct {
 	u16 dev_id;
 	const char *dev_name;
@@ -543,7 +528,6 @@ static void lpc_init(struct device *dev)
 
 	pch_fixups(dev);
 
-	pch_spi_init(dev);
 }
 
 static void pch_lpc_read_resources(struct device *dev)
@@ -706,6 +690,23 @@ void intel_southbridge_override_spi(
 
 	if (config->spi.ops[0].op != 0)
 		memcpy(spi_config, &config->spi, sizeof(*spi_config));
+}
+
+void intel_southbridge_override_spi_vscc(struct intel_spi_vscc_config *vscc_config)
+{
+	struct device *dev = pcidev_on_root(0x1f, 0);
+
+	if (!dev)
+		return;
+	/* Devicetree may override the common defaults. */
+	const config_t *const config = dev->chip_info;
+
+	if (!config)
+		return;
+
+	vscc_config->uvscc = config->spi_uvscc;
+	vscc_config->lvscc = config->spi_lvscc;
+	vscc_config->lock = config->spi_uvscc || config->spi_lvscc;
 }
 
 struct device_operations bd82x6x_lpc_bridge_ops = {

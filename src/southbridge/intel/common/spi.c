@@ -28,6 +28,17 @@
 #define HSFC_FDBC_OFF		8	/* 8-13: Flash Data Byte Count */
 #define HSFC_FDBC		(0x3f << HSFC_FDBC_OFF)
 
+#define ICH8_REG_VSCC		0xc1
+
+#define VSCC_BES		(0x3 << 0)
+#define VSCC_BES_4K		(0x1 << 0)
+#define VSCC_WG			(0x1 << 2)
+#define VSCC_EO			(0xff << 8)
+#define VSCC_VCL		(0x1 << 23)
+
+/* 4 KiB sectors, 64-byte writes and erase opcode 0x20. */
+#define DEFAULT_VSCC		(VSCC_BES_4K | VSCC_WG | (0x20 << 8))
+
 static int spi_is_multichip(void);
 
 static void spi_set_smm_only_flashing(bool enable);
@@ -285,6 +296,47 @@ static void *get_spi_bar(pci_devfn_t dev)
 	}
 }
 
+static bool vscc_valid(uint32_t vscc)
+{
+	return !!(vscc & VSCC_EO);
+}
+
+static void fill_vscc_defaults(struct intel_spi_vscc_config *config)
+{
+	if (!vscc_valid(config->lvscc))
+		config->lvscc = DEFAULT_VSCC;
+	if (!vscc_valid(config->uvscc))
+		config->uvscc = DEFAULT_VSCC;
+}
+
+static void program_vscc(void)
+{
+	struct intel_spi_vscc_config config = { 0 };
+
+	if (!CONFIG(SOUTHBRIDGE_INTEL_COMMON_SPI_ICH9))
+		return;
+
+	intel_southbridge_override_spi_vscc(&config);
+	fill_vscc_defaults(&config);
+	if (config.lock)
+		config.lvscc |= VSCC_VCL;
+
+	if (CONFIG(SOUTHBRIDGE_INTEL_I82801HX)) {
+		/* ICH8 VSCC lives at offset 0xc1, which really is unaligned. */
+		void *vscc = (uint8_t *)cntlr.ich9_spi + ICH8_REG_VSCC;
+
+		writel_(config.lvscc, vscc);
+		printk(BIOS_DEBUG, "ICH SPI: VSCC = 0x%08x\n", readl_(vscc));
+		return;
+	}
+
+	writel_(config.uvscc, &cntlr.ich9_spi->uvscc);
+	/* lvscc has the lock bit so write that last */
+	writel_(config.lvscc, &cntlr.ich9_spi->lvscc);
+	printk(BIOS_DEBUG, "ICH SPI: LVSCC = 0x%08x, UVSCC = 0x%08x\n",
+	       readl_(&cntlr.ich9_spi->lvscc), readl_(&cntlr.ich9_spi->uvscc));
+}
+
 void spi_init(void)
 {
 	struct ich9_spi_regs *ich9_spi;
@@ -332,6 +384,8 @@ void spi_init(void)
 			writel_(0x1000, &ich9_spi->fdoc);
 			cntlr.flcomp = readl_(&ich9_spi->fdod);
 		}
+
+		program_vscc();
 	}
 
 	ich_set_bbar(0);
@@ -1123,6 +1177,10 @@ void spi_finalize_ops(void)
 }
 
 __weak void intel_southbridge_override_spi(struct intel_swseq_spi_config *spi_config)
+{
+}
+
+__weak void intel_southbridge_override_spi_vscc(struct intel_spi_vscc_config *vscc_config)
 {
 }
 
