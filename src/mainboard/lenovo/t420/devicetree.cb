@@ -60,8 +60,8 @@ chip northbridge/intel/sandybridge
 			register "pcie_port_coalesce" = "true"
 
 			# device specific SPI configuration
-			register "spi_uvscc" = "0x2005"
-			register "spi_lvscc" = "0x2005"
+			register "spi_uvscc" = "(SPI_VSCC_ERASE_4K | SPI_VSCC_WRITE_GRANULARITY_64B | SPI_VSCC_ERASE_OPCODE(0x20))"
+			register "spi_lvscc" = "(SPI_VSCC_ERASE_4K | SPI_VSCC_WRITE_GRANULARITY_64B | SPI_VSCC_ERASE_OPCODE(0x20))"
 
 			# OC3 set in BIOS to port 2-7, OC7 set in BIOS to port 10-13
 			register "usb_port_config" = "{

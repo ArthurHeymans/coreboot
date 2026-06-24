@@ -30,14 +30,9 @@
 
 #define ICH8_REG_VSCC		0xc1
 
-#define VSCC_BES		(0x3 << 0)
-#define VSCC_BES_4K		(0x1 << 0)
-#define VSCC_WG			(0x1 << 2)
-#define VSCC_EO			(0xff << 8)
-#define VSCC_VCL		(0x1 << 23)
-
 /* 4 KiB sectors, 64-byte writes and erase opcode 0x20. */
-#define DEFAULT_VSCC		(VSCC_BES_4K | VSCC_WG | (0x20 << 8))
+#define DEFAULT_VSCC		(SPI_VSCC_ERASE_4K | SPI_VSCC_WRITE_GRANULARITY_64B | \
+				 SPI_VSCC_ERASE_OPCODE(0x20))
 
 static int spi_is_multichip(void);
 
@@ -298,7 +293,7 @@ static void *get_spi_bar(pci_devfn_t dev)
 
 static bool vscc_valid(uint32_t vscc)
 {
-	return !!(vscc & VSCC_EO);
+	return !!(vscc & SPI_VSCC_ERASE_OPCODE_MASK);
 }
 
 static void fill_vscc_defaults(struct intel_spi_vscc_config *config)
@@ -319,7 +314,7 @@ static void program_vscc(void)
 	intel_southbridge_override_spi_vscc(&config);
 	fill_vscc_defaults(&config);
 	if (config.lock)
-		config.lvscc |= VSCC_VCL;
+		config.lvscc |= SPI_VSCC_VCL;
 
 	if (CONFIG(SOUTHBRIDGE_INTEL_I82801HX)) {
 		/* ICH8 VSCC lives at offset 0xc1, which really is unaligned. */

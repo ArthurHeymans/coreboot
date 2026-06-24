@@ -62,8 +62,8 @@ chip northbridge/intel/sandybridge
 			# Enable zero-based linear PCIe root port functions
 			register "pcie_port_coalesce" = "true"
 
-			register "spi_uvscc" = "0x2005"
-			register "spi_lvscc" = "0x2005"
+			register "spi_uvscc" = "(SPI_VSCC_ERASE_4K | SPI_VSCC_WRITE_GRANULARITY_64B | SPI_VSCC_ERASE_OPCODE(0x20))"
+			register "spi_lvscc" = "(SPI_VSCC_ERASE_4K | SPI_VSCC_WRITE_GRANULARITY_64B | SPI_VSCC_ERASE_OPCODE(0x20))"
 
 			device ref xhci on end # USB 3.0 Controller
 			device ref mei1 on end # Management Engine Interface 1

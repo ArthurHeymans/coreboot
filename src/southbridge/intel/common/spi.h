@@ -7,6 +7,15 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define SPI_VSCC_ERASE_256B		(0 << 0)
+#define SPI_VSCC_ERASE_4K		(1 << 0)
+#define SPI_VSCC_ERASE_8K		(2 << 0)
+#define SPI_VSCC_ERASE_64K		(3 << 0)
+#define SPI_VSCC_WRITE_GRANULARITY_64B	(1 << 2)
+#define SPI_VSCC_ERASE_OPCODE(opcode)	((opcode) << 8)
+#define SPI_VSCC_ERASE_OPCODE_MASK	(0xff << 8)
+#define SPI_VSCC_VCL			(1 << 23)
+
 enum optype {
 	READ_NO_ADDR = 0,
 	WRITE_NO_ADDR = 1,
