@@ -30,6 +30,7 @@
 #include <southbridge/intel/common/pmutil.h>
 #include <southbridge/intel/common/acpi_pirq_gen.h>
 #include <southbridge/intel/common/rcba_pirq.h>
+#include <southbridge/intel/common/spi.h>
 #include <static.h>
 #include "chip.h"
 #include "i82801hx.h"
@@ -509,6 +510,21 @@ static void lpc_final(struct device *dev)
 
 	if (CONFIG(INTEL_CHIPSET_LOCKDOWN) || acpi_is_wakeup_s3())
 		apm_control(APM_CNT_FINALIZE);
+}
+
+void intel_southbridge_override_spi_vscc(struct intel_spi_vscc_config *vscc_config)
+{
+	struct device *dev = pcidev_on_root(0x1f, 0);
+
+	if (!dev)
+		return;
+	const struct southbridge_intel_i82801hx_config *config = dev->chip_info;
+
+	if (!config)
+		return;
+
+	vscc_config->lvscc = config->spi_vscc;
+	vscc_config->lock = config->spi_vscc;
 }
 
 /* ================================================================== */

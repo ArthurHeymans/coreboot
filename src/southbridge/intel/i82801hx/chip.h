@@ -5,6 +5,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <southbridge/intel/common/spi.h>
 
 enum {
 	THTL_DEF = 0,
@@ -91,6 +92,8 @@ struct southbridge_intel_i82801hx_config {
 	uint32_t gen2_dec;
 	uint32_t gen3_dec;
 	uint32_t gen4_dec;
+
+	uint32_t spi_vscc;
 };
 
 #endif /* SOUTHBRIDGE_INTEL_I82801HX_CHIP_H */

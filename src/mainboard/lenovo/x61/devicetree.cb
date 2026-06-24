@@ -39,6 +39,7 @@ chip northbridge/intel/gm965
 			# register "ide_enable_primary" = "true"
 
 			register "sata_port_map"		= "0x01"
+			register "spi_vscc" = "(SPI_VSCC_ERASE_4K | SPI_VSCC_WRITE_GRANULARITY_64B | SPI_VSCC_ERASE_OPCODE(0x20))"
 
 			register "gpe0_en" = "0x01040046"
 			register "alt_gp_smi_en" = "0x0000"
