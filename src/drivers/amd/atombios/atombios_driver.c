@@ -1379,6 +1379,12 @@ static void atombios_i2c_bus_from_gpio(struct atombios_i2c_bus_rec *bus,
 {
 	memset(bus, 0, sizeof(*bus));
 
+	if (gpio->ucClkMaskShift >= 32 || gpio->ucDataMaskShift >= 32 ||
+	    gpio->ucClkEnShift >= 32 || gpio->ucDataEnShift >= 32 ||
+	    gpio->ucClkY_Shift >= 32 || gpio->ucDataY_Shift >= 32 ||
+	    gpio->ucClkA_Shift >= 32 || gpio->ucDataA_Shift >= 32)
+		return;
+
 	bus->mask_clk_reg = gpio->usClkMaskRegisterIndex * 4;
 	bus->mask_data_reg = gpio->usDataMaskRegisterIndex * 4;
 	bus->en_clk_reg = gpio->usClkEnRegisterIndex * 4;
@@ -1413,7 +1419,8 @@ static int atombios_lookup_i2c_gpio(struct atom_context *ctx, uint8_t i2c_id,
 	memset(bus, 0, sizeof(*bus));
 
 	if (!atom_parse_data_header(ctx, cmd_idx.data_gpio_i2c, &size, NULL,
-				    NULL, &data_offset))
+				    NULL, &data_offset) ||
+	    size < sizeof(ATOM_COMMON_TABLE_HEADER))
 		return -1;
 
 	i2c_info = (ATOM_GPIO_I2C_INFO *)((uint8_t *)ctx->bios + data_offset);
@@ -3077,7 +3084,8 @@ static uint8_t atombios_hpd_from_gpio(struct atom_context *ctx, uint8_t gpio_id)
 	int i;
 
 	if (!atom_parse_data_header(ctx, cmd_idx.data_gpio_pin, &size, NULL,
-				    NULL, &data_offset))
+				    NULL, &data_offset) ||
+	    size < sizeof(ATOM_COMMON_TABLE_HEADER))
 		return ATOMBIOS_HPD_NONE;
 
 	gpio_info = (ATOM_GPIO_PIN_LUT *)((uint8_t *)ctx->bios + data_offset);
@@ -3094,6 +3102,9 @@ static uint8_t atombios_hpd_from_gpio(struct atom_context *ctx, uint8_t gpio_id)
 				((uint8_t *)pin + sizeof(ATOM_GPIO_PIN_ASSIGNMENT));
 			continue;
 		}
+
+		if (pin->ucGpioPinBitShift >= 32)
+			return ATOMBIOS_HPD_NONE;
 
 		reg = pin->usGpioPin_AIndex * 4;
 		mask = 1u << pin->ucGpioPinBitShift;
@@ -3352,24 +3363,6 @@ static int atombios_discover_display_paths(struct atom_context *ctx,
 	}
 
 	atombios_apply_supported_device_info(ctx, paths, count);
-
-	/* Look up I2C lines from GPIO_I2C_Info table */
-	if (atom_parse_data_header(ctx, cmd_idx.data_gpio_i2c,
-				   NULL, &frev, &crev, &data_offset)) {
-		ATOM_GPIO_I2C_INFO *i2c_info;
-		i2c_info = (ATOM_GPIO_I2C_INFO *)(base + data_offset);
-
-		/* Use GPIO_I2C_Info as a fallback if connector records had no DDC. */
-		for (i = 0; i < count; i++) {
-			if (paths[i].i2c_valid)
-				continue;
-			if (i < ATOM_MAX_SUPPORTED_DEVICE) {
-				paths[i].i2c_line =
-					i2c_info->asGPIO_Info[i].sucI2cId.ucAccess;
-				paths[i].i2c_valid = 1;
-			}
-		}
-	}
 
 	for (i = 0; i < count; i++) {
 		if (paths[i].is_dac)
