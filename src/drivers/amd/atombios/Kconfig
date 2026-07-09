@@ -5,7 +5,7 @@ config DRIVERS_AMD_ATOMBIOS
 	default n
 	depends on PCI
 	help
-	  Native display initialization for AMD GPUs using the AtomBIOS
+	  Native display initialization for pre-Vega AMD GPUs using the AtomBIOS
 	  interpreter. Executes ATOM command tables from the VBIOS to
 	  program the display engine, without needing to run the 16-bit
 	  option ROM or an x86 emulator.
@@ -15,4 +15,5 @@ config DRIVERS_AMD_ATOMBIOS
 
 	  The ATOM bytecode interpreter is architecture-independent and
 	  works on both x86 and non-x86 (e.g., ARM) platforms with PCIe
-	  AMD GPUs.
+	  AMD GPUs. Vega 10 and newer use AtomFirmware plus the DCN display
+	  engine and are intentionally left to a GOP/option ROM.

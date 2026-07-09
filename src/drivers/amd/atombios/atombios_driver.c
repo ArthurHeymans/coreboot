@@ -83,6 +83,7 @@ struct atombios_cmd_indices {
 	int set_dce_clock;
 	int set_crtc_using_dtd;
 	int enable_crtc;
+	int enable_crtc_mem_req;
 	int blank_crtc;
 	int select_crtc_source;
 	int enable_disp_power_gating;
@@ -97,6 +98,8 @@ struct atombios_cmd_indices {
 	int tmds2_output_ctrl;
 	int dac1_encoder_ctrl;	/* -1 if not available (v2) */
 	int dac2_encoder_ctrl;	/* -1 if not available (v2) */
+	int dac1_output_ctrl;	/* -1 if not available (v2) */
+	int dac2_output_ctrl;	/* -1 if not available (v2) */
 	int dac_load_detect;	/* -1 if not available (v2) */
 	int process_i2c;
 	int process_aux;
@@ -117,6 +120,7 @@ static void atombios_init_cmd_indices_v1(struct atombios_cmd_indices *idx)
 	idx->set_dce_clock          = CMD_IDX_V1(SetDCEClock);
 	idx->set_crtc_using_dtd     = CMD_IDX_V1(SetCRTC_UsingDTDTiming);
 	idx->enable_crtc            = CMD_IDX_V1(EnableCRTC);
+	idx->enable_crtc_mem_req    = CMD_IDX_V1(EnableCRTCMemReq);
 	idx->blank_crtc             = CMD_IDX_V1(BlankCRTC);
 	idx->select_crtc_source     = CMD_IDX_V1(SelectCRTC_Source);
 	idx->enable_disp_power_gating = CMD_IDX_V1(EnableDispPowerGating);
@@ -131,6 +135,8 @@ static void atombios_init_cmd_indices_v1(struct atombios_cmd_indices *idx)
 	idx->tmds2_output_ctrl      = CMD_IDX_V1(LVTMAOutputControl);
 	idx->dac1_encoder_ctrl      = CMD_IDX_V1(DAC1EncoderControl);
 	idx->dac2_encoder_ctrl      = CMD_IDX_V1(DAC2EncoderControl);
+	idx->dac1_output_ctrl       = CMD_IDX_V1(DAC1OutputControl);
+	idx->dac2_output_ctrl       = CMD_IDX_V1(DAC2OutputControl);
 	idx->dac_load_detect        = CMD_IDX_V1(DAC_LoadDetection);
 	idx->process_i2c            = CMD_IDX_V1(ProcessI2cChannelTransaction);
 	idx->process_aux            = CMD_IDX_V1(ProcessAuxChannelTransaction);
@@ -150,6 +156,7 @@ static void atombios_init_cmd_indices_v2(struct atombios_cmd_indices *idx)
 	idx->set_dce_clock          = CMD_IDX_V2(setdceclock);
 	idx->set_crtc_using_dtd     = CMD_IDX_V2(setcrtc_usingdtdtiming);
 	idx->enable_crtc            = CMD_IDX_V2(enablecrtc);
+	idx->enable_crtc_mem_req    = -1;
 	idx->blank_crtc             = CMD_IDX_V2(blankcrtc);
 	idx->select_crtc_source     = CMD_IDX_V2(selectcrtc_source);
 	idx->enable_disp_power_gating = CMD_IDX_V2(enabledisppowergating);
@@ -164,6 +171,8 @@ static void atombios_init_cmd_indices_v2(struct atombios_cmd_indices *idx)
 	idx->tmds2_output_ctrl      = -1;
 	idx->dac1_encoder_ctrl      = -1; /* No DAC on Vega+ */
 	idx->dac2_encoder_ctrl      = -1;
+	idx->dac1_output_ctrl       = -1;
+	idx->dac2_output_ctrl       = -1;
 	idx->dac_load_detect        = -1;
 	idx->process_i2c            = CMD_IDX_V2(processi2cchanneltransaction);
 	idx->process_aux            = CMD_IDX_V2(processauxchanneltransaction);
@@ -925,8 +934,8 @@ static void atombios_mc_regs(const struct atombios_gpu_profile *profile,
 	}
 }
 
-static void atombios_program_mc_aperture(struct atom_context *ctx,
-					 const struct atombios_gpu_profile *profile)
+static uint32_t atombios_program_mc_aperture(struct atom_context *ctx,
+					     const struct atombios_gpu_profile *profile)
 {
 	uint32_t fb_location_reg, aperture_low_reg, aperture_high_reg, default_addr_reg;
 	uint32_t old_fb;
@@ -938,6 +947,14 @@ static void atombios_program_mc_aperture(struct atom_context *ctx,
 	atombios_mc_regs(profile, &fb_location_reg, &aperture_low_reg,
 			 &aperture_high_reg, &default_addr_reg);
 	old_fb = atombios_mmio_read(ctx, fb_location_reg);
+
+	if (profile->integrated) {
+		vram_start = (uint64_t)(old_fb & 0xffff) << 24;
+		printk(BIOS_INFO,
+		       "ATOMBIOS: preserving integrated MC map fb=0x%08x surface=0x%08x\n",
+		       old_fb, (uint32_t)vram_start);
+		return vram_start;
+	}
 
 	/* Match Linux MC programming for discrete PCIe cards: GPU VRAM
 	 * addresses start at 0, while the CPU accesses VRAM through PCI BAR0. */
@@ -969,6 +986,8 @@ static void atombios_program_mc_aperture(struct atom_context *ctx,
 	       profile->mc == ATOMBIOS_MC_R600 ? "R600" : "R700+",
 	       old_fb, fb_location, atombios_mmio_read(ctx, HDP_NONSURFACE_BASE),
 	       atombios_mmio_read(ctx, HDP_NONSURFACE_INFO));
+
+	return vram_start;
 }
 
 static void atombios_load_evergreen_identity_lut(struct atom_context *ctx)
@@ -1021,9 +1040,9 @@ static void atombios_program_avivo_framebuffer(struct atom_context *ctx,
 	uint32_t pitch_pixels = width;
 	uint32_t fb_format = AVIVO_D1GRPH_CONTROL_DEPTH_32BPP |
 		AVIVO_D1GRPH_CONTROL_32BPP_ARGB8888;
-	uint32_t surface_addr = 0;
+	uint32_t surface_addr;
 
-	atombios_program_mc_aperture(ctx, profile);
+	surface_addr = atombios_program_mc_aperture(ctx, profile);
 
 	printk(BIOS_INFO,
 	       "ATOMBIOS: programming AVIVO scanout %ux%u pitch=%u gpu_addr=0x%08x cpu_addr=0x%llx mc_fb=0x%08x\n",
@@ -1066,7 +1085,7 @@ static void atombios_program_evergreen_framebuffer(struct atom_context *ctx,
 	uint32_t width = mode->ha;
 	uint32_t height = mode->va;
 	uint32_t pitch_pixels = width;
-	uint32_t surface_addr = 0;
+	uint32_t surface_addr;
 	uint32_t pipe_config = profile->si_pipe;
 	uint32_t fb_format = EVERGREEN_GRPH_DEPTH_32BPP |
 		EVERGREEN_GRPH_FORMAT_ARGB8888 |
@@ -1085,7 +1104,7 @@ static void atombios_program_evergreen_framebuffer(struct atom_context *ctx,
 	if (pipe_config != ATOMBIOS_SI_PIPE_NONE)
 		fb_format |= EVERGREEN_GRPH_PIPE_CONFIG(pipe_config);
 
-	atombios_program_mc_aperture(ctx, profile);
+	surface_addr = atombios_program_mc_aperture(ctx, profile);
 
 	printk(BIOS_INFO,
 	       "ATOMBIOS: programming DCE4+ scanout %ux%u pitch=%u gpu_addr=0x%08x cpu_addr=0x%llx mc_fb=0x%08x pipe=%d\n",
@@ -2658,7 +2677,6 @@ static uint16_t atombios_adjust_display_pll(struct atom_context *ctx,
  * revisions 1.1 through 1.3; do the same here for older AVIVO chips.
  */
 static int atombios_set_pixel_clock(struct atom_context *ctx,
-				    const struct atombios_gpu_profile *profile,
 				    const struct atombios_display_path *path,
 				    uint16_t pixel_clock_10khz,
 				    int crtc_id)
@@ -2673,12 +2691,9 @@ static int atombios_set_pixel_clock(struct atom_context *ctx,
 		PIXEL_CLOCK_PARAMETERS_V7 v7;
 	} args;
 	uint8_t encoder_id;
-	uint8_t pll_id = profile->pixel_clock_ppll;
+	uint8_t pll_id = path->pll_id;
 	uint16_t adjusted_clock_10khz;
 	uint32_t dot_clock, fb_div, frac_fb_div, ref_div, post_div;
-
-	if (profile->use_combo_phy_pixel_clock && path->phy_id < 6)
-		pll_id = ATOM_COMBOPHY_PLL0 + path->phy_id;
 
 	if (!atom_parse_cmd_header(ctx, cmd_idx.set_pixel_clock, &frev, &crev))
 		return -1;
@@ -2900,6 +2915,22 @@ static int atombios_dac_encoder_setup(struct atom_context *ctx,
 				  sizeof(args));
 }
 
+static int atombios_dac_output_control(struct atom_context *ctx,
+				       const struct atombios_display_path *path,
+				       uint8_t action)
+{
+	DISPLAY_DEVICE_OUTPUT_CONTROL_PS_ALLOCATION args;
+	int index = path->dac_type == ATOM_DAC_A ?
+		cmd_idx.dac1_output_ctrl : cmd_idx.dac2_output_ctrl;
+
+	if (index < 0)
+		return -1;
+
+	memset(&args, 0, sizeof(args));
+	args.ucAction = action;
+	return atombios_exec(ctx, index, (uint32_t *)&args, sizeof(args));
+}
+
 /* ---- DAC Load Detection (VGA/CRT) ---- */
 
 /*
@@ -2916,19 +2947,27 @@ static int atombios_dac_load_detect(struct atom_context *ctx,
 				    const struct atombios_display_path *path)
 {
 	DAC_LOAD_DETECTION_PS_ALLOCATION args;
+	uint32_t connected_bit = atombios_s0_connected_bit(path->device_tag);
+	int ret;
 
 	memset(&args, 0, sizeof(args));
 
 	args.sDacload.ucDacType = path->dac_type;
-	args.sDacload.usDeviceID = ATOM_DEVICE_CRT1_SUPPORT;
+	args.sDacload.usDeviceID = path->device_tag &
+		(ATOM_DEVICE_CRT1_SUPPORT | ATOM_DEVICE_CRT2_SUPPORT);
+	if (!args.sDacload.usDeviceID)
+		args.sDacload.usDeviceID = ATOM_DEVICE_CRT1_SUPPORT;
 	args.sDacload.ucMisc = 0;
 
 	printk(BIOS_DEBUG, "ATOMBIOS: DAC%c load detection\n",
 	       path->dac_type == ATOM_DAC_A ? 'A' : 'B');
 
-	return atom_execute_table(ctx, cmd_idx.dac_load_detect,
-				  (uint32_t *)&args,
-				  sizeof(args));
+	ret = atom_execute_table(ctx, cmd_idx.dac_load_detect,
+				 (uint32_t *)&args, sizeof(args));
+	if (ret || !connected_bit)
+		return -1;
+
+	return (atombios_scratch_read(ctx, R600_BIOS_0_SCRATCH) & connected_bit) ? 0 : -1;
 }
 
 static int atombios_device_tag_index(uint16_t device_tag)
@@ -3868,6 +3907,20 @@ static int atombios_enable_crtc(struct atom_context *ctx, int crtc_id,
 	return atombios_exec(ctx, cmd_idx.enable_crtc, params, sizeof(params));
 }
 
+static int atombios_enable_crtc_mem_req(struct atom_context *ctx,
+					const struct atombios_gpu_profile *profile,
+					int crtc_id, int enable)
+{
+	uint32_t params[1];
+
+	if (!profile->use_crtc_mem_req || cmd_idx.enable_crtc_mem_req < 0)
+		return 0;
+
+	params[0] = crtc_id | ((enable ? ATOM_ENABLE : ATOM_DISABLE) << 8);
+	return atombios_exec(ctx, cmd_idx.enable_crtc_mem_req,
+			     params, sizeof(params));
+}
+
 static int atombios_blank_crtc(struct atom_context *ctx, int crtc_id, int blank)
 {
 	uint32_t params[1];
@@ -3937,11 +3990,14 @@ static int atombios_yuv_setup(struct atom_context *ctx, int crtc_id, bool enable
 	return ret;
 }
 
-static void atombios_program_crtc_postmode(struct atom_context *ctx, int crtc_id)
+static int atombios_program_crtc_postmode(struct atom_context *ctx, int crtc_id)
 {
-	atombios_yuv_setup(ctx, crtc_id, false);
-	atombios_set_crtc_overscan(ctx, crtc_id);
-	atombios_disable_scaler(ctx, crtc_id);
+	if (atombios_yuv_setup(ctx, crtc_id, false) ||
+	    atombios_set_crtc_overscan(ctx, crtc_id) ||
+	    atombios_disable_scaler(ctx, crtc_id))
+		return -1;
+
+	return 0;
 }
 
 static resource_t atombios_get_bar(struct device *dev, unsigned int bar)
@@ -4160,7 +4216,8 @@ use_defaults:
 	if (active_path < 0) {
 		for (i = 0; i < num_paths; i++) {
 			if (paths[i].connector_type != 0 && paths[i].is_dac) {
-				atombios_dac_load_detect(ctx, &paths[i]);
+				if (atombios_dac_load_detect(ctx, &paths[i]))
+					continue;
 				printk(BIOS_INFO,
 				       "ATOMBIOS: DAC load detection on path %d (VGA/CRT)\n",
 				       i);
@@ -4198,8 +4255,9 @@ do_modeset:
 	}
 
 	/* Step 1: Power up display pipe */
-	atombios_disp_power_gating(ctx, crtc_id, 0);
-	atombios_set_disp_eng_clock(ctx, &gpu);
+	if (atombios_disp_power_gating(ctx, crtc_id, 0) ||
+	    atombios_set_disp_eng_clock(ctx, &gpu))
+		goto modeset_failed;
 
 	if (active_path >= 0 && paths[active_path].is_dac) {
 		/*
@@ -4209,30 +4267,23 @@ do_modeset:
 		printk(BIOS_INFO, "ATOMBIOS: VGA/CRT output via DAC-%c\n",
 		       paths[active_path].dac_type == ATOM_DAC_A ? 'A' : 'B');
 
-		/* Route CRTC to DAC encoder */
-		atombios_select_crtc_source(ctx, &paths[active_path], crtc_id);
+		if (atombios_select_crtc_source(ctx, &paths[active_path], crtc_id) ||
+		    atombios_set_pixel_clock(ctx, &paths[active_path],
+					     pixel_clock_10khz, crtc_id))
+			goto modeset_failed;
 
-		/* Program pixel clock */
-		atombios_set_pixel_clock(ctx, &gpu, &paths[active_path],
-					 pixel_clock_10khz, crtc_id);
-
-		/* Program CRTC timing */
 		printk(BIOS_INFO, "ATOMBIOS: programming CRTC timing...\n");
-		atombios_set_crtc_dtd_timing(ctx, &mode, crtc_id);
-
-		/* Program CRTC scanout surface */
+		if (atombios_set_crtc_dtd_timing(ctx, &mode, crtc_id))
+			goto modeset_failed;
 		atombios_program_framebuffer(ctx, &gpu, fb_bar, &mode);
-		atombios_program_crtc_postmode(ctx, crtc_id);
-
-		/* Enable CRTC */
-		atombios_enable_crtc(ctx, crtc_id, 1);
-
-		/* Enable DAC encoder */
-		atombios_dac_encoder_setup(ctx, &paths[active_path],
-					   pixel_clock_10khz, ATOM_ENABLE);
-
-		/* Unblank */
-		atombios_blank_crtc(ctx, crtc_id, 0);
+		if (atombios_program_crtc_postmode(ctx, crtc_id) ||
+		    atombios_enable_crtc(ctx, crtc_id, 1) ||
+		    atombios_enable_crtc_mem_req(ctx, &gpu, crtc_id, 1) ||
+		    atombios_dac_encoder_setup(ctx, &paths[active_path],
+					       pixel_clock_10khz, ATOM_ENABLE) ||
+		    atombios_dac_output_control(ctx, &paths[active_path], ATOM_ENABLE) ||
+		    atombios_blank_crtc(ctx, crtc_id, 0))
+			goto modeset_failed;
 		atombios_evergreen_unblank_scanout(ctx, &gpu);
 		atombios_update_scratch_for_path(ctx, &paths[active_path],
 						 crtc_id, true, true);
@@ -4246,35 +4297,26 @@ do_modeset:
 		printk(BIOS_INFO, "ATOMBIOS: DVI output via legacy TMDS encoder 0x%02x\n",
 		       paths[active_path].encoder_obj_id);
 
-		atombios_legacy_tmds_output_control(ctx, &paths[active_path],
-						    ATOM_DISABLE);
+		if (atombios_legacy_tmds_output_control(ctx, &paths[active_path],
+							 ATOM_DISABLE) ||
+		    atombios_select_crtc_source(ctx, &paths[active_path], crtc_id) ||
+		    atombios_set_pixel_clock(ctx, &paths[active_path],
+					     pixel_clock_10khz, crtc_id))
+			goto modeset_failed;
 
-		/* Route CRTC to TMDS device */
-		atombios_select_crtc_source(ctx, &paths[active_path], crtc_id);
-
-		/* Program pixel clock */
-		atombios_set_pixel_clock(ctx, &gpu, &paths[active_path],
-					 pixel_clock_10khz, crtc_id);
-
-		/* Program CRTC timing */
 		printk(BIOS_INFO, "ATOMBIOS: programming CRTC timing...\n");
-		atombios_set_crtc_dtd_timing(ctx, &mode, crtc_id);
-
-		/* Program CRTC scanout surface */
+		if (atombios_set_crtc_dtd_timing(ctx, &mode, crtc_id))
+			goto modeset_failed;
 		atombios_program_framebuffer(ctx, &gpu, fb_bar, &mode);
-		atombios_program_crtc_postmode(ctx, crtc_id);
-
-		/* Enable CRTC */
-		atombios_enable_crtc(ctx, crtc_id, 1);
-
-		/* Setup TMDS encoder and enable output */
-		atombios_legacy_tmds_encoder_setup(ctx, &paths[active_path],
-						   pixel_clock_10khz, ATOM_ENABLE);
-		atombios_legacy_tmds_output_control(ctx, &paths[active_path],
-						    ATOM_ENABLE);
-
-		/* Unblank */
-		atombios_blank_crtc(ctx, crtc_id, 0);
+		if (atombios_program_crtc_postmode(ctx, crtc_id) ||
+		    atombios_enable_crtc(ctx, crtc_id, 1) ||
+		    atombios_enable_crtc_mem_req(ctx, &gpu, crtc_id, 1) ||
+		    atombios_legacy_tmds_encoder_setup(ctx, &paths[active_path],
+						       pixel_clock_10khz, ATOM_ENABLE) ||
+		    atombios_legacy_tmds_output_control(ctx, &paths[active_path],
+							 ATOM_ENABLE) ||
+		    atombios_blank_crtc(ctx, crtc_id, 0))
+			goto modeset_failed;
 		atombios_evergreen_unblank_scanout(ctx, &gpu);
 		atombios_update_scratch_for_path(ctx, &paths[active_path],
 						 crtc_id, true, true);
@@ -4302,10 +4344,11 @@ do_modeset:
 		if (active_path >= 0) {
 			printk(BIOS_INFO, "ATOMBIOS: initializing transmitter PHY %d...\n",
 			       paths[active_path].phy_id);
-			atombios_transmitter_control(ctx, &paths[active_path],
-						     pixel_clock_10khz,
-						     ATOM_TRANSMITTER_ACTION_INIT,
-						     0, 0);
+			if (atombios_transmitter_control(ctx, &paths[active_path],
+							 pixel_clock_10khz,
+							 ATOM_TRANSMITTER_ACTION_INIT,
+							 0, 0))
+				goto modeset_failed;
 		}
 
 		/* Configure DIG encoder */
@@ -4327,34 +4370,29 @@ do_modeset:
 				goto modeset_failed;
 		}
 
-		/* Route CRTC to encoder */
-		if (active_path >= 0)
-			atombios_select_crtc_source(ctx, &paths[active_path], crtc_id);
+		/* Route CRTC to encoder and program its pixel clock. */
+		if (atombios_select_crtc_source(ctx, &paths[active_path], crtc_id) ||
+		    atombios_set_pixel_clock(ctx, &paths[active_path],
+					     pixel_clock_10khz, crtc_id))
+			goto modeset_failed;
 
-		/* Program pixel clock PLL */
-		if (active_path >= 0)
-			atombios_set_pixel_clock(ctx, &gpu, &paths[active_path],
-						 pixel_clock_10khz, crtc_id);
-
-		/* Program CRTC timing */
+		/* Program CRTC timing and scanout state. */
 		printk(BIOS_INFO, "ATOMBIOS: programming CRTC timing...\n");
-		atombios_set_crtc_dtd_timing(ctx, &mode, crtc_id);
-
-		/* Program CRTC scanout surface */
+		if (atombios_set_crtc_dtd_timing(ctx, &mode, crtc_id))
+			goto modeset_failed;
 		atombios_program_framebuffer(ctx, &gpu, fb_bar, &mode);
-		atombios_program_crtc_postmode(ctx, crtc_id);
-
-		/* Enable CRTC */
-		atombios_enable_crtc(ctx, crtc_id, 1);
+		if (atombios_program_crtc_postmode(ctx, crtc_id) ||
+		    atombios_enable_crtc(ctx, crtc_id, 1) ||
+		    atombios_enable_crtc_mem_req(ctx, &gpu, crtc_id, 1))
+			goto modeset_failed;
 
 		/* Enable transmitter */
-		if (active_path >= 0) {
-			printk(BIOS_INFO, "ATOMBIOS: enabling transmitter...\n");
-			atombios_transmitter_control(ctx, &paths[active_path],
-						     pixel_clock_10khz,
-						     ATOM_TRANSMITTER_ACTION_ENABLE,
-						     0, 0);
-		}
+		printk(BIOS_INFO, "ATOMBIOS: enabling transmitter...\n");
+		if (atombios_transmitter_control(ctx, &paths[active_path],
+						 pixel_clock_10khz,
+						 ATOM_TRANSMITTER_ACTION_ENABLE,
+						 0, 0))
+			goto modeset_failed;
 
 		/* DP link training */
 		if (active_path >= 0 &&
@@ -4375,13 +4413,12 @@ do_modeset:
 		}
 
 		/* Unblank */
-		atombios_blank_crtc(ctx, crtc_id, 0);
+		if (atombios_blank_crtc(ctx, crtc_id, 0))
+			goto modeset_failed;
 		atombios_evergreen_unblank_scanout(ctx, &gpu);
-		if (active_path >= 0) {
-			atombios_update_scratch_for_path(ctx, &paths[active_path],
-						     crtc_id, true, true);
-			atombios_output_lock(ctx, false);
-		}
+		atombios_update_scratch_for_path(ctx, &paths[active_path],
+						 crtc_id, true, true);
+		atombios_output_lock(ctx, false);
 	}
 
 	/* Register framebuffer with coreboot */
@@ -4410,9 +4447,9 @@ static struct device_operations atombios_gfx_ops = {
 /*
  * AMD GPU PCI device ID table.
  *
- * Complete list of AMD GPUs extracted from the Linux kernel amdgpu and
- * radeon drivers. The driver auto-detects whether the VBIOS uses v1
- * (atombios.h) or v2 (atomfirmware.h) table format at runtime.
+ * Complete list of pre-Vega AMD GPUs extracted from the Linux kernel
+ * amdgpu and radeon drivers. Vega 10 and newer need a separate DCN backend;
+ * registering them here would suppress their working GOP/option ROM.
  *
  * To add a new GPU, find its PCI device ID with "lspci -nn" and add
  * it to the appropriate section below.
@@ -4543,49 +4580,6 @@ static const unsigned short atombios_device_ids[] = {
 	0x6980, 0x6981, 0x6985, 0x6986, 0x6987, 0x6995, 0x6997, 0x699F,
 	/* VegaM (Kaby Lake-G) */
 	0x694C, 0x694E, 0x694F,
-
-	/* --- GCN 5.0 / Vega (amdgpu, atomfirmware.h v2) --- */
-	/* Vega 10 (RX Vega 56/64) */
-	0x6860, 0x6861, 0x6862, 0x6863, 0x6864, 0x6867, 0x6868, 0x6869,
-	0x686A, 0x686B, 0x686C, 0x686D, 0x686E, 0x686F, 0x687F,
-	/* Vega 12 */
-	0x69A0, 0x69A1, 0x69A2, 0x69A3, 0x69AF,
-	/* Vega 20 (Radeon VII) */
-	0x66A0, 0x66A1, 0x66A2, 0x66A3, 0x66A4, 0x66A7, 0x66AF,
-	/* Raven (Ryzen APU) */
-	0x15DD, 0x15D8,
-
-	/* --- RDNA 1.0 / Navi (amdgpu, atomfirmware.h v2) --- */
-	/* Navi10 (RX 5700) */
-	0x7310, 0x7312, 0x7318, 0x7319, 0x731A, 0x731B, 0x731E, 0x731F,
-	/* Navi14 (RX 5500) */
-	0x7340, 0x7341, 0x7347, 0x734F,
-	/* Navi12 (Pro 5600M) */
-	0x7360, 0x7362,
-	/* Renoir APU */
-	0x15E7, 0x1636, 0x1638, 0x164C,
-
-	/* --- RDNA 2.0 / Navi 2x (amdgpu, atomfirmware.h v2) --- */
-	/* Sienna Cichlid (RX 6800/6900) */
-	0x73A0, 0x73A1, 0x73A2, 0x73A3, 0x73A5, 0x73A8, 0x73A9,
-	0x73AB, 0x73AC, 0x73AD, 0x73AE, 0x73AF, 0x73BF,
-	/* Navy Flounder (RX 6700) */
-	0x73C0, 0x73C1, 0x73C3, 0x73DA, 0x73DB, 0x73DC, 0x73DD, 0x73DE, 0x73DF,
-	/* Dimgrey Cavefish (RX 6600) */
-	0x73E0, 0x73E1, 0x73E2, 0x73E3, 0x73E8, 0x73E9,
-	0x73EA, 0x73EB, 0x73EC, 0x73ED, 0x73EF, 0x73FF,
-	/* Beige Goby (RX 6400) */
-	0x7420, 0x7421, 0x7422, 0x7423, 0x7424, 0x743F,
-	/* Yellow Carp (Rembrandt APU) */
-	0x164D, 0x1681,
-
-	/* --- RDNA 3.0 / Navi 3x (amdgpu, atomfirmware.h v2) --- */
-	/* Navi 31 (RX 7900 XTX/XT) */
-	0x744C, 0x7448,
-	/* Navi 32 (RX 7800/7700 XT) */
-	0x747E,
-	/* Navi 33 (RX 7600) */
-	0x7480,
 
 	0,  /* terminator */
 };
