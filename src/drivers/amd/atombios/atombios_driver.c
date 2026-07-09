@@ -96,6 +96,8 @@ struct atombios_cmd_indices {
 	int tmds2_encoder_ctrl;
 	int tmds1_output_ctrl;
 	int tmds2_output_ctrl;
+	int lvds_encoder_ctrl;
+	int lcd1_output_ctrl;
 	int dac1_encoder_ctrl;	/* -1 if not available (v2) */
 	int dac2_encoder_ctrl;	/* -1 if not available (v2) */
 	int dac1_output_ctrl;	/* -1 if not available (v2) */
@@ -108,6 +110,7 @@ struct atombios_cmd_indices {
 	int data_gpio_pin;
 	int data_supported_devices;
 	int data_firmware_info;
+	int data_lvds_info;
 	bool is_v2;
 };
 
@@ -133,6 +136,8 @@ static void atombios_init_cmd_indices_v1(struct atombios_cmd_indices *idx)
 	idx->tmds2_encoder_ctrl     = CMD_IDX_V1(LVTMAEncoderControl);
 	idx->tmds1_output_ctrl      = CMD_IDX_V1(TMDSAOutputControl);
 	idx->tmds2_output_ctrl      = CMD_IDX_V1(LVTMAOutputControl);
+	idx->lvds_encoder_ctrl      = CMD_IDX_V1(LVDSEncoderControl);
+	idx->lcd1_output_ctrl       = CMD_IDX_V1(LCD1OutputControl);
 	idx->dac1_encoder_ctrl      = CMD_IDX_V1(DAC1EncoderControl);
 	idx->dac2_encoder_ctrl      = CMD_IDX_V1(DAC2EncoderControl);
 	idx->dac1_output_ctrl       = CMD_IDX_V1(DAC1OutputControl);
@@ -145,6 +150,7 @@ static void atombios_init_cmd_indices_v1(struct atombios_cmd_indices *idx)
 	idx->data_gpio_pin          = DATA_IDX_V1(GPIO_Pin_LUT);
 	idx->data_supported_devices = DATA_IDX_V1(SupportedDevicesInfo);
 	idx->data_firmware_info     = DATA_IDX_V1(FirmwareInfo);
+	idx->data_lvds_info         = DATA_IDX_V1(LVDS_Info);
 }
 
 static void atombios_init_cmd_indices_v2(struct atombios_cmd_indices *idx)
@@ -169,6 +175,8 @@ static void atombios_init_cmd_indices_v2(struct atombios_cmd_indices *idx)
 	idx->tmds2_encoder_ctrl     = -1;
 	idx->tmds1_output_ctrl      = -1;
 	idx->tmds2_output_ctrl      = -1;
+	idx->lvds_encoder_ctrl      = -1;
+	idx->lcd1_output_ctrl       = -1;
 	idx->dac1_encoder_ctrl      = -1; /* No DAC on Vega+ */
 	idx->dac2_encoder_ctrl      = -1;
 	idx->dac1_output_ctrl       = -1;
@@ -181,6 +189,7 @@ static void atombios_init_cmd_indices_v2(struct atombios_cmd_indices *idx)
 	idx->data_gpio_pin          = DATA_IDX_V2(gpio_pin_lut);
 	idx->data_supported_devices = -1;
 	idx->data_firmware_info     = DATA_IDX_V2(firmwareinfo);
+	idx->data_lvds_info         = -1;
 }
 
 /*
@@ -310,6 +319,8 @@ struct atombios_display_path {
 	uint16_t connector_obj_id;	/* Full connector object ID */
 	uint8_t  is_dac;		/* 1 if DAC encoder (VGA/CRT), 0 if digital */
 	uint8_t  is_legacy_tmds;	/* 1 for pre-UNIPHY TMDS/LVTMA encoders */
+	uint8_t  is_legacy_lvds;	/* 1 for LVDSEncoderControl/LCD1OutputControl */
+	uint8_t  lcd_misc;		/* normalized ATOM_PANEL_MISC_* flags */
 	uint8_t  dac_type;		/* ATOM_DAC_A or ATOM_DAC_B */
 	uint16_t device_tag;		/* ATOM_DEVICE_*_SUPPORT bit */
 };
@@ -3075,6 +3086,70 @@ log_supported_device:
 	}
 }
 
+static int atombios_get_panel_mode(struct atom_context *ctx,
+				   struct atombios_display_path *path,
+				   struct edid_mode *mode)
+{
+	ATOM_LVDS_INFO *info;
+	ATOM_DTD_FORMAT *dtd;
+	uint16_t data_offset;
+	uint16_t misc;
+	uint8_t frev, crev;
+
+	if (cmd_idx.data_lvds_info < 0 ||
+	    !atom_parse_data_header(ctx, cmd_idx.data_lvds_info, NULL,
+				    &frev, &crev, &data_offset) ||
+	    frev != 1 || crev < 1 || crev > 3)
+		return -1;
+
+	info = (ATOM_LVDS_INFO *)((uint8_t *)ctx->bios + data_offset);
+	dtd = &info->sLCDTiming;
+	misc = dtd->susModeMiscInfo.usAccess;
+
+	if (!dtd->usPixClk || !dtd->usHActive || !dtd->usVActive ||
+	    !dtd->usHBlanking_Time || !dtd->usVBlanking_Time ||
+	    dtd->usHSyncOffset + dtd->usHSyncWidth > dtd->usHBlanking_Time ||
+	    dtd->usVSyncOffset + dtd->usVSyncWidth > dtd->usVBlanking_Time ||
+	    (misc & (ATOM_COMPOSITESYNC | ATOM_INTERLACE | ATOM_DOUBLE_CLOCK_MODE)))
+		return -1;
+
+	memset(mode, 0, sizeof(*mode));
+	mode->pixel_clock = dtd->usPixClk * 10;
+	mode->ha = dtd->usHActive;
+	mode->hbl = dtd->usHBlanking_Time;
+	mode->hso = dtd->usHSyncOffset;
+	mode->hspw = dtd->usHSyncWidth;
+	mode->hborder = dtd->ucHBorder;
+	mode->va = dtd->usVActive;
+	mode->vbl = dtd->usVBlanking_Time;
+	mode->vso = dtd->usVSyncOffset;
+	mode->vspw = dtd->usVSyncWidth;
+	mode->vborder = dtd->ucVBorder;
+	mode->phsync = !(misc & ATOM_HSYNC_POLARITY);
+	mode->pvsync = !(misc & ATOM_VSYNC_POLARITY);
+	mode->x_mm = dtd->usImageHSize;
+	mode->y_mm = dtd->usImageVSize;
+
+	if (crev < 3) {
+		path->lcd_misc = info->ucLVDS_Misc;
+	} else {
+		ATOM_LCD_INFO_V13 *info_v13 = (ATOM_LCD_INFO_V13 *)info;
+
+		path->lcd_misc = 0;
+		if (info_v13->ucLCD_Misc & ATOM_PANEL_MISC_V13_DUAL)
+			path->lcd_misc |= ATOM_PANEL_MISC_DUAL;
+		if ((info_v13->ucLCD_Misc & ATOM_PANEL_MISC_V13_COLOR_BIT_DEPTH_MASK) ==
+		    ATOM_PANEL_MISC_V13_8BIT_PER_COLOR)
+			path->lcd_misc |= ATOM_PANEL_MISC_888RGB;
+	}
+	mode->lvds_dual_channel = !!(path->lcd_misc & ATOM_PANEL_MISC_DUAL);
+
+	printk(BIOS_INFO,
+	       "ATOMBIOS: panel mode %ux%u @ %u kHz (LCD_Info %u.%u misc=0x%02x)\n",
+	       mode->ha, mode->va, mode->pixel_clock, frev, crev, path->lcd_misc);
+	return 0;
+}
+
 static uint8_t atombios_hpd_from_gpio(struct atom_context *ctx, uint8_t gpio_id)
 {
 	ATOM_GPIO_PIN_LUT *gpio_info;
@@ -3294,6 +3369,7 @@ static int atombios_discover_display_paths(struct atom_context *ctx,
 			/* Determine encoder type from encoder object ID */
 			switch (enc_id) {
 			case ENCODER_OBJECT_ID_INTERNAL_LVDS:
+				paths[count].is_legacy_lvds = 1;
 				paths[count].encoder_mode = ATOM_ENCODER_MODE_LVDS;
 				break;
 			case ENCODER_OBJECT_ID_INTERNAL_TMDS1:
@@ -3306,8 +3382,13 @@ static int atombios_discover_display_paths(struct atom_context *ctx,
 				paths[count].encoder_mode = ATOM_ENCODER_MODE_DVI;
 				break;
 			case ENCODER_OBJECT_ID_INTERNAL_LVTM1:
-				paths[count].is_legacy_tmds = 1;
-				paths[count].encoder_mode = ATOM_ENCODER_MODE_DVI;
+				if (paths[count].device_tag & ATOM_DEVICE_LCD_SUPPORT) {
+					paths[count].is_legacy_lvds = 1;
+					paths[count].encoder_mode = ATOM_ENCODER_MODE_LVDS;
+				} else {
+					paths[count].is_legacy_tmds = 1;
+					paths[count].encoder_mode = ATOM_ENCODER_MODE_DVI;
+				}
 				break;
 			case ENCODER_OBJECT_ID_INTERNAL_KLDSCP_LVTMA:
 				paths[count].dig_encoder = 1; /* DIG2 on DCE3 */
@@ -3371,13 +3452,15 @@ static int atombios_discover_display_paths(struct atom_context *ctx,
 			       i, paths[i].device_tag, paths[i].connector_obj_id,
 			       paths[i].connector_type, paths[i].i2c_line,
 			       paths[i].dac_type == ATOM_DAC_A ? 'A' : 'B');
-		else if (paths[i].is_legacy_tmds)
+		else if (paths[i].is_legacy_tmds || paths[i].is_legacy_lvds)
 			printk(BIOS_INFO,
 			       "ATOMBIOS: path %d: tag=0x%04x conn=0x%04x type=%d "
-			       "i2c=0x%02x enc=0x%02x legacy TMDS mode=%d\n",
+			       "i2c=0x%02x enc=0x%02x legacy %s mode=%d\n",
 			       i, paths[i].device_tag, paths[i].connector_obj_id,
 			       paths[i].connector_type, paths[i].i2c_line,
-			       paths[i].encoder_obj_id, paths[i].encoder_mode);
+			       paths[i].encoder_obj_id,
+			       paths[i].is_legacy_lvds ? "LVDS" : "TMDS",
+			       paths[i].encoder_mode);
 		else
 			printk(BIOS_INFO,
 			       "ATOMBIOS: path %d: tag=0x%04x conn=0x%04x type=%d "
@@ -3391,6 +3474,69 @@ static int atombios_discover_display_paths(struct atom_context *ctx,
 	return count;
 }
 
+
+/* ---- Legacy LVDS Encoder Control ---- */
+
+static int atombios_legacy_lvds_encoder_setup(struct atom_context *ctx,
+					      const struct atombios_display_path *path,
+					      uint16_t pixel_clock_10khz,
+					      uint8_t action)
+{
+	uint8_t frev, crev;
+	union {
+		LVDS_ENCODER_CONTROL_PARAMETERS v1;
+		LVDS_ENCODER_CONTROL_PARAMETERS_V2 v2;
+	} args;
+
+	if (cmd_idx.lvds_encoder_ctrl < 0 ||
+	    !atom_parse_cmd_header(ctx, cmd_idx.lvds_encoder_ctrl, &frev, &crev) ||
+	    (frev != 1 && frev != 2) || crev < 1 || crev > 3)
+		return -1;
+
+	memset(&args, 0, sizeof(args));
+	args.v1.usPixelClock = pixel_clock_10khz;
+	args.v1.ucAction = action;
+	if (path->lcd_misc & ATOM_PANEL_MISC_DUAL)
+		args.v1.ucMisc |= PANEL_ENCODER_MISC_DUAL;
+
+	if (crev == 1) {
+		if (path->lcd_misc & ATOM_PANEL_MISC_888RGB)
+			args.v1.ucMisc |= ATOM_PANEL_MISC_888RGB;
+	} else {
+		if (path->lcd_misc & ATOM_PANEL_MISC_SPATIAL) {
+			args.v2.ucSpatial = PANEL_ENCODER_SPATIAL_DITHER_EN;
+			if (path->lcd_misc & ATOM_PANEL_MISC_888RGB)
+				args.v2.ucSpatial |= PANEL_ENCODER_SPATIAL_DITHER_DEPTH;
+		}
+		if (path->lcd_misc & ATOM_PANEL_MISC_TEMPORAL) {
+			args.v2.ucTemporal = PANEL_ENCODER_TEMPORAL_DITHER_EN;
+			if (path->lcd_misc & ATOM_PANEL_MISC_888RGB)
+				args.v2.ucTemporal |= PANEL_ENCODER_TEMPORAL_DITHER_DEPTH;
+			if (((path->lcd_misc >> ATOM_PANEL_MISC_GREY_LEVEL_SHIFT) & 3) == 2)
+				args.v2.ucTemporal |= PANEL_ENCODER_TEMPORAL_LEVEL_4;
+		}
+	}
+
+	printk(BIOS_DEBUG,
+	       "ATOMBIOS: legacy LVDS encoder frev=%d crev=%d action=%d clock=%d*10kHz\n",
+	       frev, crev, action, pixel_clock_10khz);
+	return atom_execute_table(ctx, cmd_idx.lvds_encoder_ctrl,
+				  (uint32_t *)&args, sizeof(args));
+}
+
+static int atombios_legacy_lvds_output_control(struct atom_context *ctx,
+					       uint8_t action)
+{
+	DISPLAY_DEVICE_OUTPUT_CONTROL_PS_ALLOCATION args;
+
+	if (cmd_idx.lcd1_output_ctrl < 0)
+		return -1;
+
+	memset(&args, 0, sizeof(args));
+	args.ucAction = action;
+	return atombios_exec(ctx, cmd_idx.lcd1_output_ctrl,
+			     (uint32_t *)&args, sizeof(args));
+}
 
 /* ---- Legacy TMDS/LVTMA Encoder Control ---- */
 
@@ -4166,8 +4312,21 @@ static void atombios_init(struct device *dev)
 	}
 
 	if (active_path < 0) {
+		/* Internal panels may have no readable EDID.  Their native timing is
+		 * supplied by LCD_Info and is safer than a generic fallback mode. */
+		for (i = 0; i < num_paths; i++) {
+			if (paths[i].connector_type == 0 ||
+			    !(paths[i].device_tag & ATOM_DEVICE_LCD_SUPPORT))
+				continue;
+			if (atombios_get_panel_mode(ctx, &paths[i], &mode))
+				continue;
+			active_path = i;
+			pixel_clock_10khz = mode.pixel_clock / 10;
+			goto do_modeset;
+		}
+
 		printk(BIOS_WARNING,
-		       "ATOMBIOS: no connected display found via EDID\n");
+		       "ATOMBIOS: no connected display found via EDID or LCD_Info\n");
 		goto use_defaults;
 	}
 
@@ -4281,7 +4440,33 @@ do_modeset:
 		atombios_update_scratch_for_path(ctx, &paths[active_path],
 						 crtc_id, true, true);
 		atombios_output_lock(ctx, false);
-	} else if (active_path >= 0 && paths[active_path].is_legacy_tmds) {
+	} else if (paths[active_path].is_legacy_lvds) {
+		printk(BIOS_INFO, "ATOMBIOS: internal panel via legacy LVDS encoder\n");
+
+		if (atombios_legacy_lvds_output_control(ctx, ATOM_LCD_BLOFF) ||
+		    atombios_legacy_lvds_output_control(ctx, ATOM_DISABLE) ||
+		    atombios_select_crtc_source(ctx, &paths[active_path], crtc_id) ||
+		    atombios_set_pixel_clock(ctx, &paths[active_path],
+					     pixel_clock_10khz, crtc_id))
+			goto modeset_failed;
+
+		if (atombios_set_crtc_dtd_timing(ctx, &mode, crtc_id))
+			goto modeset_failed;
+		atombios_program_framebuffer(ctx, &gpu, fb_bar, &mode);
+		if (atombios_program_crtc_postmode(ctx, crtc_id) ||
+		    atombios_enable_crtc(ctx, crtc_id, 1) ||
+		    atombios_enable_crtc_mem_req(ctx, &gpu, crtc_id, 1) ||
+		    atombios_legacy_lvds_encoder_setup(ctx, &paths[active_path],
+						       pixel_clock_10khz, ATOM_ENABLE) ||
+		    atombios_legacy_lvds_output_control(ctx, ATOM_ENABLE) ||
+		    atombios_legacy_lvds_output_control(ctx, ATOM_LCD_BLON) ||
+		    atombios_blank_crtc(ctx, crtc_id, 0))
+			goto modeset_failed;
+		atombios_evergreen_unblank_scanout(ctx, &gpu);
+		atombios_update_scratch_for_path(ctx, &paths[active_path],
+						 crtc_id, true, true);
+		atombios_output_lock(ctx, false);
+	} else if (paths[active_path].is_legacy_tmds) {
 		/*
 		 * Legacy DVI/TMDS output path (pre-UNIPHY).  Linux handles these
 		 * with TMDSA/LVTMA encoder and output-control tables, not DIGx
