@@ -3000,12 +3000,113 @@ static int atombios_device_tag_index(uint16_t device_tag)
 	return -1;
 }
 
+static int atombios_discover_supported_device_paths(struct atom_context *ctx,
+						     struct atombios_display_path *paths,
+						     int max_paths)
+{
+	ATOM_SUPPORTED_DEVICES_INFO_2d1 *supported;
+	uint16_t data_offset, device_support, size;
+	uint8_t frev, crev;
+	int max_device;
+	int count = 0;
+	int i;
+
+	if (cmd_idx.data_supported_devices < 0 ||
+	    !atom_parse_data_header(ctx, cmd_idx.data_supported_devices,
+				    &size, &frev, &crev, &data_offset))
+		return 0;
+
+	max_device = (frev > 1) ? ATOM_MAX_SUPPORTED_DEVICE :
+		ATOM_MAX_SUPPORTED_DEVICE_INFO;
+	if (size < offsetof(ATOM_SUPPORTED_DEVICES_INFO_2d1, asConnInfo) +
+		   max_device * sizeof(ATOM_CONNECTOR_INFO_I2C))
+		return 0;
+
+	supported = (ATOM_SUPPORTED_DEVICES_INFO_2d1 *)
+		((uint8_t *)ctx->bios + data_offset);
+	device_support = supported->usDeviceSupport;
+
+	for (i = 0; i < max_device && count < max_paths; i++) {
+		struct atombios_display_path *path = &paths[count];
+		ATOM_CONNECTOR_INFO_I2C *conn = &supported->asConnInfo[i];
+		uint8_t conn_type;
+		uint8_t dac;
+		uint8_t connector_id;
+
+		if (!(device_support & (1 << i)))
+			continue;
+
+		conn_type = conn->sucConnectorInfo.sbfAccess.bfConnectorType;
+		dac = conn->sucConnectorInfo.sbfAccess.bfAssociatedDAC;
+		memset(path, 0, sizeof(*path));
+		path->device_tag = 1 << i;
+		path->i2c_line = conn->sucI2cId.ucAccess;
+		path->i2c_valid = 1;
+		path->hpd_id = ATOMBIOS_HPD_NONE;
+
+		switch (i) {
+		case ATOM_DEVICE_CRT1_INDEX:
+		case ATOM_DEVICE_CRT2_INDEX:
+			connector_id = CONNECTOR_OBJECT_ID_VGA;
+			path->connector_type = 4;
+			path->encoder_mode = ATOM_ENCODER_MODE_CRT;
+			path->is_dac = 1;
+			path->dac_type = dac == 2 ? ATOM_DAC_B : ATOM_DAC_A;
+			path->encoder_obj_id = path->dac_type == ATOM_DAC_B ?
+				ENCODER_OBJECT_ID_INTERNAL_KLDSCP_DAC2 :
+				ENCODER_OBJECT_ID_INTERNAL_KLDSCP_DAC1;
+			break;
+		case ATOM_DEVICE_LCD1_INDEX:
+			connector_id = CONNECTOR_OBJECT_ID_LVDS;
+			path->connector_type = 2;
+			path->encoder_mode = ATOM_ENCODER_MODE_LVDS;
+			path->is_legacy_lvds = 1;
+			path->encoder_obj_id = ENCODER_OBJECT_ID_INTERNAL_LVTM1;
+			break;
+		case ATOM_DEVICE_DFP1_INDEX:
+			if (conn_type != 2 && conn_type != 3 && conn_type != 8 &&
+			    conn_type != 0x0a && conn_type != 0x0b)
+				continue;
+			connector_id = conn_type == 0x0a || conn_type == 0x0b ?
+				CONNECTOR_OBJECT_ID_HDMI_TYPE_A :
+				CONNECTOR_OBJECT_ID_SINGLE_LINK_DVI_D;
+			path->connector_type = conn_type == 0x0a || conn_type == 0x0b ? 1 : 3;
+			path->encoder_mode = ATOM_ENCODER_MODE_DVI;
+			path->is_legacy_tmds = 1;
+			path->encoder_obj_id = ENCODER_OBJECT_ID_INTERNAL_KLDSCP_TMDS1;
+			break;
+		case ATOM_DEVICE_DFP3_INDEX:
+			if (conn_type != 2 && conn_type != 3 && conn_type != 8)
+				continue;
+			connector_id = CONNECTOR_OBJECT_ID_SINGLE_LINK_DVI_D;
+			path->connector_type = 3;
+			path->encoder_mode = ATOM_ENCODER_MODE_DVI;
+			path->is_legacy_tmds = 1;
+			path->encoder_obj_id = ENCODER_OBJECT_ID_INTERNAL_LVTM1;
+			break;
+		default:
+			/* TV/CV and DVO-backed LCD2/DFP2+ need output paths that
+			 * this one-framebuffer backend deliberately does not implement. */
+			continue;
+		}
+
+		path->connector_obj_id =
+			(GRAPH_OBJECT_TYPE_CONNECTOR << OBJECT_TYPE_SHIFT) | connector_id;
+		printk(BIOS_INFO,
+		       "ATOMBIOS: old-table path %d: dev=%d conn=0x%x i2c=0x%02x enc=0x%02x\n",
+		       count, i, conn_type, path->i2c_line, path->encoder_obj_id);
+		count++;
+	}
+
+	return count;
+}
+
 static void atombios_apply_supported_device_info(struct atom_context *ctx,
 						 struct atombios_display_path *paths,
 						 int count)
 {
 	ATOM_SUPPORTED_DEVICES_INFO_2d1 *supported;
-	uint16_t data_offset, device_support;
+	uint16_t data_offset, device_support, size;
 	uint8_t frev, crev;
 	int max_device;
 	int i;
@@ -3014,13 +3115,17 @@ static void atombios_apply_supported_device_info(struct atom_context *ctx,
 		return;
 
 	if (!atom_parse_data_header(ctx, cmd_idx.data_supported_devices,
-				    NULL, &frev, &crev, &data_offset))
+				    &size, &frev, &crev, &data_offset))
+		return;
+
+	max_device = (frev > 1) ? ATOM_MAX_SUPPORTED_DEVICE : ATOM_MAX_SUPPORTED_DEVICE_INFO;
+	if (size < offsetof(ATOM_SUPPORTED_DEVICES_INFO_2d1, asConnInfo) +
+		   max_device * sizeof(ATOM_CONNECTOR_INFO_I2C))
 		return;
 
 	supported = (ATOM_SUPPORTED_DEVICES_INFO_2d1 *)
 		((uint8_t *)ctx->bios + data_offset);
 	device_support = supported->usDeviceSupport;
-	max_device = (frev > 1) ? ATOM_MAX_SUPPORTED_DEVICE : ATOM_MAX_SUPPORTED_DEVICE_INFO;
 
 	printk(BIOS_INFO,
 	       "ATOMBIOS: SupportedDevicesInfo frev=%d crev=%d support=0x%04x\n",
@@ -3277,16 +3382,18 @@ static int atombios_discover_display_paths(struct atom_context *ctx,
 
 	if (!atom_parse_data_header(ctx, cmd_idx.data_object_header,
 				    NULL, &frev, &crev, &data_offset)) {
-		printk(BIOS_WARNING, "ATOMBIOS: Object_Header table not found\n");
-		return 0;
+		printk(BIOS_WARNING,
+		       "ATOMBIOS: Object_Header table not found, trying SupportedDevicesInfo\n");
+		return atombios_discover_supported_device_paths(ctx, paths, max_paths);
 	}
 
 	base = (uint8_t *)ctx->bios;
 	obj_hdr = (ATOM_OBJECT_HEADER *)(base + data_offset);
 
 	if (!obj_hdr->usDisplayPathTableOffset) {
-		printk(BIOS_WARNING, "ATOMBIOS: no display path table\n");
-		return 0;
+		printk(BIOS_WARNING,
+		       "ATOMBIOS: no display path table, trying SupportedDevicesInfo\n");
+		return atombios_discover_supported_device_paths(ctx, paths, max_paths);
 	}
 
 	path_tbl = (ATOM_DISPLAY_OBJECT_PATH_TABLE *)
@@ -3442,6 +3549,9 @@ static int atombios_discover_display_paths(struct atom_context *ctx,
 		count++;
 		path_offset += disp_path->usSize;
 	}
+
+	if (!count)
+		return atombios_discover_supported_device_paths(ctx, paths, max_paths);
 
 	atombios_apply_supported_device_info(ctx, paths, count);
 
