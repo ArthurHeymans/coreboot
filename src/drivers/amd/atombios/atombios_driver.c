@@ -206,6 +206,7 @@ static struct atombios_cmd_indices cmd_idx;
 #define DP_MAX_LINK_RATE	0x001
 #define DP_MAX_LANE_COUNT	0x002
 #define DP_MAX_DOWNSPREAD	0x003
+#define DP_EDP_CONFIGURATION_CAP 0x00D
 #define DP_RECEIVER_CAP_SIZE	0x00F
 
 #define DP_LINK_BW_SET		0x100
@@ -260,6 +261,9 @@ static struct atombios_cmd_indices cmd_idx;
 #define DP_SET_POWER_D3			0x02
 
 /* DP AUX request types */
+#define DP_AUX_I2C_WRITE		0x0
+#define DP_AUX_I2C_READ		0x1
+#define DP_AUX_I2C_MOT		0x4
 #define DP_AUX_NATIVE_WRITE		0x8
 #define DP_AUX_NATIVE_READ		0x9
 #define DP_AUX_HEADER_SIZE		4
@@ -291,6 +295,9 @@ struct atombios_display_path {
 	uint8_t  encoder_mode;		/* ATOM_ENCODER_MODE_* */
 	uint8_t  dp_lane_count;		/* negotiated DP lane count */
 	uint8_t  dp_link_bw;		/* DPCD DP_LINK_BW_* code */
+	uint8_t  dp_panel_mode;		/* DP_PANEL_MODE_* */
+	uint8_t  pll_id;			/* PPLL/refclock selected for this path */
+	uint8_t  tx_refclk;		/* Transmitter reference-clock source */
 	uint16_t connector_obj_id;	/* Full connector object ID */
 	uint8_t  is_dac;		/* 1 if DAC encoder (VGA/CRT), 0 if digital */
 	uint8_t  is_legacy_tmds;	/* 1 for pre-UNIPHY TMDS/LVTMA encoders */
@@ -1738,26 +1745,32 @@ static int atombios_dp_aux_transfer(struct atom_context *ctx,
 	PROCESS_AUX_CHANNEL_TRANSACTION_PARAMETERS_V2 args;
 	uint8_t *base;
 	uint8_t tx_buf[20];
+	uint8_t request_type = request & ~DP_AUX_I2C_MOT;
+	uint8_t transfer_len = send_len ? send_len : recv_size;
+	bool write_request;
 	int tx_size;
 	int recv_bytes;
 
-	/* The ATOM AUX request buffer is 16 bytes including the 4-byte header. */
-	if (send_len > 12)
+	write_request = request_type == DP_AUX_NATIVE_WRITE ||
+		request_type == DP_AUX_I2C_WRITE;
+
+	/* ATOM supports 12-byte writes and 16-byte reads. */
+	if ((write_request && send_len > 12) || (!write_request && recv_size > 16))
 		return -1;
 
 	/* Build 4-byte AUX request header */
 	tx_buf[0] = address & 0xFF;
 	tx_buf[1] = (address >> 8) & 0xFF;
 	tx_buf[2] = (request << 4) | ((address >> 16) & 0xF);
-	tx_buf[3] = send_len ? (send_len - 1) : 0;
+	tx_buf[3] = transfer_len ? (transfer_len - 1) : 0;
 
-	if (request == DP_AUX_NATIVE_WRITE && send_len > 0) {
+	if (write_request && send_len > 0) {
 		tx_size = DP_AUX_HEADER_SIZE + send_len;
 		tx_buf[3] |= (tx_size << 4);
 		memcpy(tx_buf + DP_AUX_HEADER_SIZE, send, send_len);
 	} else {
 		tx_size = DP_AUX_HEADER_SIZE;
-		tx_buf[3] |= (tx_size << 4);
+		tx_buf[3] |= ((transfer_len ? tx_size : DP_AUX_HEADER_SIZE - 1) << 4);
 	}
 
 	/* Copy request into scratch area at offset +4 (DWORD 1) */
@@ -1803,7 +1816,7 @@ static int dp_aux_native_write(struct atom_context *ctx,
 {
 	return atombios_dp_aux_transfer(ctx, aux_id, hpd_id,
 					DP_AUX_NATIVE_WRITE, address,
-					data, len, NULL, 0);
+					data, len, NULL, 0) < 0 ? -1 : 0;
 }
 
 static int dp_aux_native_read(struct atom_context *ctx,
@@ -1812,7 +1825,80 @@ static int dp_aux_native_read(struct atom_context *ctx,
 {
 	return atombios_dp_aux_transfer(ctx, aux_id, hpd_id,
 					DP_AUX_NATIVE_READ, address,
-					NULL, 0, data, len);
+					NULL, 0, data, len) == len ? 0 : -1;
+}
+
+static int dp_aux_i2c_write(struct atom_context *ctx,
+			    uint8_t aux_id, uint8_t hpd_id,
+			    uint8_t address, uint8_t *data, uint8_t len,
+			    bool mot)
+{
+	uint8_t request = DP_AUX_I2C_WRITE | (mot ? DP_AUX_I2C_MOT : 0);
+
+	return atombios_dp_aux_transfer(ctx, aux_id, hpd_id, request, address,
+					data, len, NULL, 0) < 0 ? -1 : 0;
+}
+
+static int dp_aux_i2c_read(struct atom_context *ctx,
+			   uint8_t aux_id, uint8_t hpd_id,
+			   uint8_t address, uint8_t *data, uint8_t len,
+			   bool mot)
+{
+	uint8_t request = DP_AUX_I2C_READ | (mot ? DP_AUX_I2C_MOT : 0);
+
+	return atombios_dp_aux_transfer(ctx, aux_id, hpd_id, request, address,
+					NULL, 0, data, len) == len ? 0 : -1;
+}
+
+static int atombios_dp_read_edid(struct atom_context *ctx,
+				 uint8_t aux_id, uint8_t hpd_id,
+				 uint8_t *edid_buf)
+{
+	int offset;
+
+	for (offset = 0; offset < EDID_BLOCK_SIZE; offset += 16) {
+		uint8_t reg = offset;
+
+		if (dp_aux_i2c_write(ctx, aux_id, hpd_id, DDC_EDID_ADDRESS,
+				      &reg, 1, true) ||
+		    dp_aux_i2c_read(ctx, aux_id, hpd_id, DDC_EDID_ADDRESS,
+				     edid_buf + offset, 16, false))
+			return -1;
+	}
+
+	if (edid_buf[0] != 0x00 || edid_buf[1] != 0xff ||
+	    edid_buf[6] != 0xff || edid_buf[7] != 0x00)
+		return -1;
+
+	printk(BIOS_INFO, "ATOMBIOS: EDID read successfully over DP AUX\n");
+	return 0;
+}
+
+static int atombios_read_path_edid(struct atom_context *ctx,
+				   struct atombios_display_path *path,
+				   uint8_t *edid_buf)
+{
+	uint8_t dpcd_rev;
+
+	if (path->encoder_mode != ATOM_ENCODER_MODE_DP)
+		return atombios_read_edid(ctx, path->i2c_line, edid_buf);
+
+	if (!dp_aux_native_read(ctx, path->i2c_line, path->hpd_id,
+				DP_DPCD_REV, &dpcd_rev, 1))
+		return atombios_dp_read_edid(ctx, path->i2c_line,
+					     path->hpd_id, edid_buf);
+
+	/* A DP receptacle without a DPCD response may have a passive TMDS adapter. */
+	if (atombios_object_id(path->connector_obj_id) == CONNECTOR_OBJECT_ID_DISPLAYPORT) {
+		printk(BIOS_INFO,
+		       "ATOMBIOS: DP path has no native sink, trying TMDS DDC\n");
+		path->encoder_mode = ATOM_ENCODER_MODE_DVI;
+		path->dp_lane_count = 0;
+		path->dp_link_bw = 0;
+		return atombios_read_edid(ctx, path->i2c_line, edid_buf);
+	}
+
+	return -1;
 }
 
 static int dp_dpcd_writeb(struct atom_context *ctx,
@@ -2019,6 +2105,10 @@ static int dp_link_train_init(struct dp_link_train_info *info)
 	/* Set link bandwidth */
 	dp_dpcd_writeb(info->ctx, info->aux_id, info->hpd_id,
 		       DP_LINK_BW_SET, info->dp_link_bw);
+
+	if (info->path->dp_panel_mode == DP_PANEL_MODE_INTERNAL_DP2_MODE)
+		dp_dpcd_writeb(info->ctx, info->aux_id, info->hpd_id,
+			       DP_EDP_CONFIGURATION_SET, 1);
 
 	/* Start training on source encoder */
 	atombios_dig_encoder_setup(info->ctx, info->path,
@@ -2231,19 +2321,19 @@ done:
 	return ret;
 }
 
-static void atombios_dp_prepare_link(struct atom_context *ctx,
-					     struct atombios_display_path *path,
-					     uint32_t pixel_clock_khz)
+static int atombios_dp_prepare_link(struct atom_context *ctx,
+				    struct atombios_display_path *path,
+				    uint32_t pixel_clock_khz)
 {
 	uint8_t dpcd[DP_RECEIVER_CAP_SIZE];
 
 	if (path->encoder_mode != ATOM_ENCODER_MODE_DP || !path->i2c_valid)
-		return;
+		return 0;
 
 	if (dp_aux_native_read(ctx, path->i2c_line, path->hpd_id, DP_DPCD_REV,
 			       dpcd, sizeof(dpcd)) < 0) {
 		printk(BIOS_WARNING, "ATOMBIOS: failed to read DP DPCD caps\n");
-		return;
+		return -1;
 	}
 
 	if (atombios_dp_get_link_config(dpcd, pixel_clock_khz,
@@ -2251,11 +2341,17 @@ static void atombios_dp_prepare_link(struct atom_context *ctx,
 		printk(BIOS_WARNING,
 		       "ATOMBIOS: no DP link config for %u kHz pixel clock\n",
 		       pixel_clock_khz);
-		return;
+		return -1;
 	}
+
+	path->dp_panel_mode = DP_PANEL_MODE_EXTERNAL_DP_MODE;
+	if (atombios_object_id(path->connector_obj_id) == CONNECTOR_OBJECT_ID_eDP &&
+	    (dpcd[DP_EDP_CONFIGURATION_CAP] & 1))
+		path->dp_panel_mode = DP_PANEL_MODE_INTERNAL_DP2_MODE;
 
 	printk(BIOS_INFO, "ATOMBIOS: selected DP link %d lanes @ 0x%02x\n",
 	       path->dp_lane_count, path->dp_link_bw);
+	return 0;
 }
 
 /* ---- eDP panel power control ---- */
@@ -3343,7 +3439,10 @@ static int atombios_dig_encoder_setup(struct atom_context *ctx,
 	case 1:
 		args.v1.ucAction = action;
 		args.v1.usPixelClock = pixel_clock_10khz;
-		args.v1.ucEncoderMode = path->encoder_mode;
+		if (action == ATOM_ENCODER_CMD_SETUP_PANEL_MODE)
+			args.v3.ucPanelMode = path->dp_panel_mode;
+		else
+			args.v1.ucEncoderMode = path->encoder_mode;
 		args.v1.ucLaneNum = lane_num;
 		if (path->phy_id / 2 == 1)
 			args.v1.ucConfig |= ATOM_ENCODER_CONFIG_TRANSMITTER2;
@@ -3356,20 +3455,13 @@ static int atombios_dig_encoder_setup(struct atom_context *ctx,
 			args.v1.ucConfig |= ATOM_ENCODER_CONFIG_DPLINKRATE_2_70GHZ;
 		break;
 	case 2:
-		args.v2.ucAction = action;
-		args.v2.usPixelClock = pixel_clock_10khz;
-		args.v2.ucEncoderMode = path->encoder_mode;
-		args.v2.ucLaneNum = lane_num;
-		args.v2.acConfig.ucLinkSel = path->dig_encoder & 1;
-		args.v2.acConfig.ucTransmitterSel = path->phy_id / 2;
-		if (path->encoder_mode == ATOM_ENCODER_MODE_DP &&
-		    path->dp_link_bw >= DP_LINK_BW_2_7)
-			args.v2.acConfig.ucDPLinkRate = 1;
-		break;
 	case 3:
 		args.v3.ucAction = action;
 		args.v3.usPixelClock = pixel_clock_10khz;
-		args.v3.ucEncoderMode = path->encoder_mode;
+		if (action == ATOM_ENCODER_CMD_SETUP_PANEL_MODE)
+			args.v3.ucPanelMode = path->dp_panel_mode;
+		else
+			args.v3.ucEncoderMode = path->encoder_mode;
 		args.v3.ucLaneNum = lane_num;
 		args.v3.ucBitPerColor = bpc;
 		args.v3.acConfig.ucDigSel = path->dig_encoder;
@@ -3380,7 +3472,10 @@ static int atombios_dig_encoder_setup(struct atom_context *ctx,
 	case 4:
 		args.v4.ucAction = action;
 		args.v4.usPixelClock = pixel_clock_10khz;
-		args.v4.ucEncoderMode = path->encoder_mode;
+		if (action == ATOM_ENCODER_CMD_SETUP_PANEL_MODE)
+			args.v4.ucPanelMode = path->dp_panel_mode;
+		else
+			args.v4.ucEncoderMode = path->encoder_mode;
 		args.v4.ucLaneNum = lane_num;
 		args.v4.ucBitPerColor = bpc;
 		args.v4.ucHPD_ID = path->hpd_id <= 5 ? path->hpd_id + 1 : 0;
@@ -3399,7 +3494,11 @@ static int atombios_dig_encoder_setup(struct atom_context *ctx,
 		break;
 	case 5:
 	default:
-		if (action == ATOM_ENCODER_CMD_STREAM_SETUP) {
+		if (action == ATOM_ENCODER_CMD_SETUP_PANEL_MODE) {
+			args.v5.asDPPanelModeParam.ucDigId = path->dig_encoder;
+			args.v5.asDPPanelModeParam.ucAction = action;
+			args.v5.asDPPanelModeParam.ucPanelMode = path->dp_panel_mode;
+		} else if (action == ATOM_ENCODER_CMD_STREAM_SETUP) {
 			args.v5.asStreamParam.ucDigId = path->dig_encoder;
 			args.v5.asStreamParam.ucAction = action;
 			args.v5.asStreamParam.ucDigMode = path->encoder_mode;
@@ -3929,10 +4028,11 @@ static void atombios_init(struct device *dev)
 	/* Try to read EDID on digital paths to find a connected display. */
 	for (i = 0; i < num_paths; i++) {
 		if (paths[i].connector_type == 0 || paths[i].is_dac ||
+		    paths[i].encoder_mode == ATOM_ENCODER_MODE_LVDS ||
 		    !paths[i].i2c_valid)
 			continue;
 
-		if (atombios_read_edid(ctx, paths[i].i2c_line, edid_raw) == 0) {
+		if (atombios_read_path_edid(ctx, &paths[i], edid_raw) == 0) {
 			if (decode_edid(edid_raw, EDID_BLOCK_SIZE, &edid) == EDID_CONFORMANT) {
 				active_path = i;
 				printk(BIOS_INFO,
@@ -3974,7 +4074,12 @@ use_defaults:
 	 * analog fallback for DVI-I/VGA. */
 	if (active_path < 0) {
 		for (i = 0; i < num_paths; i++) {
-			if (paths[i].connector_type != 0 && !paths[i].is_dac) {
+			uint8_t connector = atombios_object_id(paths[i].connector_obj_id);
+
+			if (paths[i].connector_type != 0 && !paths[i].is_dac &&
+			    paths[i].encoder_mode != ATOM_ENCODER_MODE_LVDS &&
+			    connector != CONNECTOR_OBJECT_ID_eDP &&
+			    connector != CONNECTOR_OBJECT_ID_LVDS_eDP) {
 				active_path = i;
 				break;
 			}
@@ -4093,15 +4198,16 @@ do_modeset:
 		/* For eDP, power on the panel first */
 		if (active_path >= 0 &&
 		    paths[active_path].encoder_mode == ATOM_ENCODER_MODE_DP) {
-			uint8_t conn_id = (paths[active_path].connector_obj_id >> 8) & 0xF;
+			uint8_t conn_id = atombios_object_id(paths[active_path].connector_obj_id);
 			if (conn_id == CONNECTOR_OBJECT_ID_eDP) {
-				atombios_edp_panel_power(ctx, &paths[active_path], 1);
+				if (atombios_edp_panel_power(ctx, &paths[active_path], 1))
+					goto modeset_failed;
 				mdelay(200);
 			}
 		}
 
-		if (active_path >= 0)
-			atombios_dp_prepare_link(ctx, &paths[active_path], mode.pixel_clock);
+		if (atombios_dp_prepare_link(ctx, &paths[active_path], mode.pixel_clock))
+			goto modeset_failed;
 
 		/* Initialize transmitter PHY */
 		if (active_path >= 0) {
@@ -4117,10 +4223,19 @@ do_modeset:
 		if (active_path >= 0) {
 			printk(BIOS_INFO, "ATOMBIOS: configuring DIG encoder %d...\n",
 			       paths[active_path].dig_encoder);
-			atombios_dig_encoder_setup(ctx, &paths[active_path],
-						   pixel_clock_10khz,
-						   ATOM_ENCODER_CMD_SETUP,
-						   PANEL_8BIT_PER_COLOR);
+			if (atombios_dig_encoder_setup(ctx, &paths[active_path],
+						       pixel_clock_10khz,
+						       ATOM_ENCODER_CMD_SETUP,
+						       PANEL_8BIT_PER_COLOR))
+				goto modeset_failed;
+			if (paths[active_path].encoder_mode == ATOM_ENCODER_MODE_DP &&
+			    atombios_object_id(paths[active_path].connector_obj_id) ==
+				CONNECTOR_OBJECT_ID_eDP &&
+			    atombios_dig_encoder_setup(ctx, &paths[active_path],
+						       pixel_clock_10khz,
+						       ATOM_ENCODER_CMD_SETUP_PANEL_MODE,
+						       PANEL_8BIT_PER_COLOR))
+				goto modeset_failed;
 		}
 
 		/* Route CRTC to encoder */
@@ -4160,8 +4275,14 @@ do_modeset:
 						   pixel_clock_10khz,
 						   paths[active_path].i2c_line,
 						   paths[active_path].hpd_id))
-				printk(BIOS_WARNING,
-				       "ATOMBIOS: DP link training failed\n");
+				goto modeset_failed;
+			if (atombios_object_id(paths[active_path].connector_obj_id) ==
+			    CONNECTOR_OBJECT_ID_eDP &&
+			    atombios_transmitter_control(ctx, &paths[active_path],
+							pixel_clock_10khz,
+							ATOM_TRANSMITTER_ACTION_LCD_BLON,
+							0, 0))
+				goto modeset_failed;
 		}
 
 		/* Unblank */
@@ -4182,6 +4303,12 @@ do_modeset:
 
 	printk(BIOS_INFO, "ATOMBIOS: framebuffer %ux%u @ 0x%llx registered\n",
 	       mode.ha, mode.va, (unsigned long long)fb_bar);
+	return;
+
+modeset_failed:
+	printk(BIOS_ERR, "ATOMBIOS: modeset failed; framebuffer not registered\n");
+	atombios_output_lock(ctx, false);
+	atom_destroy(ctx);
 }
 
 static struct device_operations atombios_gfx_ops = {
