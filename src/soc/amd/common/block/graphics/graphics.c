@@ -11,6 +11,9 @@
 #include <console/console.h>
 #include <device/device.h>
 #include <device/pci.h>
+#if CONFIG(DRIVERS_AMD_ATOMBIOS)
+#include <drivers/amd/atombios/atombios_driver.h>
+#endif
 #include <fmap.h>
 #include <security/vboot/vbios_cache_hash_tpm.h>
 #include <timestamp.h>
@@ -202,8 +205,17 @@ static void graphics_set_resources(struct device *const dev)
 
 static void graphics_dev_init(struct device *const dev)
 {
-	if (CONFIG(RUN_FSP_GOP))
+	if (CONFIG(RUN_FSP_GOP)) {
 		fsp_graphics_init(dev);
+		return;
+	}
+
+#if CONFIG(DRIVERS_AMD_ATOMBIOS)
+	if (CONFIG(MAINBOARD_DO_NATIVE_VGA_INIT)) {
+		amd_atombios_init(dev);
+		return;
+	}
+#endif
 
 	/* Initialize PCI device, load/execute BIOS Option ROM */
 	pci_dev_init(dev);

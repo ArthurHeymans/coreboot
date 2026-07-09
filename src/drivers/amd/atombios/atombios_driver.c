@@ -3,8 +3,9 @@
 /*
  * AMD AtomBIOS modesetting driver for coreboot.
  *
- * Executes ATOM command tables from the VBIOS to initialize AMD GPUs
- * and set up a linear framebuffer, without running the 16-bit option ROM.
+ * Executes ATOM command tables from the VBIOS to initialize legacy AMD GPUs
+ * and set up a linear framebuffer. AtomFirmware v2 devices are parsed by a
+ * separate generation-aware path.
  *
  * The ATOM interpreter (atom.c) is MIT-licensed, ported from the Linux
  * kernel amdgpu driver (original author: Stanislaw Skowronek).
@@ -18,6 +19,7 @@
 #include <device/pci.h>
 #include <device/pci_ids.h>
 #include <device/pci_ops.h>
+#include <device/pci_rom.h>
 #include <device/resource.h>
 #include <edid.h>
 #include <framebuffer_info.h>
@@ -28,7 +30,9 @@
 
 #include "atom.h"
 #include "atom-bits.h"
+#include "atombios_driver.h"
 #include "atomfirmware.h"
+#include "dcn10.h"
 
 /*
  * AMD GPU MMIO BAR indices:
@@ -41,7 +45,7 @@
 #define AMD_GPU_FB_BAR		PCI_BASE_ADDRESS_0
 
 /* Scratch memory for ATOM FB workspace (in dwords) */
-#define ATOM_SCRATCH_SIZE_DWORDS	256
+#define ATOM_SCRATCH_SIZE_DWORDS	(20 * KiB / sizeof(uint32_t))
 
 /* Default framebuffer settings */
 #define DEFAULT_BPP	32
@@ -110,6 +114,7 @@ struct atombios_cmd_indices {
 	int data_gpio_pin;
 	int data_supported_devices;
 	int data_firmware_info;
+	int data_dce_info;
 	int data_lvds_info;
 	bool is_v2;
 };
@@ -150,6 +155,7 @@ static void atombios_init_cmd_indices_v1(struct atombios_cmd_indices *idx)
 	idx->data_gpio_pin          = DATA_IDX_V1(GPIO_Pin_LUT);
 	idx->data_supported_devices = DATA_IDX_V1(SupportedDevicesInfo);
 	idx->data_firmware_info     = DATA_IDX_V1(FirmwareInfo);
+	idx->data_dce_info          = -1;
 	idx->data_lvds_info         = DATA_IDX_V1(LVDS_Info);
 }
 
@@ -189,6 +195,7 @@ static void atombios_init_cmd_indices_v2(struct atombios_cmd_indices *idx)
 	idx->data_gpio_pin          = DATA_IDX_V2(gpio_pin_lut);
 	idx->data_supported_devices = -1;
 	idx->data_firmware_info     = DATA_IDX_V2(firmwareinfo);
+	idx->data_dce_info          = DATA_IDX_V2(dce_info);
 	idx->data_lvds_info         = -1;
 }
 
@@ -1292,17 +1299,36 @@ static uint32_t cail_pll_read(struct card_info *info, uint32_t reg)
 /* ---- VBIOS loading ---- */
 
 /*
- * Try to load VBIOS from CBFS first (pciVVVV,DDDD.rom), then fall back
- * to reading from the PCI expansion ROM BAR.
+ * Prefer a RAM copy because FSP GOP updates its ATOMBIOS tables in place.
+ * Otherwise load the immutable image from CBFS or the PCI expansion ROM BAR.
  */
-static void *load_vbios(struct device *dev)
+static void *load_vbios(struct device *dev, size_t *size)
 {
 	void *rom = NULL;
 	size_t rom_size = 0;
+
+	*size = 0;
 	char cbfs_name[24];
 	uint16_t vendor = dev->vendor;
 	uint16_t device_id = dev->device;
 	uint16_t rom_size_field;
+	uint32_t mapped_vendev;
+	struct rom_header *ram_rom = dev->pci_vga_option_rom;
+
+	if (ram_rom && le16_to_cpu(ram_rom->signature) == PCI_ROM_HDR) {
+		rom_size = ram_rom->size * 512;
+		if (rom_size && rom_size <= 512 * 1024) {
+			printk(BIOS_INFO,
+			       "ATOMBIOS: using in-memory VBIOS (%zu bytes)\n",
+			       rom_size);
+			*size = rom_size;
+			return ram_rom;
+		}
+	}
+
+	mapped_vendev = map_oprom_vendev(((uint32_t)vendor << 16) | device_id);
+	vendor = mapped_vendev >> 16;
+	device_id = mapped_vendev;
 
 	snprintf(cbfs_name, sizeof(cbfs_name), "pci%04x,%04x.rom",
 		 vendor, device_id);
@@ -1311,6 +1337,7 @@ static void *load_vbios(struct device *dev)
 	if (rom) {
 		printk(BIOS_INFO, "ATOMBIOS: loaded VBIOS from CBFS: %s (%zu bytes)\n",
 		       cbfs_name, rom_size);
+		*size = rom_size;
 		return rom;
 	}
 
@@ -1354,6 +1381,7 @@ static void *load_vbios(struct device *dev)
 
 	printk(BIOS_INFO, "ATOMBIOS: loaded VBIOS from PCI ROM BAR (%zu bytes)\n",
 	       rom_size);
+	*size = rom_size;
 	return rom;
 }
 
@@ -1510,12 +1538,12 @@ static int atombios_gpio_i2c_get_data(struct atom_context *ctx,
 
 static void atombios_gpio_i2c_set_clock(struct atom_context *ctx,
 					const struct atombios_i2c_bus_rec *bus,
-					int clock)
+					int high)
 {
 	uint32_t val;
 
 	val = atombios_mmio_read(ctx, bus->en_clk_reg) & ~bus->en_clk_mask;
-	if (!clock)
+	if (!high)
 		val |= bus->en_clk_mask;
 	atombios_mmio_write(ctx, bus->en_clk_reg, val);
 }
@@ -3877,7 +3905,10 @@ static int atombios_transmitter_control(struct atom_context *ctx,
 		DIG_TRANSMITTER_CONTROL_PARAMETERS_V3    v3;
 		DIG_TRANSMITTER_CONTROL_PARAMETERS_V4    v4;
 		DIG_TRANSMITTER_CONTROL_PARAMETERS_V1_5  v5;
-		DIG_TRANSMITTER_CONTROL_PARAMETERS_V1_6  v6;
+		struct {
+			DIG_TRANSMITTER_CONTROL_PARAMETERS_V1_6 param;
+			uint32_t reserved[4];
+		} v6;
 	} args;
 
 	if (!atom_parse_cmd_header(ctx, cmd_idx.dig1_xmtr_ctrl, &frev, &crev))
@@ -4007,18 +4038,19 @@ static int atombios_transmitter_control(struct atom_context *ctx,
 		break;
 	case 6:
 	default:
-		args.v6.ucAction = action;
-		args.v6.ucPhyId = path->phy_id;
+		args.v6.param.ucAction = action;
+		args.v6.param.ucPhyId = path->phy_id;
 		if (action == ATOM_TRANSMITTER_ACTION_SETUP_VSEMPH)
-			args.v6.ucDPLaneSet = lane_set;
+			args.v6.param.ucDPLaneSet = lane_set;
 		else
-			args.v6.ucDigMode = path->encoder_mode;
-		args.v6.ucLaneNum = transmitter_lane_num;
-		args.v6.ulSymClock = sym_clock_10khz;
-		args.v6.ucConnObjId = atombios_object_id(path->connector_obj_id);
-		args.v6.ucDigEncoderSel = (1 << path->dig_encoder);
+			args.v6.param.ucDigMode = path->encoder_mode;
+		args.v6.param.ucLaneNum = transmitter_lane_num;
+		args.v6.param.ulSymClock = sym_clock_10khz;
+		args.v6.param.ucConnObjId = atombios_object_id(path->connector_obj_id);
+		/* DCN connects DIG front ends directly; AtomFirmware expects no FE here. */
+		args.v6.param.ucDigEncoderSel = cmd_idx.is_v2 ? 0 : (1 << path->dig_encoder);
 		if (path->hpd_id <= 5)
-			args.v6.ucHPDSel = path->hpd_id + 1;
+			args.v6.param.ucHPDSel = path->hpd_id + 1;
 		break;
 	}
 
@@ -4259,6 +4291,8 @@ static resource_t atombios_get_bar(struct device *dev, unsigned int bar)
 		return res->base;
 
 	lo = pci_read_config32(dev, bar);
+	if (lo == 0xffffffff)
+		return 0;
 	base = lo & ~0xfu;
 	if ((lo & PCI_BASE_ADDRESS_MEM_LIMIT_MASK) == PCI_BASE_ADDRESS_MEM_LIMIT_64)
 		base |= (resource_t)pci_read_config32(dev, bar + 4) << 32;
@@ -4266,14 +4300,361 @@ static resource_t atombios_get_bar(struct device *dev, unsigned int bar)
 	return base;
 }
 
+enum atomfirmware_display_ip {
+	ATOMFIRMWARE_DCE12,
+	ATOMFIRMWARE_DCE121,
+	ATOMFIRMWARE_DCN10,
+	ATOMFIRMWARE_DCN20,
+	ATOMFIRMWARE_DCN21,
+	ATOMFIRMWARE_DCN3,
+	ATOMFIRMWARE_DISPLAY_IP_UNKNOWN,
+};
+
+static enum atomfirmware_display_ip atomfirmware_display_ip(uint16_t device_id)
+{
+	switch (device_id) {
+	/* Vega10 and Vega12: DCE 12.0. */
+	case 0x6860: case 0x6861: case 0x6862: case 0x6863:
+	case 0x6864: case 0x6867: case 0x6868: case 0x6869:
+	case 0x686a: case 0x686b: case 0x686c: case 0x686d:
+	case 0x686e: case 0x686f: case 0x687f:
+	case 0x69a0: case 0x69a1: case 0x69a2: case 0x69a3: case 0x69af:
+		return ATOMFIRMWARE_DCE12;
+	/* Vega20: DCE 12.1. */
+	case 0x66a0: case 0x66a1: case 0x66a2: case 0x66a3:
+	case 0x66a4: case 0x66a7: case 0x66af:
+		return ATOMFIRMWARE_DCE121;
+	/* Raven and Picasso. */
+	case 0x15dd: case 0x15d8:
+		return ATOMFIRMWARE_DCN10;
+	/* Navi10/12/14. */
+	case 0x7310: case 0x7312: case 0x7318: case 0x7319:
+	case 0x731a: case 0x731b: case 0x731e: case 0x731f:
+	case 0x7340: case 0x7341: case 0x7347: case 0x734f:
+	case 0x7360: case 0x7362:
+		return ATOMFIRMWARE_DCN20;
+	/* Renoir. */
+	case 0x15e7: case 0x1636: case 0x1638: case 0x164c:
+		return ATOMFIRMWARE_DCN21;
+	/* Navi2x, Rembrandt and Navi3x. */
+	case 0x73a0: case 0x73a1: case 0x73a2: case 0x73a3:
+	case 0x73a5: case 0x73a8: case 0x73a9: case 0x73ab:
+	case 0x73ac: case 0x73ad: case 0x73ae: case 0x73af: case 0x73bf:
+	case 0x73c0: case 0x73c1: case 0x73c3:
+	case 0x73da: case 0x73db: case 0x73dc: case 0x73dd:
+	case 0x73de: case 0x73df:
+	case 0x73e0: case 0x73e1: case 0x73e2: case 0x73e3:
+	case 0x73e8: case 0x73e9: case 0x73ea: case 0x73eb:
+	case 0x73ec: case 0x73ed: case 0x73ef: case 0x73ff:
+	case 0x7420: case 0x7421: case 0x7422: case 0x7423:
+	case 0x7424: case 0x743f: case 0x164d: case 0x1681:
+	case 0x744c: case 0x7448: case 0x747e: case 0x7480:
+		return ATOMFIRMWARE_DCN3;
+	default:
+		return ATOMFIRMWARE_DISPLAY_IP_UNKNOWN;
+	}
+}
+
+static const char *atomfirmware_display_ip_name(enum atomfirmware_display_ip ip)
+{
+	switch (ip) {
+	case ATOMFIRMWARE_DCE12: return "DCE 12.0";
+	case ATOMFIRMWARE_DCE121: return "DCE 12.1";
+	case ATOMFIRMWARE_DCN10: return "DCN 1.0/1.01";
+	case ATOMFIRMWARE_DCN20: return "DCN 2.0";
+	case ATOMFIRMWARE_DCN21: return "DCN 2.1";
+	case ATOMFIRMWARE_DCN3: return "DCN 3.x";
+	default: return "unknown display IP";
+	}
+}
+
+static void atomfirmware_log_command_revision(struct atom_context *ctx,
+					       size_t bios_size, const char *name,
+					       int index)
+{
+	const void *raw_table;
+	const uint8_t *table;
+	size_t table_size;
+
+	if (index < 0 || atom_v2_get_table(ctx->bios, bios_size, ctx->cmd_table,
+					   index, &raw_table, &table_size)) {
+		printk(BIOS_DEBUG, "ATOMBIOS: v2 command %s is absent or malformed\n", name);
+		return;
+	}
+	table = raw_table;
+
+	printk(BIOS_INFO, "ATOMBIOS: v2 command %-28s revision %u.%u size %zu\n",
+	       name, table[2], table[3], table_size);
+}
+
+static void atomfirmware_log_registers(struct atom_context *ctx,
+				       enum atomfirmware_display_ip ip)
+{
+	/* DCE12 register indices from Linux dce_12_0_offset.h plus the Vega10
+	 * SOC15 DCE segment-2 base. Reads are diagnostic only. */
+	static const struct {
+		const char *name;
+		uint32_t offset;
+	} regs[] = {
+		{ "DCP0_GRPH_ENABLE", 0x3a1a * 4 },
+		{ "DCP0_GRPH_CONTROL", 0x3a1b * 4 },
+		{ "DCP0_GRPH_PRIMARY_SURFACE_ADDRESS", 0x3a1e * 4 },
+		{ "DCP0_GRPH_PITCH", 0x3a20 * 4 },
+		{ "SCL0_VIEWPORT_START", 0x3b6f * 4 },
+		{ "SCL0_VIEWPORT_SIZE", 0x3b70 * 4 },
+		{ "CRTC0_CRTC_H_TOTAL", 0x3b93 * 4 },
+		{ "CRTC0_CRTC_V_TOTAL", 0x3b9a * 4 },
+		{ "CRTC0_CRTC_CONTROL", 0x3baf * 4 },
+		{ "CRTC0_CRTC_BLANK_CONTROL", 0x3bb0 * 4 },
+	};
+	unsigned int i;
+
+	if (ip != ATOMFIRMWARE_DCE12 || !ctx->card->mmio_base)
+		return;
+
+	for (i = 0; i < ARRAY_SIZE(regs); i++)
+		printk(BIOS_INFO, "ATOMBIOS: %s[0x%05x] = 0x%08x\n",
+		       regs[i].name, regs[i].offset,
+		       atombios_mmio_read(ctx, regs[i].offset));
+}
+
+static void atomfirmware_diagnostics(struct atom_context *ctx, size_t bios_size,
+				     uint16_t device_id)
+{
+	enum atomfirmware_display_ip ip = atomfirmware_display_ip(device_id);
+	const void *table;
+	size_t table_size;
+	struct atom_v2_display_info display;
+	struct atom_v2_firmware_info firmware;
+	struct atom_v2_dce_info dce;
+	unsigned int i;
+
+	printk(BIOS_INFO, "ATOMBIOS: AtomFirmware v2, display IP %s\n",
+	       atomfirmware_display_ip_name(ip));
+
+	atomfirmware_log_command_revision(ctx, bios_size, "ASIC_Init", cmd_idx.asic_init);
+	atomfirmware_log_command_revision(ctx, bios_size, "DIGxEncoderControl",
+					  cmd_idx.dig_encoder_ctrl);
+	atomfirmware_log_command_revision(ctx, bios_size, "DIG1TransmitterControl",
+					  cmd_idx.dig1_xmtr_ctrl);
+	atomfirmware_log_command_revision(ctx, bios_size, "SetPixelClock",
+					  cmd_idx.set_pixel_clock);
+	atomfirmware_log_command_revision(ctx, bios_size, "SetCRTC_UsingDTDTiming",
+					  cmd_idx.set_crtc_using_dtd);
+	atomfirmware_log_command_revision(ctx, bios_size, "SelectCRTC_Source",
+					  cmd_idx.select_crtc_source);
+	atomfirmware_log_command_revision(ctx, bios_size, "BlankCRTC", cmd_idx.blank_crtc);
+	atomfirmware_log_command_revision(ctx, bios_size, "EnableCRTC", cmd_idx.enable_crtc);
+	atomfirmware_log_command_revision(ctx, bios_size, "EnableDispPowerGating",
+					  cmd_idx.enable_disp_power_gating);
+	atomfirmware_log_command_revision(ctx, bios_size, "ProcessI2cChannelTransaction",
+					  cmd_idx.process_i2c);
+	atomfirmware_log_command_revision(ctx, bios_size, "ProcessAuxChannelTransaction",
+					  cmd_idx.process_aux);
+
+	if (!atom_v2_get_table(ctx->bios, bios_size, ctx->data_table,
+			       cmd_idx.data_object_header, &table, &table_size) &&
+	    !atom_v2_parse_display_object_info(table, table_size, &display)) {
+		printk(BIOS_INFO,
+		       "ATOMBIOS: DisplayObjectInfo %u.%u paths=%u supported=0x%04x\n",
+		       display.format_revision, display.content_revision,
+		       display.path_count, display.supported_devices);
+		for (i = 0; i < display.path_count; i++) {
+			const struct atom_v2_display_path *path = &display.paths[i];
+
+			printk(BIOS_INFO,
+			       "ATOMBIOS: v2 path %u: conn=0x%04x enc=0x%04x ext=0x%04x "
+			       "tag=0x%04x dig=%u phy=%u i2c=%s0x%02x hpd=%s0x%02x caps=%s0x%08x\n",
+			       i, path->display_objid, path->encoder_objid,
+			       path->ext_encoder_objid, path->device_tag,
+			       path->dig_encoder, path->phy_id,
+			       path->i2c_valid ? "" : "n/a ", path->i2c_id,
+			       path->hpd_valid ? "" : "n/a ", path->hpd_pin,
+			       path->encoder_caps_valid ? "" : "n/a ", path->encoder_caps);
+		}
+	} else {
+		printk(BIOS_WARNING, "ATOMBIOS: malformed or unsupported DisplayObjectInfo\n");
+	}
+
+	if (!atom_v2_get_table(ctx->bios, bios_size, ctx->data_table,
+			       cmd_idx.data_firmware_info, &table, &table_size) &&
+	    !atom_v2_parse_firmware_info(table, table_size, &firmware))
+		printk(BIOS_INFO,
+		       "ATOMBIOS: FirmwareInfo %u.%u fw=0x%08x sclk=%u mclk=%u "
+		       "scratch=0x%08x mc=0x%016llx caps=0x%08x\n",
+		       firmware.format_revision, firmware.content_revision,
+		       firmware.firmware_revision, firmware.boot_sclk_10khz,
+		       firmware.boot_mclk_10khz, firmware.scratch_reg_start,
+		       (unsigned long long)firmware.mc_base, firmware.firmware_capability);
+	else
+		printk(BIOS_WARNING, "ATOMBIOS: malformed or unsupported FirmwareInfo\n");
+
+	if (!atom_v2_get_table(ctx->bios, bios_size, ctx->data_table,
+			       cmd_idx.data_dce_info, &table, &table_size) &&
+	    !atom_v2_parse_dce_info(table, table_size, &dce))
+		printk(BIOS_INFO,
+		       "ATOMBIOS: DCE_Info %u.%u dispclk=%u refclk=%u dpphy=%u i2c=%u "
+		       "ip=%u-%u pipes=%u vbios_pipes=%u pplls=%u phys=%u aux=%u caps=0x%08x\n",
+		       dce.format_revision, dce.content_revision, dce.boot_dispclk_10khz,
+		       dce.dce_refclk_10khz, dce.dpphy_refclk_10khz,
+		       dce.i2c_refclk_10khz, dce.min_version, dce.max_version,
+		       dce.max_pipes, dce.max_vbios_pipes, dce.max_pplls,
+		       dce.max_phys, dce.max_aux_pairs, dce.display_caps);
+	else
+		printk(BIOS_WARNING, "ATOMBIOS: malformed or unsupported DCE_Info\n");
+
+	atomfirmware_log_registers(ctx, ip);
+}
+
+static int atomfirmware_asic_init(struct atom_context *ctx,
+				  const struct atom_v2_firmware_info *fw)
+{
+	uint32_t params[18] = { 0 };
+	uint8_t format_revision;
+	uint8_t content_revision;
+
+	if (!atom_parse_cmd_header(ctx, cmd_idx.asic_init, &format_revision,
+				   &content_revision) ||
+	    format_revision != 2 || content_revision < 1)
+		return -1;
+
+	params[0] = fw->boot_sclk_10khz & 0x00ffffff;
+	params[1] = (fw->boot_mclk_10khz & 0x00ffffff) | (0x20 << 24);
+
+	return atom_execute_table(ctx, cmd_idx.asic_init, params, sizeof(params));
+}
+
+#define DCN10_LVTMA_PWRSEQ_CNTL		((0x34c0 + 0x2883) * 4)
+#define DCN10_LVTMA_PWRSEQ_STATE	((0x34c0 + 0x2884) * 4)
+
+static int atomfirmware_power_edp(struct atom_context *ctx)
+{
+	struct atombios_display_path path = {
+		.connector_type = 2,
+		.hpd_id = 0,
+		.dig_encoder = 0,
+		.phy_id = 0,
+		.encoder_mode = ATOM_ENCODER_MODE_DP,
+		.dp_lane_count = 4,
+		.connector_obj_id = CONNECTOR_OBJECT_ID_eDP,
+	};
+
+	/* eDP T12 requires at least 500 ms between panel power cycles. */
+	mdelay(500);
+	if (atombios_transmitter_control(ctx, &path, 0,
+					 ATOM_TRANSMITTER_ACTION_POWER_ON, 4, 0))
+		return -1;
+	mdelay(10);
+	printk(BIOS_INFO,
+	       "ATOMBIOS: DCN1 eDP power sequence cntl=0x%08x state=0x%08x\n",
+	       atombios_mmio_read(ctx, DCN10_LVTMA_PWRSEQ_CNTL),
+	       atombios_mmio_read(ctx, DCN10_LVTMA_PWRSEQ_STATE));
+	return 0;
+}
+
+static int atomfirmware_init_display_pipes(struct atom_context *ctx, uint8_t pipe_count)
+{
+	uint32_t params[5] = { 0 };
+	uint8_t pipe;
+
+	if (!pipe_count || pipe_count > 6)
+		return -1;
+
+	/* Linux dcn10_bios_golden_init(): global init, then disable every pipe. */
+	params[0] = ATOM_INIT << 8;
+	if (atombios_exec(ctx, cmd_idx.enable_disp_power_gating,
+			 params, sizeof(params)))
+		return -1;
+	for (pipe = 0; pipe < pipe_count; pipe++) {
+		params[0] = pipe | (ATOM_DISABLE << 8);
+		if (atombios_exec(ctx, cmd_idx.enable_disp_power_gating,
+				 params, sizeof(params)))
+			return -1;
+	}
+	return 0;
+}
+
+static struct atombios_display_path
+atomfirmware_edp_path(const struct atom_v2_display_path *v2_path)
+{
+	struct atombios_display_path path = {
+		.connector_type = 2,
+		.encoder_obj_id = atombios_object_id(v2_path->encoder_objid),
+		.i2c_line = v2_path->i2c_id,
+		.i2c_valid = v2_path->i2c_valid,
+		.hpd_id = v2_path->hpd_valid ? v2_path->hpd_pin : v2_path->phy_id,
+		.dig_encoder = v2_path->dig_encoder,
+		.phy_id = v2_path->phy_id,
+		.encoder_mode = ATOM_ENCODER_MODE_DP,
+		.pll_id = ATOM_COMBOPHY_PLL0 + v2_path->phy_id,
+		.tx_refclk = ATOM_COMBOPHY_PLL0 + v2_path->phy_id,
+		.connector_obj_id = CONNECTOR_OBJECT_ID_eDP,
+		.device_tag = v2_path->device_tag,
+	};
+
+	return path;
+}
+
+static int atomfirmware_prepare_edp_link(struct atom_context *ctx,
+					 const struct atom_v2_display_path *v2_path,
+					 const struct edid_mode *mode,
+					 struct atombios_display_path *path)
+{
+	uint16_t pixel_clock_10khz = mode->pixel_clock / 10;
+
+	*path = atomfirmware_edp_path(v2_path);
+	/* DCN owns OTG timing and blanking; Atom owns PLL, DIG and PHY services. */
+	return atombios_dp_prepare_link(ctx, path, mode->pixel_clock) ||
+		atombios_transmitter_control(ctx, path, pixel_clock_10khz,
+					    ATOM_TRANSMITTER_ACTION_INIT, 0, 0) ||
+		atombios_dig_encoder_setup(ctx, path, pixel_clock_10khz,
+					   ATOM_ENCODER_CMD_STREAM_SETUP,
+					   PANEL_8BIT_PER_COLOR) ||
+		atombios_dig_encoder_setup(ctx, path, pixel_clock_10khz,
+					   ATOM_ENCODER_CMD_SETUP_PANEL_MODE,
+					   PANEL_8BIT_PER_COLOR) ||
+		atombios_select_crtc_source(ctx, path, ATOM_CRTC1) ||
+		atombios_set_pixel_clock(ctx, path, pixel_clock_10khz, ATOM_CRTC1);
+}
+
+static int atomfirmware_train_edp_link(struct atom_context *ctx,
+				       struct atombios_display_path *path,
+				       const struct edid_mode *mode)
+{
+	uint16_t pixel_clock_10khz = mode->pixel_clock / 10;
+
+	return atombios_transmitter_control(ctx, path, pixel_clock_10khz,
+					    ATOM_TRANSMITTER_ACTION_ENABLE, 0, 0) ||
+		atombios_dp_link_train(ctx, path, pixel_clock_10khz,
+				       path->i2c_line, path->hpd_id);
+}
+
+static int atomfirmware_enable_edp_backlight(struct atom_context *ctx,
+					     struct atombios_display_path *path,
+					     const struct edid_mode *mode)
+{
+	return atombios_transmitter_control(ctx, path, mode->pixel_clock / 10,
+					    ATOM_TRANSMITTER_ACTION_LCD_BLON, 0, 0);
+}
+
 /* ---- Main init entry point ---- */
 
-static void atombios_init(struct device *dev)
+void amd_atombios_init(struct device *dev)
 {
 	struct card_info *card;
 	struct atom_context *ctx;
+	struct atom_context v2_ctx;
+	struct atom_v2_rom_info v2_rom;
+	struct atom_v2_display_info v2_display;
+	struct atom_v2_firmware_info v2_fw;
+	struct atom_v2_dce_info v2_dce;
+	const void *v2_table;
+	size_t v2_table_size;
 	void *vbios;
+	size_t vbios_size;
 	resource_t mmio_bar, fb_bar;
+	struct resource *fb_res;
+	size_t fb_size = 0;
 	void *mmio_base;
 	uint32_t *scratch;
 	int crtc_id = ATOM_CRTC1;
@@ -4285,11 +4666,18 @@ static void atombios_init(struct device *dev)
 	struct edid edid;
 	uint16_t pixel_clock_10khz;
 	bool asic_init_ok = false;
+	bool expected_v2 = atomfirmware_display_ip(dev->device) !=
+		ATOMFIRMWARE_DISPLAY_IP_UNKNOWN;
 	struct atombios_gpu_profile gpu = atombios_get_gpu_profile(dev->device);
 	int i;
 
 	printk(BIOS_INFO, "ATOMBIOS: initializing AMD GPU %04x:%04x\n",
 	       dev->vendor, dev->device);
+
+	if (!CONFIG(MAINBOARD_DO_NATIVE_VGA_INIT)) {
+		printk(BIOS_INFO, "ATOMBIOS: native graphics initialization disabled\n");
+		return;
+	}
 
 	if (!gpu.supported || !gpu.has_display) {
 		printk(BIOS_WARNING,
@@ -4302,24 +4690,33 @@ static void atombios_init(struct device *dev)
 	mmio_bar = atombios_get_bar(dev, AMD_GPU_MMIO_BAR);
 	if (!mmio_bar)
 		mmio_bar = atombios_get_bar(dev, PCI_BASE_ADDRESS_2);
-	if (!mmio_bar) {
+	if (!mmio_bar && !expected_v2) {
 		printk(BIOS_ERR, "ATOMBIOS: could not find MMIO BAR\n");
 		return;
 	}
 	mmio_base = (void *)(uintptr_t)mmio_bar;
-	printk(BIOS_INFO, "ATOMBIOS: MMIO base at %p\n", mmio_base);
+	if (mmio_bar)
+		printk(BIOS_INFO, "ATOMBIOS: MMIO base at %p\n", mmio_base);
+	else
+		printk(BIOS_WARNING, "ATOMBIOS: MMIO BAR unavailable for diagnostics\n");
 
 	/* Get framebuffer BAR.  This is often a 64-bit BAR above 4 GiB. */
 	fb_bar = atombios_get_bar(dev, AMD_GPU_FB_BAR);
-	if (!fb_bar) {
+	if (!fb_bar && !expected_v2) {
 		printk(BIOS_ERR, "ATOMBIOS: could not find FB BAR\n");
 		return;
 	}
-	printk(BIOS_INFO, "ATOMBIOS: framebuffer aperture at 0x%llx\n",
-	       (unsigned long long)fb_bar);
+	if (fb_bar) {
+		fb_res = probe_resource(dev, AMD_GPU_FB_BAR);
+		if (fb_res)
+			fb_size = fb_res->size;
+		printk(BIOS_INFO, "ATOMBIOS: framebuffer aperture at 0x%llx\n",
+		       (unsigned long long)fb_bar);
+	} else
+		printk(BIOS_WARNING, "ATOMBIOS: framebuffer BAR unavailable for diagnostics\n");
 
 	/* Load VBIOS */
-	vbios = load_vbios(dev);
+	vbios = load_vbios(dev, &vbios_size);
 	if (!vbios)
 		return;
 
@@ -4337,6 +4734,167 @@ static void atombios_init(struct device *dev)
 	card->pll_write = cail_pll_write;
 	card->pll_read = cail_pll_read;
 
+	if (expected_v2) {
+		if (atom_v2_parse_rom_header(vbios, vbios_size, &v2_rom)) {
+			printk(BIOS_WARNING,
+			       "ATOMBIOS: malformed or unsupported AtomFirmware v2 ROM header\n");
+			return;
+		}
+
+		memset(&v2_ctx, 0, sizeof(v2_ctx));
+		v2_ctx.card = card;
+		v2_ctx.bios = vbios;
+		v2_ctx.cmd_table = v2_rom.command_table_offset;
+		v2_ctx.data_table = v2_rom.data_table_offset;
+		atombios_init_cmd_indices_v2(&cmd_idx);
+		atomfirmware_diagnostics(&v2_ctx, vbios_size, dev->device);
+
+		if (!mmio_base) {
+			printk(BIOS_ERR, "ATOMBIOS: MMIO BAR required for v2 ASIC_Init\n");
+			return;
+		}
+		if (atom_v2_get_table(vbios, vbios_size, v2_rom.data_table_offset,
+				      DATA_IDX_V2(indirectioaccess), &v2_table,
+				      &v2_table_size) || v2_table_size < 4) {
+			printk(BIOS_ERR, "ATOMBIOS: v2 IndirectIOAccess table unavailable\n");
+			return;
+		}
+		atom_initialize_iio(&v2_ctx,
+				    (const uint8_t *)v2_table - (const uint8_t *)vbios + 4);
+		if (!v2_ctx.iio) {
+			printk(BIOS_ERR, "ATOMBIOS: failed to initialize v2 indirect I/O\n");
+			return;
+		}
+
+		scratch = calloc(ATOM_SCRATCH_SIZE_DWORDS, sizeof(uint32_t));
+		if (!scratch) {
+			printk(BIOS_ERR, "ATOMBIOS: failed to allocate scratch memory\n");
+			return;
+		}
+		v2_ctx.scratch = scratch;
+		v2_ctx.scratch_size_bytes = ATOM_SCRATCH_SIZE_DWORDS * sizeof(uint32_t);
+
+		if (atom_v2_get_table(vbios, vbios_size, v2_rom.data_table_offset,
+				      DATA_IDX_V2(firmwareinfo), &v2_table,
+				      &v2_table_size) ||
+		    atom_v2_parse_firmware_info(v2_table, v2_table_size, &v2_fw)) {
+			printk(BIOS_ERR, "ATOMBIOS: v2 FirmwareInfo unavailable for ASIC_Init\n");
+			return;
+		}
+		if (atom_v2_get_table(vbios, vbios_size, v2_rom.data_table_offset,
+				      DATA_IDX_V2(dce_info), &v2_table, &v2_table_size) ||
+		    atom_v2_parse_dce_info(v2_table, v2_table_size, &v2_dce)) {
+			printk(BIOS_ERR, "ATOMBIOS: v2 DCE_Info unavailable for DCN setup\n");
+			return;
+		}
+		if (atomfirmware_asic_init(&v2_ctx, &v2_fw)) {
+			printk(BIOS_ERR, "ATOMBIOS: AtomFirmware v2 ASIC_Init failed\n");
+			return;
+		}
+		printk(BIOS_INFO, "ATOMBIOS: AtomFirmware v2 ASIC_Init complete\n");
+		if (dev->device == 0x15d8) {
+			dcn10_disable_vga(mmio_base);
+			if (atomfirmware_init_display_pipes(&v2_ctx, v2_dce.max_pipes) ||
+			    dcn10_cold_init(mmio_base, v2_dce.max_pipes)) {
+				printk(BIOS_ERR, "ATOMBIOS: DCN1 display-pipe init failed\n");
+				return;
+			}
+			printk(BIOS_INFO, "ATOMBIOS: DCN1 display pipe initialized\n");
+			if (atomfirmware_power_edp(&v2_ctx)) {
+				printk(BIOS_ERR, "ATOMBIOS: DCN1 eDP panel power-on failed\n");
+				return;
+			}
+			printk(BIOS_INFO, "ATOMBIOS: DCN1 eDP panel powered on\n");
+		}
+
+		if (atom_v2_get_table(vbios, vbios_size, v2_rom.data_table_offset,
+				      DATA_IDX_V2(displayobjectinfo), &v2_table,
+				      &v2_table_size) ||
+		    atom_v2_parse_display_object_info(v2_table, v2_table_size,
+					      &v2_display)) {
+			printk(BIOS_ERR, "ATOMBIOS: v2 display paths unavailable\n");
+			return;
+		}
+
+		for (i = 0; i < v2_display.path_count; i++) {
+			const struct atom_v2_display_path *path = &v2_display.paths[i];
+			uint8_t dpcd[3];
+			uint8_t hpd_id;
+
+			if (!path->i2c_valid || path->dig_encoder == 0xff)
+				continue;
+			hpd_id = path->hpd_valid ? path->hpd_pin : path->phy_id;
+			if (dp_aux_native_read(&v2_ctx, path->i2c_id, hpd_id,
+					       DP_DPCD_REV, dpcd, sizeof(dpcd))) {
+				printk(BIOS_INFO,
+				       "ATOMBIOS: v2 path %d no DPCD response on AUX 0x%02x HPD%u\n",
+				       i, path->i2c_id, hpd_id + 1);
+				continue;
+			}
+
+			printk(BIOS_INFO,
+			       "ATOMBIOS: v2 path %d AUX detected DPCD %x.%x rate=0x%02x lanes=%u\n",
+			       i, dpcd[0] >> 4, dpcd[0] & 0xf, dpcd[1],
+			       dpcd[2] & 0x1f);
+			if (!atombios_dp_read_edid(&v2_ctx, path->i2c_id, hpd_id,
+						     edid_raw) &&
+			    decode_edid(edid_raw, EDID_BLOCK_SIZE, &edid) == EDID_CONFORMANT) {
+				printk(BIOS_INFO,
+				       "ATOMBIOS: v2 display path %d: %s %dx%d @ %u kHz\n",
+				       i, edid.ascii_string, edid.mode.ha, edid.mode.va,
+				       edid.mode.pixel_clock);
+				if (dev->device == 0x15d8) {
+					struct dcn10_timing timing = {
+						.h_active = edid.mode.ha,
+						.h_blank = edid.mode.hbl,
+						.h_front_porch = edid.mode.hso,
+						.h_sync_width = edid.mode.hspw,
+						.v_active = edid.mode.va,
+						.v_blank = edid.mode.vbl,
+						.v_front_porch = edid.mode.vso,
+						.v_sync_width = edid.mode.vspw,
+						.pixel_clock_khz = edid.mode.pixel_clock,
+						.ref_clock_khz = v2_dce.dce_refclk_10khz * 10,
+						.disp_clock_khz = v2_dce.boot_dispclk_10khz * 10,
+						.hsync_positive = edid.mode.phsync,
+						.vsync_positive = edid.mode.pvsync,
+					};
+					struct atombios_display_path edp_path;
+					uint32_t pitch;
+
+					if (atomfirmware_prepare_edp_link(&v2_ctx, path, &edid.mode,
+								       &edp_path) ||
+					    dcn10_program_stream(mmio_base, &timing) ||
+					    atomfirmware_train_edp_link(&v2_ctx, &edp_path,
+								     &edid.mode)) {
+						printk(BIOS_ERR,
+						       "ATOMBIOS: DCN1 eDP stream/link setup failed\n");
+						return;
+					}
+					if (dcn10_program_scanout(mmio_base, v2_fw.mc_base,
+							   (void *)(uintptr_t)fb_bar, fb_size,
+							   &timing, &pitch)) {
+						printk(BIOS_ERR,
+						       "ATOMBIOS: DCN1 framebuffer scanout failed\n");
+						return;
+					}
+					if (atomfirmware_enable_edp_backlight(&v2_ctx, &edp_path,
+								       &edid.mode)) {
+						printk(BIOS_ERR,
+						       "ATOMBIOS: DCN1 backlight enable failed\n");
+						return;
+					}
+					fb_add_framebuffer_info(fb_bar, edid.mode.ha,
+							edid.mode.va, pitch, DEFAULT_BPP);
+					printk(BIOS_INFO,
+					       "ATOMBIOS: DCN1 framebuffer registered\n");
+				}
+				break;
+			}
+		}
+		return;
+	}
+
 	/* Parse the ATOM BIOS */
 	ctx = atom_parse(card, vbios);
 	if (!ctx) {
@@ -4347,13 +4905,10 @@ static void atombios_init(struct device *dev)
 	printk(BIOS_INFO, "ATOMBIOS: VBIOS \"%s\" date %s version 0x%08x\n",
 	       ctx->name, ctx->date, ctx->version);
 
-	/* Detect v1 (atombios.h) vs v2 (atomfirmware.h) table format.
-	 * v2 display object parsing is different, so fail safely until that
-	 * path is implemented instead of using v1 object-table casts. */
+	/* Never send an unexpected v2 image through legacy object-table casts. */
 	if (atombios_detect_v2(ctx)) {
-		atombios_init_cmd_indices_v2(&cmd_idx);
 		printk(BIOS_WARNING,
-		       "ATOMBIOS: atomfirmware.h (v2) display tables are not supported yet\n");
+		       "ATOMBIOS: unexpected AtomFirmware v2 image for legacy PCI ID\n");
 		atom_destroy(ctx);
 		return;
 	}
@@ -4729,15 +5284,15 @@ static struct device_operations atombios_gfx_ops = {
 	.read_resources   = pci_dev_read_resources,
 	.set_resources    = pci_dev_set_resources,
 	.enable_resources = pci_dev_enable_resources,
-	.init             = atombios_init,
+	.init             = amd_atombios_init,
 };
 
 /*
  * AMD GPU PCI device ID table.
  *
- * Complete list of pre-Vega AMD GPUs extracted from the Linux kernel
- * amdgpu and radeon drivers. Vega 10 and newer need a separate DCN backend;
- * registering them here would suppress their working GOP/option ROM.
+ * Complete list of AMD GPUs extracted from the Linux kernel amdgpu and
+ * radeon drivers. The native backend handles pre-Vega AtomBIOS devices;
+ * AtomFirmware v2 entries use the generation-aware v2 path.
  *
  * To add a new GPU, find its PCI device ID with "lspci -nn" and add
  * it to the appropriate section below.
@@ -4877,3 +5432,52 @@ static const struct pci_driver atombios_driver __pci_driver = {
 	.vendor  = PCI_VID_ATI,
 	.devices = atombios_device_ids,
 };
+
+#if CONFIG(DRIVERS_AMD_ATOMBIOS_V2)
+static struct device_operations atomfirmware_v2_gfx_ops = {
+	.read_resources   = pci_dev_read_resources,
+	.set_resources    = pci_dev_set_resources,
+	.enable_resources = pci_dev_enable_resources,
+	.init             = amd_atombios_init,
+};
+
+static const unsigned short atomfirmware_v2_device_ids[] = {
+	/* Vega10: DCE 12.0 */
+	0x6860, 0x6861, 0x6862, 0x6863, 0x6864, 0x6867, 0x6868, 0x6869,
+	0x686A, 0x686B, 0x686C, 0x686D, 0x686E, 0x686F, 0x687F,
+	/* Vega12: DCE 12.0 */
+	0x69A0, 0x69A1, 0x69A2, 0x69A3, 0x69AF,
+	/* Vega20: DCE 12.1 */
+	0x66A0, 0x66A1, 0x66A2, 0x66A3, 0x66A4, 0x66A7, 0x66AF,
+
+	/* Raven/Picasso: DCN 1.0/1.01 */
+	0x15DD, 0x15D8,
+
+	/* Navi10/12/14: DCN 2.0 */
+	0x7310, 0x7312, 0x7318, 0x7319, 0x731A, 0x731B, 0x731E, 0x731F,
+	0x7340, 0x7341, 0x7347, 0x734F,
+	0x7360, 0x7362,
+	/* Renoir: DCN 2.1 */
+	0x15E7, 0x1636, 0x1638, 0x164C,
+
+	/* Navi2x/Rembrandt: DCN 3.x */
+	0x73A0, 0x73A1, 0x73A2, 0x73A3, 0x73A5, 0x73A8, 0x73A9,
+	0x73AB, 0x73AC, 0x73AD, 0x73AE, 0x73AF, 0x73BF,
+	0x73C0, 0x73C1, 0x73C3, 0x73DA, 0x73DB, 0x73DC, 0x73DD, 0x73DE, 0x73DF,
+	0x73E0, 0x73E1, 0x73E2, 0x73E3, 0x73E8, 0x73E9,
+	0x73EA, 0x73EB, 0x73EC, 0x73ED, 0x73EF, 0x73FF,
+	0x7420, 0x7421, 0x7422, 0x7423, 0x7424, 0x743F,
+	0x164D, 0x1681,
+
+	/* Navi3x: DCN 3.x */
+	0x744C, 0x7448, 0x747E, 0x7480,
+
+	0,
+};
+
+static const struct pci_driver atomfirmware_v2_driver __pci_driver = {
+	.ops     = &atomfirmware_v2_gfx_ops,
+	.vendor  = PCI_VID_ATI,
+	.devices = atomfirmware_v2_device_ids,
+};
+#endif

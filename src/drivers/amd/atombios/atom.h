@@ -166,6 +166,7 @@ struct atom_context {
 extern int atom_debug;
 
 struct atom_context *atom_parse(struct card_info *card, void *bios);
+void atom_initialize_iio(struct atom_context *ctx, int base);
 int atom_execute_table(struct atom_context *ctx, int index,
 		       uint32_t *params, int params_size);
 int atom_asic_init(struct atom_context *ctx);

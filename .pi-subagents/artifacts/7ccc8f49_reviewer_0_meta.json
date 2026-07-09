@@ -1,0 +1,39 @@
+{
+  "runId": "7ccc8f49",
+  "agent": "reviewer",
+  "task": "Review the newly implemented DCN1 files for hardware-blocking correctness before a Vilboz flash. Read src/drivers/amd/atombios/dcn10.c, dcn10.h, dcn10_calc.c, the DCN1 orchestration in atombios_driver.c, and tests/drivers/dcn10-test.c. Compare exact fields/offsets/formulas against Linux 6.12 under /tmp/linux-6.12. Focus only on concrete blocker/high-severity mistakes, especially: incorrect register base/offset/mask; invalid GB_ADDR_CONFIG translation; framebuffer units; OTG lock/clock/timing; power gating; MPCC state; DPP/DSCL format; HUBP requestor/DLG/TTU completeness; watermark layout; whether zeroing VBLANK/NOM fields is valid without GPU VM/DCC; address latch and validation. Note that build/tests pass but tests may encode invented values. Do not edit. Return a concise ranked list with exact source evidence and state whether this is safe enough for one hardware validation.",
+  "exitCode": 1,
+  "usage": {
+    "input": 151728,
+    "output": 2911,
+    "cacheRead": 1127936,
+    "cacheWrite": 0,
+    "cost": 1.409938,
+    "turns": 15
+  },
+  "model": "openai-codex/gpt-5.5:high",
+  "attemptedModels": [
+    "openai-codex/gpt-5.5:high"
+  ],
+  "modelAttempts": [
+    {
+      "model": "openai-codex/gpt-5.5:high",
+      "success": false,
+      "exitCode": 1,
+      "error": "Subagent exceeded turn budget after 15 assistant turns (soft limit 12 + grace 3).",
+      "usage": {
+        "input": 151728,
+        "output": 2911,
+        "cacheRead": 1127936,
+        "cacheWrite": 0,
+        "cost": 1.409938,
+        "turns": 15
+      }
+    }
+  ],
+  "durationMs": 98124,
+  "toolCount": 25,
+  "error": "Subagent exceeded turn budget after 15 assistant turns (soft limit 12 + grace 3).",
+  "transcriptPath": "/home/arthur/src/coreboot/.pi-subagents/artifacts/7ccc8f49_reviewer_0_transcript.jsonl",
+  "timestamp": 1783678106980
+}

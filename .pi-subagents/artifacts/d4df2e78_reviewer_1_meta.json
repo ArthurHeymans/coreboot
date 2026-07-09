@@ -1,0 +1,37 @@
+{
+  "runId": "d4df2e78",
+  "agent": "reviewer",
+  "task": "[Read from: /home/arthur/src/coreboot/plan.md, /home/arthur/src/coreboot/progress.md]\n\nAudit /home/arthur/src/coreboot/src/drivers/amd/atombios/dcn10_calc.c and deadline/watermark programming in dcn10.c against Linux 6.12 DCN1 DML/RQ/DLG/TTU/hubbub code under /tmp/linux-6.12. Target exactly one Picasso eDP ARGB8888 linear physical-UMA plane, 1:1, no GPUVM/DCC. Find concrete wrong formulas, field packing, missing required registers, unsafe clocks/units, or invented constants. Do not edit. Provide source-backed minimal fixes and rank severity. Ignore lack of hardware validation.\n\n---\n**Output:**\nWrite your findings to exactly this path: /tmp/dcn10-review-dml.md\nThis path is authoritative for this run.\nIgnore any other output filename or output path mentioned elsewhere, including output destinations in the base agent prompt, system prompt, or task instructions.",
+  "exitCode": 0,
+  "usage": {
+    "input": 238770,
+    "output": 10591,
+    "cacheRead": 5072896,
+    "cacheWrite": 0,
+    "cost": 4.048028000000001,
+    "turns": 38
+  },
+  "model": "openai-codex/gpt-5.5:high",
+  "attemptedModels": [
+    "openai-codex/gpt-5.5:high"
+  ],
+  "modelAttempts": [
+    {
+      "model": "openai-codex/gpt-5.5:high",
+      "success": true,
+      "exitCode": 0,
+      "usage": {
+        "input": 238770,
+        "output": 10591,
+        "cacheRead": 5072896,
+        "cacheWrite": 0,
+        "cost": 4.048028000000001,
+        "turns": 38
+      }
+    }
+  ],
+  "durationMs": 324739,
+  "toolCount": 50,
+  "transcriptPath": "/home/arthur/src/coreboot/.pi-subagents/artifacts/d4df2e78_reviewer_1_transcript.jsonl",
+  "timestamp": 1783691340492
+}

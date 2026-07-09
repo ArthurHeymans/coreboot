@@ -1,0 +1,28 @@
+{
+  "runId": "88f40514-de5f-47b7-8d1a-4b47a02ddc2c",
+  "agent": "reviewer",
+  "task": "[Read from: /home/arthur/src/coreboot/plan.md, /home/arthur/src/coreboot/progress.md]\n\nProduce a complete read-only Linux 6.12 parity matrix for native Raven/Picasso DCN1 cold init. Compare /home/arthur/src/coreboot/src/drivers/amd/atombios/dcn10.c and v2 call path in atombios_driver.c against /tmp/linux-6.12/drivers/gpu/drm/amd/display/dc/hwss/dcn10/dcn10_hwseq.c plus dcn10_resource.c. Cover every ordered step from post-ASIC-init to one visible eDP plane: clocks/DCCG, BIOS golden init, pipe reset, power domains, VGA, link encoder, hubbub, VM/aperture, HUBP, DPP, DSCL, MPC, OPP/FMT, OTG, locking/latching, watermarks, validation. Cite exact Linux functions and register names. Explicitly classify required vs irrelevant for one linear non-DCC physical-UMA ARGB8888 pipe. No edits. Return a compact implementation checklist, not exploration prose.\n\n---\n**Output:**\nWrite your findings to exactly this path: /tmp/dcn10-hwseq-parity.md\nThis path is authoritative for this run.\nIgnore any other output filename or output path mentioned elsewhere, including output destinations in the base agent prompt, system prompt, or task instructions.\n\n## Acceptance Contract\nAcceptance level: attested\nCompletion is not accepted from prose alone. End with a structured acceptance report.\n\nCriteria:\n- criterion-1: Return concrete findings with file paths and severity when applicable\n\nRequired evidence: review-findings, residual-risks\n\nFinish with a fenced JSON block tagged `acceptance-report` in this shape:\nUse empty arrays when no items apply; array fields contain strings unless object entries are shown.\n```acceptance-report\n{\n  \"criteriaSatisfied\": [\n    {\n      \"id\": \"criterion-1\",\n      \"status\": \"satisfied\",\n      \"evidence\": \"specific proof\"\n    }\n  ],\n  \"changedFiles\": [\n    \"src/file.ts\"\n  ],\n  \"testsAddedOrUpdated\": [\n    \"test/file.test.ts\"\n  ],\n  \"commandsRun\": [\n    {\n      \"command\": \"command\",\n      \"result\": \"passed\",\n      \"summary\": \"short result\"\n    }\n  ],\n  \"validationOutput\": [\n    \"validation output or concise summary\"\n  ],\n  \"residualRisks\": [\n    \"none\"\n  ],\n  \"noStagedFiles\": true,\n  \"diffSummary\": \"short description of the diff\",\n  \"reviewFindings\": [\n    \"blocker: file.ts:12 - issue found, or no blockers\"\n  ],\n  \"manualNotes\": \"anything else the parent should know\"\n}\n```",
+  "exitCode": 1,
+  "model": "openai-codex/gpt-5.5:high",
+  "attemptedModels": [
+    "openai-codex/gpt-5.5:high"
+  ],
+  "modelAttempts": [
+    {
+      "model": "openai-codex/gpt-5.5:high",
+      "success": true,
+      "exitCode": 0,
+      "usage": {
+        "input": 246195,
+        "output": 12099,
+        "cacheRead": 2692608,
+        "cacheWrite": 0,
+        "cost": 2.940249,
+        "turns": 23
+      }
+    }
+  ],
+  "transcriptPath": "/home/arthur/src/coreboot/.pi-subagents/artifacts/88f40514-de5f-47b7-8d1a-4b47a02ddc2c_reviewer_0_transcript.jsonl",
+  "skills": [],
+  "timestamp": 1783675139790
+}

@@ -1,0 +1,28 @@
+{
+  "runId": "d3f95819",
+  "agent": "worker",
+  "task": "You are reviving a previous subagent conversation.\n\nOriginal run: f38caa86-ee94-41c6-9006-d354a6f959c6\nOriginal agent: worker\nOriginal session file: /home/arthur/.pi/agent/sessions/--home-arthur-src-coreboot--/2026-07-10T09-35-27-720Z_019f4b61-c9e8-70d9-a9db-536139a31e61.jsonl\n\nUse the stored session context as background. Answer the orchestrator's follow-up below. Do not assume the original child process is still alive.\n\nFollow-up:\nYour implementation exists and builds; the run failed only acceptance bookkeeping. Before finalizing, address these parent-review gaps and re-run verification:\n\n1. The fixed DPP path is not complete versus Linux dcn10_update_dpp(): program identity CM_BNS_VALUES_R/G/B (scale 0x2000, bias 0) and any required fixed RGB degamma/CSC bypass fields with exact named masks/offsets.\n2. The 1:1 DSCL_MODE_SCALING_444_BYPASS path still runs dpp1_dscl_set_lb(); add the exact LB_DATA_FORMAT and LB_MEMORY_CTRL state for fixed ARGB8888, 36-bpp line buffer/opaque plane as Linux computes. Confirm DSCL mode value and offsets from v6.12.\n3. min_set_viewport() writes secondary graphics viewports too; explicitly program them or provide source-backed proof they are irrelevant on non-stereo cold state.\n4. Re-check the fixed no-GPUVM/no-DCC DLG path. Linux dml1 still computes t_vm/t_r0 and VBLANK/NOM fields; do not call the implementation 'complete' while blindly zeroing every VBLANK/NOM register. Either derive/program the exact required fixed-case values, or prove with Linux field usage that each zeroed field is ignored when VM/DCC are disabled. Update structures/tests accordingly.\n5. The current fake-MMIO test does not actually record/assert write order despite the report claiming it does. Add a practical write-order assertion/hook, or correct the report and add the strongest feasible sequence invariant test.\n6. Verify every newly copied offset/mask via a script/command against Linux generated headers; include result.\n\nDo not broaden scope or touch unrelated files. Preserve current code. Re-run DCN tests, parser tests, Vilboz build, scoped checkpatch. Finish with concise blockers/residual risks and a valid structured acceptance report.\n\n## Acceptance Contract\nAcceptance level: reviewed\nCompletion is not accepted from prose alone. End with a structured acceptance report.\n\nCriteria:\n- criterion-1: Implement the requested change without widening scope\n- criterion-2: Return evidence sufficient for an independent acceptance review\n\nRequired evidence: changed-files, tests-added, commands-run, validation-output, residual-risks, no-staged-files\n\nReview gate: required by reviewer.\n\nFinish with a fenced JSON block tagged `acceptance-report` in this shape:\nUse empty arrays when no items apply; array fields contain strings unless object entries are shown.\n```acceptance-report\n{\n  \"criteriaSatisfied\": [\n    {\n      \"id\": \"criterion-1\",\n      \"status\": \"satisfied\",\n      \"evidence\": \"specific proof\"\n    }\n  ],\n  \"changedFiles\": [\n    \"src/file.ts\"\n  ],\n  \"testsAddedOrUpdated\": [\n    \"test/file.test.ts\"\n  ],\n  \"commandsRun\": [\n    {\n      \"command\": \"command\",\n      \"result\": \"passed\",\n      \"summary\": \"short result\"\n    }\n  ],\n  \"validationOutput\": [\n    \"validation output or concise summary\"\n  ],\n  \"residualRisks\": [\n    \"none\"\n  ],\n  \"noStagedFiles\": true,\n  \"diffSummary\": \"short description of the diff\",\n  \"reviewFindings\": [\n    \"blocker: file.ts:12 - issue found, or no blockers\"\n  ],\n  \"manualNotes\": \"anything else the parent should know\"\n}\n```",
+  "exitCode": 0,
+  "model": "openai-codex/gpt-5.6-sol:high",
+  "attemptedModels": [
+    "openai-codex/gpt-5.6-sol:high"
+  ],
+  "modelAttempts": [
+    {
+      "model": "openai-codex/gpt-5.6-sol:high",
+      "success": true,
+      "exitCode": 0,
+      "usage": {
+        "input": 869191,
+        "output": 28595,
+        "cacheRead": 11278336,
+        "cacheWrite": 0,
+        "cost": 10.842972999999997,
+        "turns": 93
+      }
+    }
+  ],
+  "transcriptPath": "/home/arthur/src/coreboot/.pi-subagents/artifacts/d3f95819_worker_transcript.jsonl",
+  "skills": [],
+  "timestamp": 1783679315687
+}

@@ -1,0 +1,39 @@
+{
+  "runId": "90b35cdf",
+  "agent": "reviewer",
+  "task": "[Read from: /home/arthur/src/coreboot/plan.md, /home/arthur/src/coreboot/progress.md]\n\nThoroughly compare /home/arthur/src/coreboot/src/drivers/amd/atombios/dcn10.c plane programming against Linux 6.12 DCN1 HUBP/DPP/DSCL/MPC/OPP implementation under /tmp/linux-6.12/drivers/gpu/drm/amd/display/dc/{hubp,dpp,mpc,opp}/dcn10. Identify every required register and sequence for one linear non-DCC ARGB8888 1366x768 plane, including requestor, DLG/TTU, VM/aperture, address, clocks, blank/unblank, and status checks. Do not edit. Return exact offsets/masks/formulas and source evidence.",
+  "exitCode": 1,
+  "usage": {
+    "input": 110659,
+    "output": 1510,
+    "cacheRead": 528896,
+    "cacheWrite": 0,
+    "cost": 0.863043,
+    "turns": 10
+  },
+  "model": "openai-codex/gpt-5.5:high",
+  "attemptedModels": [
+    "openai-codex/gpt-5.5:high"
+  ],
+  "modelAttempts": [
+    {
+      "model": "openai-codex/gpt-5.5:high",
+      "success": false,
+      "exitCode": 1,
+      "error": "Subagent exceeded turn budget after 10 assistant turns (soft limit 8 + grace 2).",
+      "usage": {
+        "input": 110659,
+        "output": 1510,
+        "cacheRead": 528896,
+        "cacheWrite": 0,
+        "cost": 0.863043,
+        "turns": 10
+      }
+    }
+  ],
+  "durationMs": 70861,
+  "toolCount": 20,
+  "error": "Subagent exceeded turn budget after 10 assistant turns (soft limit 8 + grace 2).",
+  "transcriptPath": "/home/arthur/src/coreboot/.pi-subagents/artifacts/90b35cdf_reviewer_1_transcript.jsonl",
+  "timestamp": 1783674687647
+}

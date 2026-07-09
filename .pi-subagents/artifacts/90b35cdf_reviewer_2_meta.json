@@ -1,0 +1,39 @@
+{
+  "runId": "90b35cdf",
+  "agent": "reviewer",
+  "task": "[Read from: /home/arthur/src/coreboot/plan.md, /home/arthur/src/coreboot/progress.md]\n\nAudit Linux 6.12 DCN1 clock/timing/hubbub programming required before visible scanout on Raven/Picasso. Compare against /home/arthur/src/coreboot/src/drivers/amd/atombios/dcn10.c. Inspect dcn10_optc.c, dce_clock_source.c, dcn10_hubbub.c, dcn_calcs.c/DML1, clock manager and dccg code. List all missing pixel-rate DTO/DCCG, OTG global sync, watermarks/arbitration, VM, and formatter steps with exact register fields and safe single-pipe calculations. Do not edit.",
+  "exitCode": 1,
+  "usage": {
+    "input": 26334,
+    "output": 1722,
+    "cacheRead": 68096,
+    "cacheWrite": 0,
+    "cost": 0.21737800000000002,
+    "turns": 10
+  },
+  "model": "openai-codex/gpt-5.5:high",
+  "attemptedModels": [
+    "openai-codex/gpt-5.5:high"
+  ],
+  "modelAttempts": [
+    {
+      "model": "openai-codex/gpt-5.5:high",
+      "success": false,
+      "exitCode": 1,
+      "error": "Subagent exceeded turn budget after 10 assistant turns (soft limit 8 + grace 2).",
+      "usage": {
+        "input": 26334,
+        "output": 1722,
+        "cacheRead": 68096,
+        "cacheWrite": 0,
+        "cost": 0.21737800000000002,
+        "turns": 10
+      }
+    }
+  ],
+  "durationMs": 103683,
+  "toolCount": 18,
+  "error": "Subagent exceeded turn budget after 10 assistant turns (soft limit 8 + grace 2).",
+  "transcriptPath": "/home/arthur/src/coreboot/.pi-subagents/artifacts/90b35cdf_reviewer_2_transcript.jsonl",
+  "timestamp": 1783674720476
+}

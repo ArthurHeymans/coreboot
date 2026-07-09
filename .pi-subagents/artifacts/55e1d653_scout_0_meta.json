@@ -1,0 +1,37 @@
+{
+  "runId": "55e1d653",
+  "agent": "scout",
+  "task": "Read-only. In /tmp/linux-6.12 AMD DCN1 sources, derive the smallest exact register sequence to display a linear XRGB8888 framebuffer at physical 0xe0000000, mode 1366x768, pitch 1366*4, using pipe0 on Raven/Picasso DCN1 after OTG timing and DP link are already enabled. Focus HUBP0, DPP0, MPC/MPCC0, OPP0 routing and blank/unblank. Provide register names, offset composition (DCN segment bases), fields/masks/values, and source file/line evidence. Do not edit.",
+  "exitCode": 0,
+  "usage": {
+    "input": 75483,
+    "output": 5546,
+    "cacheRead": 178688,
+    "cacheWrite": 0,
+    "cost": 0.6331390000000001,
+    "turns": 6
+  },
+  "model": "openai-codex/gpt-5.6-sol:low",
+  "attemptedModels": [
+    "openai-codex/gpt-5.6-sol:low"
+  ],
+  "modelAttempts": [
+    {
+      "model": "openai-codex/gpt-5.6-sol:low",
+      "success": true,
+      "exitCode": 0,
+      "usage": {
+        "input": 75483,
+        "output": 5546,
+        "cacheRead": 178688,
+        "cacheWrite": 0,
+        "cost": 0.6331390000000001,
+        "turns": 6
+      }
+    }
+  ],
+  "durationMs": 122637,
+  "toolCount": 25,
+  "transcriptPath": "/home/arthur/src/coreboot/.pi-subagents/artifacts/55e1d653_scout_0_transcript.jsonl",
+  "timestamp": 1783669083814
+}

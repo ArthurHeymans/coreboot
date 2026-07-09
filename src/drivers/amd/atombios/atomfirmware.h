@@ -30,6 +30,8 @@
 #ifndef ATOMFIRMWARE_H
 #define ATOMFIRMWARE_H
 
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 /*
@@ -161,5 +163,157 @@ struct atom_master_list_of_data_tables_v2_1 {
 	uint16_t sw_datatable33;           /* 33 */
 	uint16_t sw_datatable34;           /* 34 */
 };
+
+enum atom_object_record_type_id {
+	ATOM_V2_I2C_RECORD_TYPE = 1,
+	ATOM_V2_HPD_INT_RECORD_TYPE = 2,
+	ATOM_V2_ENCODER_CAP_RECORD_TYPE = 20,
+	ATOM_V2_RECORD_END_TYPE = 0xff,
+};
+
+#pragma pack(push, 1)
+
+struct atom_v2_common_table_header {
+	uint16_t structure_size;
+	uint8_t format_revision;
+	uint8_t content_revision;
+};
+
+struct atom_v2_common_record_header {
+	uint8_t record_type;
+	uint8_t record_size;
+};
+
+struct atom_v2_i2c_record {
+	struct atom_v2_common_record_header header;
+	uint8_t i2c_id;
+	uint8_t i2c_slave_addr;
+};
+
+struct atom_v2_hpd_int_record {
+	struct atom_v2_common_record_header header;
+	uint8_t pin_id;
+	uint8_t plugin_pin_state;
+};
+
+struct atom_v2_encoder_caps_record {
+	struct atom_v2_common_record_header header;
+	uint32_t encoder_caps;
+};
+
+struct atom_display_object_path_v2 {
+	uint16_t display_objid;
+	uint16_t display_record_offset;
+	uint16_t encoder_objid;
+	uint16_t ext_encoder_objid;
+	uint16_t encoder_record_offset;
+	uint16_t ext_encoder_record_offset;
+	uint16_t device_tag;
+	uint8_t priority_id;
+	uint8_t reserved;
+};
+
+struct atom_display_object_path_v3 {
+	uint16_t display_objid;
+	uint16_t display_record_offset;
+	uint16_t encoder_objid;
+	uint16_t reserved1;
+	uint16_t reserved2;
+	uint16_t reserved3;
+	uint16_t device_tag;
+	uint16_t reserved4;
+};
+
+#pragma pack(pop)
+
+struct atom_display_object_info_v1_4 {
+	struct atom_v2_common_table_header header;
+	uint16_t supported_devices;
+	uint8_t path_count;
+	uint8_t reserved;
+	struct atom_display_object_path_v2 paths[];
+};
+
+struct atom_display_object_info_v1_5 {
+	struct atom_v2_common_table_header header;
+	uint16_t supported_devices;
+	uint8_t path_count;
+	uint8_t reserved;
+	struct atom_display_object_path_v3 paths[];
+};
+
+#define ATOM_V2_MAX_DISPLAY_PATHS 8
+#define ATOM_V2_ID_NONE 0xff
+
+struct atom_v2_display_path {
+	uint16_t display_objid;
+	uint16_t encoder_objid;
+	uint16_t ext_encoder_objid;
+	uint16_t device_tag;
+	uint32_t encoder_caps;
+	uint8_t priority_id;
+	uint8_t i2c_id;
+	uint8_t i2c_slave_addr;
+	uint8_t hpd_pin;
+	uint8_t hpd_active;
+	uint8_t dig_encoder;
+	uint8_t phy_id;
+	bool i2c_valid;
+	bool hpd_valid;
+	bool encoder_caps_valid;
+};
+
+struct atom_v2_display_info {
+	uint16_t supported_devices;
+	uint8_t format_revision;
+	uint8_t content_revision;
+	uint8_t path_count;
+	struct atom_v2_display_path paths[ATOM_V2_MAX_DISPLAY_PATHS];
+};
+
+struct atom_v2_firmware_info {
+	uint8_t format_revision;
+	uint8_t content_revision;
+	uint32_t firmware_revision;
+	uint32_t boot_sclk_10khz;
+	uint32_t boot_mclk_10khz;
+	uint32_t firmware_capability;
+	uint32_t scratch_reg_start;
+	uint64_t mc_base;
+};
+
+struct atom_v2_dce_info {
+	uint8_t format_revision;
+	uint8_t content_revision;
+	uint32_t display_caps;
+	uint32_t boot_dispclk_10khz;
+	uint16_t dce_refclk_10khz;
+	uint16_t i2c_refclk_10khz;
+	uint16_t dpphy_refclk_10khz;
+	uint8_t min_version;
+	uint8_t max_version;
+	uint8_t max_pipes;
+	uint8_t max_vbios_pipes;
+	uint8_t max_pplls;
+	uint8_t max_phys;
+	uint8_t max_aux_pairs;
+};
+
+struct atom_v2_rom_info {
+	uint16_t command_table_offset;
+	uint16_t data_table_offset;
+};
+
+int atom_v2_parse_rom_header(const void *bios, size_t bios_size,
+			     struct atom_v2_rom_info *info);
+int atom_v2_get_table(const void *bios, size_t bios_size,
+		      size_t master_table_offset, size_t index,
+		      const void **table, size_t *table_size);
+int atom_v2_parse_display_object_info(const void *table, size_t table_size,
+				      struct atom_v2_display_info *info);
+int atom_v2_parse_firmware_info(const void *table, size_t table_size,
+				struct atom_v2_firmware_info *info);
+int atom_v2_parse_dce_info(const void *table, size_t table_size,
+			   struct atom_v2_dce_info *info);
 
 #endif /* ATOMFIRMWARE_H */

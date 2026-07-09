@@ -4,6 +4,8 @@ config DRIVERS_AMD_ATOMBIOS
 	bool "AMD AtomBIOS modesetting driver"
 	default n
 	depends on PCI
+	select MAINBOARD_HAS_NATIVE_VGA_INIT
+	select HAVE_LINEAR_FRAMEBUFFER if MAINBOARD_DO_NATIVE_VGA_INIT
 	help
 	  Native display initialization for pre-Vega AMD GPUs using the AtomBIOS
 	  interpreter. Executes ATOM command tables from the VBIOS to
@@ -15,5 +17,13 @@ config DRIVERS_AMD_ATOMBIOS
 
 	  The ATOM bytecode interpreter is architecture-independent and
 	  works on both x86 and non-x86 (e.g., ARM) platforms with PCIe
-	  AMD GPUs. Vega 10 and newer use AtomFirmware plus the DCN display
-	  engine and are intentionally left to a GOP/option ROM.
+	  AMD GPUs.
+
+config DRIVERS_AMD_ATOMBIOS_V2
+	bool "AMD AtomFirmware v2 initialization"
+	default y
+	depends on DRIVERS_AMD_ATOMBIOS
+	help
+	  Parse AtomFirmware v2 display topology and clock tables, initialize
+	  the ASIC through its command table, and log display diagnostics.
+	  This does not yet provide native DCE12 or DCN scanout.

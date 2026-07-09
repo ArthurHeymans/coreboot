@@ -60,7 +60,7 @@
 #define PLL_INDEX	2
 #define PLL_DATA	3
 
-#define ATOM_CMD_TIMEOUT_SEC	5
+#define ATOM_CMD_TIMEOUT_SEC	20
 
 typedef struct {
 	struct atom_context *ctx;
@@ -718,7 +718,8 @@ static void atom_op_div32(atom_exec_context *ctx, int *ptr, int arg)
 	if (src != 0) {
 		val64 = dst;
 		val64 |= ((uint64_t)ctx->ctx->divmul[1]) << 32;
-		ctx->ctx->divmul[0] = (uint32_t)(val64 / src);
+		val64 /= src;
+		ctx->ctx->divmul[0] = (uint32_t)val64;
 		ctx->ctx->divmul[1] = (uint32_t)(val64 >> 32);
 	} else {
 		ctx->ctx->divmul[0] = 0;
@@ -1319,7 +1320,7 @@ int atom_execute_table(struct atom_context *ctx, int index,
 
 static int atom_iio_len[] = { 1, 2, 3, 3, 3, 3, 4, 4, 4, 3 };
 
-static void atom_index_iio(struct atom_context *ctx, int base)
+void atom_initialize_iio(struct atom_context *ctx, int base)
 {
 	ctx->iio = calloc(256, sizeof(uint16_t));
 	if (!ctx->iio)
@@ -1564,7 +1565,7 @@ struct atom_context *atom_parse(struct card_info *card, void *bios)
 
 	ctx->cmd_table = CU16(base + ATOM_ROM_CMD_PTR);
 	ctx->data_table = CU16(base + ATOM_ROM_DATA_PTR);
-	atom_index_iio(ctx, CU16(ctx->data_table + ATOM_DATA_IIO_PTR) + 4);
+	atom_initialize_iio(ctx, CU16(ctx->data_table + ATOM_DATA_IIO_PTR) + 4);
 	if (!ctx->iio) {
 		atom_destroy(ctx);
 		return NULL;
