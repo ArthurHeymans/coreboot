@@ -109,8 +109,16 @@ PSP_APOB_BASE=$(CONFIG_PSP_APOB_DRAM_ADDRESS)
 # type = 0x62
 PSP_BIOSBIN_FILE=$(obj)/amd_biospsp.img
 PSP_ELF_FILE=$(objcbfs)/bootblock_fixed_data.elf
+ifeq ($(CONFIG_PSP_BIOSBIN_INCLUDES_CBFS),y)
+PSP_BOOTBLOCK_FILE=$(obj)/psp_bootblock.bin
+PSP_CBFS_FILE=$(obj)/psp_cbfs.bin
+PSP_BIOSBIN_SIZE=$(CONFIG_C_ENV_BOOTBLOCK_SIZE)
+PSP_BIOSBIN_DEST=$(call int-subtract, \
+	$(CONFIG_ROMSTAGE_ADDR) $(CONFIG_C_ENV_BOOTBLOCK_SIZE))
+else
 PSP_BIOSBIN_SIZE=$(shell $(READELF_bootblock) -Wl $(PSP_ELF_FILE) | grep LOAD | awk '{print $$5}')
 PSP_BIOSBIN_DEST=$(shell $(READELF_bootblock) -Wl $(PSP_ELF_FILE) | grep LOAD | awk '{print $$3}')
+endif
 
 ifneq ($(CONFIG_SOC_AMD_COMMON_BLOCK_APOB_NV_DISABLE),y)
 # type = 0x63 - construct APOB NV base/size from flash map
@@ -229,18 +237,67 @@ $(obj)/amdfw.rom:	$(call strip_quotes, $(PSP_BIOSBIN_FILE)) \
 		--location $(CONFIG_AMD_FWM_POSITION) \
 		--output $@
 
-#
-# Extracts everything from the ELF's first PT_LOAD area and compresses it.
-# This discards everything before PT_LOAD, every symbol, debug information
-# and relocations. The generated binary is expected to run at PSP_BIOSBIN_DEST
-# with a maximum size of PSP_BIOSBIN_SIZE. The entrypoint is fixed at
-# PSP_BIOSBIN_DEST + PSP_BIOSBIN_SIZE - 0x10.
-#
+ifeq ($(CONFIG_PSP_BIOSBIN_INCLUDES_CBFS),y)
+
+# Keep the embedded CBFS byte-compatible with the useful prefix of the normal RO
+# CBFS. The PSP-provided metadata cache can then be used for either copy.
+psp-cbfs-region-files = $(foreach file,$(call all-files-in-region,COREBOOT), \
+	$(if $(filter header_pointer apu/amdfw%,$(call extract_nth,2,$(file))),,$(file)))
+psp-cbfs-files = $(call sort-files,$(psp-cbfs-region-files))
+
+$(PSP_BOOTBLOCK_FILE): $(PSP_ELF_FILE)
+	@printf "    OBJCOPY    $(subst $(obj)/,,$(@))\n"
+	$(OBJCOPY_bootblock) -O binary $< $@
+
+$(PSP_CBFS_FILE): $(PSP_BOOTBLOCK_FILE) $(CBFSTOOL) \
+		$$(foreach file,$$(psp-cbfs-files),$$(call extract_nth,1,$$(file)))
+	rm -f $@.tmp
+	@printf "    CBFS       $(subst $(obj)/,,$(@))\n"
+	$(CBFSTOOL) $@.tmp create -m x86 -s $(CONFIG_C_ENV_BOOTBLOCK_SIZE) \
+		-B $(PSP_BOOTBLOCK_FILE)
+	$(foreach file,$(psp-cbfs-files),$(call cbfs-add-cmd,$(file),COREBOOT))
+	# The copied RO master header does not reserve this image's bootblock, so
+	# restore the bootblock after the last cbfstool mutation.
+	used=$$($(CBFSTOOL) $@.tmp truncate); \
+		bootblock_size=$$(wc -c < $(PSP_BOOTBLOCK_FILE)); \
+		test $$((used + bootblock_size)) -le $$(( $(CONFIG_C_ENV_BOOTBLOCK_SIZE) )); \
+		dd if=$(PSP_BOOTBLOCK_FILE) of=$@.tmp bs=1 \
+			seek=$$(( $(CONFIG_C_ENV_BOOTBLOCK_SIZE) - bootblock_size )) \
+			conv=notrunc 2>/dev/null
+	mv $@.tmp $@
+
+$(PSP_BIOSBIN_FILE): $(PSP_CBFS_FILE) $(AMDCOMPRESS)
+	rm -f $@
+	@printf "    AMDCOMPRS  $(subst $(obj)/,,$(@))\n"
+	$(AMDCOMPRESS) --infile $(PSP_CBFS_FILE) --outfile $@ --compress \
+		--maxsize $(PSP_BIOSBIN_SIZE)
+
+build_complete:: $(obj)/psp_cbfs_prefix_check
+
+$(obj)/psp_cbfs_prefix_check: $(obj)/coreboot.rom $(PSP_CBFS_FILE) \
+		$(PSP_BOOTBLOCK_FILE) $(CBFSTOOL)
+	@printf "    VERIFY     $(subst $(obj)/,,$(@))\n"
+	$(CBFSTOOL) $(obj)/coreboot.rom read -r COREBOOT -f $@.outer
+	used=$$($(CBFSTOOL) $(PSP_CBFS_FILE) truncate); \
+		cmp -n $$((used)) $(PSP_CBFS_FILE) $@.outer
+	bootblock_size=$$(wc -c < $(PSP_BOOTBLOCK_FILE)); \
+		tail -c $$bootblock_size $(PSP_CBFS_FILE) > $@.bootblock; \
+		cmp $(PSP_BOOTBLOCK_FILE) $@.bootblock
+	rm -f $@.outer $@.bootblock
+	touch $@
+
+else
+
+# Extract everything from the ELF's first PT_LOAD area and compress it. This
+# discards everything before PT_LOAD, every symbol, debug information and
+# relocations. The entrypoint is PSP_BIOSBIN_DEST + PSP_BIOSBIN_SIZE - 0x10.
 $(PSP_BIOSBIN_FILE): $(PSP_ELF_FILE) $(AMDCOMPRESS)
 	rm -f $@
 	@printf "    AMDCOMPRS  $(subst $(obj)/,,$(@))\n"
 	$(AMDCOMPRESS) --infile $(PSP_ELF_FILE) --outfile $@ --compress \
 		--maxsize $(PSP_BIOSBIN_SIZE)
+
+endif
 
 $(obj)/amdfw_a.rom: $(obj)/amdfw.rom
 	rm -f $@

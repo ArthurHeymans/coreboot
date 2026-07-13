@@ -2,6 +2,7 @@
 
 #include <boot_device.h>
 #include <endian.h>
+#include <fmap_config.h>
 #include <spi_flash.h>
 #include <amdblocks/psp.h>
 #include <amdblocks/spi.h>
@@ -15,8 +16,37 @@
 /* The ROM is memory mapped just below 4GiB. Form a pointer for the base. */
 #define rom_base ((void *)(uintptr_t)(0x100000000ULL-ROM_SIZE))
 
-static const struct mem_region_device boot_dev =
+static const struct mem_region_device spi_boot_dev =
 	MEM_REGION_DEV_RO_INIT(rom_base, ROM_SIZE);
+
+#if CONFIG(PSP_BIOSBIN_INCLUDES_CBFS) && !ENV_SMM
+
+#define psp_cbfs_base ((void *)(CONFIG_ROMSTAGE_ADDR - CONFIG_C_ENV_BOOTBLOCK_SIZE))
+
+static const struct mem_region_device psp_cbfs_dev =
+	MEM_REGION_DEV_RO_INIT(psp_cbfs_base, CONFIG_C_ENV_BOOTBLOCK_SIZE);
+
+static const struct xlate_window boot_dev_windows[] = {
+	{
+		.access_dev = &psp_cbfs_dev.rdev,
+		.sub_region = {
+			.offset = FMAP_SECTION_COREBOOT_START,
+			.size = CONFIG_C_ENV_BOOTBLOCK_SIZE,
+		},
+	},
+	{
+		.access_dev = &spi_boot_dev.rdev,
+		.sub_region = {
+			.offset = 0,
+			.size = ROM_SIZE,
+		},
+	},
+};
+
+static const struct xlate_region_device boot_dev =
+	XLATE_REGION_DEV_RO_INIT(boot_dev_windows, ROM_SIZE);
+
+#endif
 
 const struct region_device *boot_device_ro(void)
 {
@@ -33,7 +63,11 @@ const struct region_device *boot_device_ro(void)
 	/* FSP might reconfigure it, so initialize again in every stage */
 	fch_spi_configure_4dw_burst();
 
+#if CONFIG(PSP_BIOSBIN_INCLUDES_CBFS) && !ENV_SMM
 	return &boot_dev.rdev;
+#else
+	return &spi_boot_dev.rdev;
+#endif
 }
 
 uint32_t spi_flash_get_mmap_windows(struct flash_mmap_window *table)

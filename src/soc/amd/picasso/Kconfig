@@ -8,8 +8,8 @@ config SOC_AMD_PICASSO
 	select BOOT_DEVICE_SUPPORTS_WRITES if BOOT_DEVICE_SPI_FLASH
 	select CONSOLE_CBMEM_PRINT_PRE_BOOTBLOCK_CONTENTS if VBOOT_STARTS_BEFORE_BOOTBLOCK
 	select DRIVERS_USB_PCI_XHCI
-	select FSP_COMPRESS_FSP_M_LZMA
-	select FSP_COMPRESS_FSP_S_LZMA
+	select FSP_COMPRESS_FSP_M_LZMA if !PSP_BIOSBIN_INCLUDES_CBFS
+	select FSP_COMPRESS_FSP_S_LZMA if !PSP_BIOSBIN_INCLUDES_CBFS
 	select GENERIC_GPIO_LIB
 	select HAVE_ACPI_TABLES
 	select HAVE_CF9_RESET
@@ -163,6 +163,7 @@ config CBFS_MCACHE_SIZE
 
 config C_ENV_BOOTBLOCK_SIZE
 	hex
+	default 0x78b000 if PSP_BIOSBIN_INCLUDES_CBFS
 	default 0x20000
 	help
 	  Sets the size of the bootblock stage that should be loaded in DRAM.
@@ -171,6 +172,7 @@ config C_ENV_BOOTBLOCK_SIZE
 
 config ROMSTAGE_ADDR
 	hex
+	default 0x27b0000 if PSP_BIOSBIN_INCLUDES_CBFS
 	default 0x2050000
 	help
 	  Sets the address in DRAM where romstage should be loaded.
@@ -186,6 +188,7 @@ config FSP_HEADER_PATH
 
 config FSP_M_ADDR
 	hex
+	default 0x2830000 if PSP_BIOSBIN_INCLUDES_CBFS
 	default 0x20C0000
 	help
 	  Sets the address in DRAM where FSP-M should be loaded. cbfstool
@@ -341,6 +344,24 @@ config FSP_TEMP_RAM_SIZE
 	  The amount of coreboot-allocated heap and stack usage by the FSP.
 
 menu "PSP Configuration Options"
+
+config PSP_BIOSBIN_INCLUDES_CBFS
+	bool "Include the runtime CBFS in the PSP-loaded BIOS binary"
+	default y if BOARD_GOOGLE_VILBOZ
+	depends on BOARD_GOOGLE_VILBOZ
+	depends on RESET_VECTOR_IN_RAM
+	depends on !VBOOT_SLOTS_RW_A && !VBOOT_SLOTS_RW_AB
+	depends on !CBFS_VERIFICATION
+	select UNCOMPRESSED_RAMSTAGE
+	help
+	  Build a full-size copy of the RO CBFS layout with the bootblock at its
+	  end and package that complete image as the PSP BIOS binary. The x86
+	  stages use the PSP-loaded DRAM copy for CBFS reads while other boot-media
+	  access continues to use SPI flash. Stages and FSP binaries are left
+	  uncompressed because the complete PSP BIOS binary is compressed.
+
+	  RW-A/RW-B and CBFS verification are not supported by this experimental
+	  boot flow yet.
 
 config AMDFW_CONFIG_FILE
 	string

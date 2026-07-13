@@ -244,6 +244,7 @@ endchoice
 config COMPRESS_PRERAM_STAGES
 	bool "Compress romstage and verstage with LZ4"
 	depends on (HAVE_ROMSTAGE || HAVE_VERSTAGE) && NO_XIP_EARLY_STAGES
+	depends on !PSP_BIOSBIN_INCLUDES_CBFS
 	# Default value set at the end of the file
 	help
 	  Compress romstage and (if it exists) verstage with LZ4 to save flash
@@ -1580,6 +1581,7 @@ config MEMLAYOUT_LD_FILE
 # the mainboard if desired.
 config COMPRESS_PRERAM_STAGES
 	depends on (HAVE_ROMSTAGE || HAVE_VERSTAGE) && NO_XIP_EARLY_STAGES
+	depends on !PSP_BIOSBIN_INCLUDES_CBFS
 	default y
 
 config INCLUDE_CONFIG_FILE
