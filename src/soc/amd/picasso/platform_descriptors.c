@@ -23,3 +23,7 @@ struct picasso_smu_telemetry picasso_get_smu_telemetry(void)
 void __weak mainboard_update_picasso_smu_telemetry(struct picasso_smu_telemetry *telemetry)
 {
 }
+
+void __weak mb_pre_silicon_init(void)
+{
+}

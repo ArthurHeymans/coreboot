@@ -39,6 +39,7 @@ void mainboard_get_dxio_ddi_descriptors(
 		const dxio_descriptor **dxio_descs, size_t *dxio_num,
 		const ddi_descriptor **ddi_descs, size_t *ddi_num);
 
-void mb_pre_fspm(void);
+/* Called in romstage before the silicon initialization */
+void mb_pre_silicon_init(void);
 
 #endif /* AMD_PICASSO_PLATFORM_DESCRIPTORS_H */

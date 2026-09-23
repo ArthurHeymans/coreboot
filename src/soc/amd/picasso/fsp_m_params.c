@@ -14,8 +14,6 @@
 
 void __weak mainboard_updm_update(FSP_M_CONFIG *mupd) {}
 
-void __weak mb_pre_fspm(void) {}
-
 void platform_fsp_memory_init_params_cb(FSPM_UPD *mupd, uint32_t version)
 {
 	FSP_M_CONFIG *mcfg = &mupd->FspmConfig;
@@ -76,5 +74,5 @@ void platform_fsp_memory_init_params_cb(FSPM_UPD *mupd, uint32_t version)
 	mcfg->pspp_policy = config->pspp_policy;
 
 	mainboard_updm_update(mcfg);
-	mb_pre_fspm();
+	mb_pre_silicon_init();
 }
