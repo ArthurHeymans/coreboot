@@ -7,8 +7,10 @@ romstage-y += nbio.c
 romstage-y += psp.c
 romstage-y += smu.c
 
+ramstage-y += acp.c
 ramstage-y += apob.c
 ramstage-y += ccx.c
 ramstage-y += data_fabric.c
+ramstage-y += dxio.c
 ramstage-y += nbio.c
 ramstage-y += smu.c

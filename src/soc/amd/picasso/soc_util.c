@@ -62,9 +62,6 @@ static uint32_t get_internal_silicon_type(void)
 	return silicon_type;
 }
 
-#define SILICON_IS_MYSTERY_MEAT	(1 << 31)
-#define SILICON_IS_RV2		(1 << 30)
-
 static bool is_rv2_silicon(void)
 {
 	return get_internal_silicon_type() & SILICON_IS_RV2;

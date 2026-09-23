@@ -25,6 +25,10 @@ enum soc_type {
 	SOC_UNKNOWN,
 };
 
+/* Bits of the silicon ID reported by the SMU */
+#define SILICON_IS_MYSTERY_MEAT	(1 << 31)
+#define SILICON_IS_RV2		(1 << 30)
+
 enum socket_type get_socket_type(void);
 enum silicon_type get_silicon_type(void);
 enum soc_type get_soc_type(void);
