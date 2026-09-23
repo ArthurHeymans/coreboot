@@ -10,6 +10,11 @@
 #include <program_loading.h>
 #include <romstage_common.h>
 
+void __weak soc_romstage_init(void)
+{
+	cbmem_initialize_empty();
+}
+
 void __noreturn romstage_main(void)
 {
 	post_code(POSTCODE_ROMSTAGE_MAIN);
@@ -25,7 +30,7 @@ void __noreturn romstage_main(void)
 	if (CONFIG(PLATFORM_USES_FSP2_0)) {
 		amd_fsp_early_init();
 	} else {
-		cbmem_initialize_empty();
+		soc_romstage_init();
 	}
 
 	if (CONFIG(SOC_AMD_COMMON_ROMSTAGE_LEGACY_DMA_FIXUP)) {

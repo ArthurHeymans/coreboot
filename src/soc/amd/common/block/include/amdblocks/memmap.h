@@ -9,6 +9,13 @@
 
 DECLARE_REGION(early_reserved_dram)
 
+/*
+ * Called in romstage by non-CAR SoCs that don't use FSP. The PSP has already trained the
+ * memory, so this only needs to set up CBMEM and do any SoC specific work that depends on
+ * it, like parsing the APOB. The default initializes an empty CBMEM.
+ */
+void soc_romstage_init(void);
+
 void memmap_stash_early_dram_usage(void);
 
 /* report SoC memory map up to cbmem_top */
