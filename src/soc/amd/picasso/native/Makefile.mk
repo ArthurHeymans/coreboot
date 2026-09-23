@@ -12,6 +12,7 @@ ramstage-y += apob.c
 ramstage-y += ccx.c
 ramstage-y += data_fabric.c
 ramstage-y += dxio.c
+ramstage-y += fch.c
 ramstage-y += nbio.c
 ramstage-y += nbio_late.c
 ramstage-y += smu.c

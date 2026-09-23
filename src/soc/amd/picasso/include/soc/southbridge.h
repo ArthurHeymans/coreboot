@@ -88,6 +88,7 @@
 
 void fch_pre_init(void);
 void fch_early_init(void);
+void fch_init_acpi_decode(void);
 void fch_init(void *chip_info);
 void fch_final(void *chip_info);
 

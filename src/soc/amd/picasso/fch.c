@@ -114,6 +114,15 @@ static void sb_rfmux_config_override(void)
 	}
 }
 
+void fch_init_acpi_decode(void)
+{
+	pm_write16(PM_EVT_BLK, ACPI_PM_EVT_BLK);
+	pm_write16(PM1_CNT_BLK, ACPI_PM1_CNT_BLK);
+	pm_write16(PM_TMR_BLK, ACPI_PM_TMR_BLK);
+	pm_write16(PM_GPE0_BLK, ACPI_GPE0_BLK);
+	pm_write8(PM_ACPI_CONF, pm_read8(PM_ACPI_CONF) | PM_ACPI_DECODE_STD);
+}
+
 static void fch_init_acpi_ports(void)
 {
 	u32 reg;
@@ -121,11 +130,7 @@ static void fch_init_acpi_ports(void)
 	/* We use some of these ports in SMM regardless of whether or not
 	 * ACPI tables are generated. Enable these ports indiscriminately.
 	 */
-
-	pm_write16(PM_EVT_BLK, ACPI_PM_EVT_BLK);
-	pm_write16(PM1_CNT_BLK, ACPI_PM1_CNT_BLK);
-	pm_write16(PM_TMR_BLK, ACPI_PM_TMR_BLK);
-	pm_write16(PM_GPE0_BLK, ACPI_GPE0_BLK);
+	fch_init_acpi_decode();
 
 	if (CONFIG(HAVE_SMI_HANDLER)) {
 		/* APMC - SMI Command Port */
