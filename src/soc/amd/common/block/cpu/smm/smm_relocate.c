@@ -87,11 +87,15 @@ static void post_mp_init(void)
 {
 	if (CONFIG(SOC_AMD_COMMON_BLOCK_UCODE))
 		amd_free_microcode();
+	if (CONFIG(SOC_AMD_COMMON_BLOCK_CUSTOM_AP_START))
+		soc_amd_post_mp_init();
 	global_smi_enable();
 }
 
 const struct mp_ops amd_mp_ops_with_smm = {
 	.pre_mp_init = pre_mp_init,
+	.start_aps = CONFIG(SOC_AMD_COMMON_BLOCK_CUSTOM_AP_START) ?
+		soc_amd_mp_start_aps : NULL,
 	.get_cpu_count = get_cpu_count,
 	.get_smm_info = get_smm_info,
 	.per_cpu_smm_trigger = smm_relocation_handler,

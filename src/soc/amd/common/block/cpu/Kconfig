@@ -49,6 +49,13 @@ config SOC_AMD_COMMON_ROMSTAGE_LEGACY_DMA_FIXUP
 
 endif # SOC_AMD_COMMON_BLOCK_NONCAR
 
+config SOC_AMD_COMMON_BLOCK_CUSTOM_AP_START
+	bool
+	help
+	  Select this when the SoC starts its APs itself instead of using
+	  the INIT/SIPI sequence. The SoC then provides soc_amd_mp_start_aps()
+	  and soc_amd_post_mp_init(), which runs after all CPUs are initialized.
+
 config SOC_AMD_COMMON_BLOCK_CPUFREQ_FAM15H_16H
 	bool
 	help

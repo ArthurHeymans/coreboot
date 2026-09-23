@@ -10,6 +10,9 @@
 
 void early_cache_setup(void);
 int get_cpu_count(void);
+/* Provided by the SoC when SOC_AMD_COMMON_BLOCK_CUSTOM_AP_START is selected. */
+enum cb_err soc_amd_mp_start_aps(int ap_count);
+void soc_amd_post_mp_init(void);
 unsigned int get_threads_per_core(void);
 int cpu_node_id(void);
 void set_cstate_io_addr(void);
