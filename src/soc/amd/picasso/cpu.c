@@ -4,12 +4,20 @@
 #include <cpu/cpu.h>
 #include <device/device.h>
 #include <soc/cpu.h>
+#include <soc/native.h>
 
 static_assert(CONFIG_MAX_CPUS == 8, "Do not override MAX_CPUS. To reduce the number of "
 	"available cores, use the downcore_mode and disable_smt devicetree settings instead.");
 
+static void picasso_cpu_init(struct device *dev)
+{
+	amd_cpu_init(dev);
+	if (CONFIG(SOC_AMD_PICASSO_NATIVE))
+		picasso_native_cpu_init();
+}
+
 static struct device_operations cpu_dev_ops = {
-	.init = amd_cpu_init,
+	.init = picasso_cpu_init,
 };
 
 static struct cpu_device_id cpu_table[] = {

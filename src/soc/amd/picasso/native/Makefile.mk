@@ -5,6 +5,7 @@ romstage-y += ccx.c
 romstage-y += data_fabric.c
 romstage-y += nbio.c
 romstage-y += psp.c
+romstage-y += romstage.c
 romstage-y += smu.c
 
 ramstage-y += acp.c
@@ -15,6 +16,9 @@ ramstage-y += dxio.c
 ramstage-y += fch.c
 ramstage-y += fch_usb.c
 ramstage-y += gfx.c
+ramstage-y += memmap.c
+ramstage-y += mp.c
 ramstage-y += nbio.c
 ramstage-y += nbio_late.c
+ramstage-y += ramstage.c
 ramstage-y += smu.c

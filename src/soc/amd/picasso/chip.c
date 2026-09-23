@@ -11,6 +11,7 @@
 #include <drivers/i2c/designware/dw_i2c.h>
 #include <soc/cpu.h>
 #include <soc/iomap.h>
+#include <soc/native.h>
 #include <soc/pci_devs.h>
 #include <soc/southbridge.h>
 #include "chip.h"
@@ -41,7 +42,10 @@ static void soc_init(void *chip_info)
 {
 	default_dev_ops_root.write_acpi_tables = soc_acpi_write_tables;
 
-	amd_fsp_silicon_init();
+	if (CONFIG(SOC_AMD_PICASSO_FSP))
+		amd_fsp_silicon_init();
+	else
+		picasso_native_silicon_init();
 
 	data_fabric_print_mmio_conf();
 

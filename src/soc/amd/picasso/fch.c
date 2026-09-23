@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
+#include <acpi/acpi.h>
 #include <device/mmio.h>
 #include <bootstate.h>
 #include <cpu/x86/smm.h>
@@ -187,7 +188,9 @@ static void gpp_clk_setup(void)
 void fch_init(void *chip_info)
 {
 	i2c_soc_init();
-	fch_init_acpi_ports();
+	/* The native S3 resume path keeps the ACPI/SMI configuration from before suspend. */
+	if (!(CONFIG(SOC_AMD_PICASSO_NATIVE) && acpi_is_wakeup_s3()))
+		fch_init_acpi_ports();
 
 	acpi_pm_gpe_add_events_print_events();
 	gpio_add_events();

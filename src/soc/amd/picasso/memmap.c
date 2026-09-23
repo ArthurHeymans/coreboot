@@ -6,6 +6,7 @@
 #include <amdblocks/root_complex.h>
 #include <device/device.h>
 #include <soc/iomap.h>
+#include <soc/native.h>
 #include <stdint.h>
 
 /*
@@ -67,5 +68,8 @@ void read_soc_memmap_resources(struct device *dev, unsigned long *idx)
 	/* Reserve fixed IOMMU MMIO region */
 	mmio_range(dev, (*idx)++, IOMMU_RESERVED_MMIO_BASE, IOMMU_RESERVED_MMIO_SIZE);
 
-	read_fsp_resources(dev, idx);
+	if (CONFIG(SOC_AMD_PICASSO_FSP))
+		read_fsp_resources(dev, idx);
+	else
+		picasso_native_add_memmap(dev, idx);
 }

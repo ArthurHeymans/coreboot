@@ -3,6 +3,7 @@
 #include <console/console.h>
 #include <cpu/cpu.h>
 #include <soc/cpu.h>
+#include <soc/native.h>
 #include <soc/soc_util.h>
 #include <types.h>
 
@@ -56,6 +57,8 @@ static uint32_t get_internal_silicon_type(void)
 
 	if (CONFIG(SOC_AMD_PICASSO_FSP))
 		silicon_type = picasso_fsp_silicon_id();
+	else
+		silicon_type = picasso_native_silicon_id();
 	if (silicon_type)
 		printk(BIOS_DEBUG, "Silicon ID = 0x%x\n", silicon_type);
 
