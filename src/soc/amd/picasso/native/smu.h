@@ -46,7 +46,7 @@ struct picasso_smu_power_policy {
 	uint32_t prochot_l_deassertion_ramp_time_ms;
 	uint8_t system_config;
 	uint8_t reserved_03d[0x10];
-	uint8_t unknown_04d;
+	uint8_t gfx_dldo_psm_margin;
 	uint8_t reserved_04e[0x0a];
 	uint8_t core_dldo_bypass;
 	uint8_t reserved_059[6];
@@ -54,7 +54,10 @@ struct picasso_smu_power_policy {
 	uint32_t vddcr_vdd_voltage_margin_mv;
 	uint32_t vddcr_soc_voltage_margin_mv;
 	uint8_t reserved_068[4];
-	uint8_t unknown_06c[3];
+	/* Use per-part fused curves and coefficients instead of SMU firmware defaults. */
+	uint8_t use_ccx_freq_curve_fuses;
+	uint8_t use_gfx_freq_curve_fuses;
+	uint8_t use_cac_sidd_fuses;
 	uint8_t reserved_06f[0x6d];
 	uint32_t telemetry_vddcr_vdd_slope_ma;
 	uint32_t telemetry_vddcr_vdd_offset;
@@ -68,7 +71,11 @@ struct picasso_smu_power_policy {
 
 check_member(picasso_smu_power_policy, aa_mode_enable, 0x017);
 check_member(picasso_smu_power_policy, system_config, 0x03c);
+check_member(picasso_smu_power_policy, gfx_dldo_psm_margin, 0x04d);
 check_member(picasso_smu_power_policy, core_dldo_bypass, 0x058);
+check_member(picasso_smu_power_policy, use_ccx_freq_curve_fuses, 0x06c);
+check_member(picasso_smu_power_policy, use_gfx_freq_curve_fuses, 0x06d);
+check_member(picasso_smu_power_policy, use_cac_sidd_fuses, 0x06e);
 check_member(picasso_smu_power_policy, telemetry_vddcr_vdd_slope_ma, 0x0dc);
 check_member(picasso_smu_power_policy, aclk_dpm0_freq_400mhz, 0x10d);
 check_member(picasso_smu_power_policy, min_soc_vid_offset, 0x10e);
