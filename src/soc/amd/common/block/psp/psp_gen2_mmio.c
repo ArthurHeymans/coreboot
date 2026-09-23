@@ -8,8 +8,6 @@
 #include <types.h>
 #include "psp_def.h"
 
-#define IOHC_MISC_PSP_MMIO_REG		0x2e0
-
 static uint64_t get_psp_mmio_mask(void)
 {
 	const struct non_pci_mmio_reg *mmio_regs;
@@ -25,11 +23,9 @@ static uint64_t get_psp_mmio_mask(void)
 	return 0;
 }
 
-#define PSP_MMIO_LOCK	BIT(8)
-
 /* Getting the PSP MMIO base from the domain resources only works in ramstage, but not in SMM,
    so we have to read this from the hardware registers */
-static uintptr_t get_psp_mmio_base(void)
+uintptr_t get_psp_mmio_base(void)
 {
 	static uintptr_t psp_mmio_base;
 	const struct domain_iohc_info *iohc;
@@ -59,10 +55,10 @@ static uintptr_t get_psp_mmio_base(void)
 
 		/* If the PSP MMIO base is enabled but the register isn't locked, set the lock
 		   bit. This shouldn't happen, but better be a bit too careful here */
-		if (!(reg64 & PSP_MMIO_LOCK)) {
+		if (!(reg64 & IOHC_MMIO_LOCK)) {
 			printk(BIOS_WARNING, "Enabled PSP MMIO in domain %zu isn't locked. "
 					     "Locking it.\n", i);
-			reg64 |= PSP_MMIO_LOCK;
+			reg64 |= IOHC_MMIO_LOCK;
 			/* Since the lock bit lives in the lower one of the two 32 bit SMN
 			   registers, we only need to write that one to lock it */
 			smn_write32(iohc[i].misc_smn_base | IOHC_MISC_PSP_MMIO_REG,

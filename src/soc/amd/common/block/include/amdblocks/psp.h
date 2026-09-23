@@ -59,6 +59,11 @@ int psp_notify_dram(void);
 
 int psp_notify_smm(void);
 
+#if ENV_RAMSTAGE || ENV_SMM
+/* Return the PSP MMIO base address, or zero if no usable mapping is found. */
+uintptr_t get_psp_mmio_base(void);
+#endif
+
 #if (CONFIG(SOC_AMD_COMMON_BLOCK_PSP_SMI))
 void psp_smi_handler(void);
 #else
