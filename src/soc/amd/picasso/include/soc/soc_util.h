@@ -29,6 +29,9 @@ enum socket_type get_socket_type(void);
 enum silicon_type get_silicon_type(void);
 enum soc_type get_soc_type(void);
 
+/* Silicon ID reported by the FSP in its misc data HOB, or 0 on error */
+uint32_t picasso_fsp_silicon_id(void);
+
 void print_socket_type(void);
 void print_silicon_type(void);
 void print_soc_type(void);

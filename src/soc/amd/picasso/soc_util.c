@@ -2,9 +2,6 @@
 
 #include <console/console.h>
 #include <cpu/cpu.h>
-#include <fsp/util.h>
-#include <FspGuids.h>
-#include <misc_data.h>
 #include <soc/cpu.h>
 #include <soc/soc_util.h>
 #include <types.h>
@@ -53,27 +50,14 @@ void print_socket_type(void)
 static uint32_t get_internal_silicon_type(void)
 {
 	static uint32_t silicon_type;
-	size_t hob_size = 0;
-	const struct picasso_misc_data *hob;
 
 	if (silicon_type)
 		return silicon_type;
 
-	hob = fsp_find_extension_hob_by_guid(PICASSO_MISC_DATA_HOB_GUID.b, &hob_size);
-
-	if (hob == NULL || hob_size == 0) {
-		printk(BIOS_ERR, "Couldn't find Picasso misc data HOB.\n");
-		return 0;
-	}
-
-	if (hob->version != PICASSO_MISC_DATA_VERSION) {
-		printk(BIOS_ERR, "Unexpected Picasso misc data HOB version.\n");
-		return 0;
-	}
-
-	silicon_type = hob->silicon_id;
-
-	printk(BIOS_DEBUG, "Silicon ID = 0x%x\n", silicon_type);
+	if (CONFIG(SOC_AMD_PICASSO_FSP))
+		silicon_type = picasso_fsp_silicon_id();
+	if (silicon_type)
+		printk(BIOS_DEBUG, "Silicon ID = 0x%x\n", silicon_type);
 
 	return silicon_type;
 }

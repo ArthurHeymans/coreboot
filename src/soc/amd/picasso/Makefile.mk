@@ -15,15 +15,18 @@ all_x86-y += uart.c
 
 bootblock-y += early_fch.c
 
-romstage-y += fsp_m_params.c
+romstage-$(CONFIG_SOC_AMD_PICASSO_FSP) += fsp_m_params.c
+romstage-$(CONFIG_SOC_AMD_PICASSO_FSP) += fsp_silicon_id.c
 romstage-y += platform_descriptors.c
+romstage-y += soc_util.c
 
 ramstage-$(CONFIG_HAVE_ACPI_TABLES) += acpi.c
 ramstage-$(CONFIG_HAVE_ACPI_TABLES) += acpi_crat.c
 ramstage-y += chip.c
 ramstage-y += cpu.c
 ramstage-y += fch.c
-ramstage-y += fsp_s_params.c
+ramstage-$(CONFIG_SOC_AMD_PICASSO_FSP) += fsp_silicon_id.c
+ramstage-$(CONFIG_SOC_AMD_PICASSO_FSP) += fsp_s_params.c
 ramstage-y += graphics.c
 ramstage-y += mca.c
 ramstage-y += memmap.c
@@ -33,6 +36,8 @@ ramstage-y += root_complex.c
 ramstage-y += sata.c
 ramstage-y += soc_util.c
 ramstage-y += xhci.c
+
+subdirs-$(CONFIG_SOC_AMD_PICASSO_NATIVE) += native
 
 ifeq ($(CONFIG_DEBUG_SMI),y)
 smm-y += uart.c
