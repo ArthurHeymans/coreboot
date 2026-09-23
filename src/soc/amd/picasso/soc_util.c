@@ -91,7 +91,7 @@ static bool is_fam17_18(void)
 	return cpuid_match(cpuid_eax(1), PICASSO_B0_CPUID, CPUID_ALL_STEPPINGS_MASK);
 }
 
-static bool is_fam17_2x(void)
+bool soc_cpuid_is_raven2(void)
 {
 	return cpuid_match(cpuid_eax(1), RAVEN2_A0_CPUID,
 			   CPUID_ALL_STEPPINGS_AND_BASE_MODELS_MASK);
@@ -130,7 +130,7 @@ enum soc_type get_soc_type(void)
 		if (is_fam17_1x() && !is_mystery_silicon())
 			return SOC_PICASSO;
 
-		if (is_fam17_2x() || (is_fam17_1x() && is_mystery_silicon()))
+		if (soc_cpuid_is_raven2() || (is_fam17_1x() && is_mystery_silicon()))
 			return SOC_DALI;
 
 		break;

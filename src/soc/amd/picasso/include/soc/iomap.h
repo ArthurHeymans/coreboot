@@ -9,6 +9,9 @@
 /* IO_APIC_ADDR defined in arch/x86	0xfec00000 */
 #define GNB_IO_APIC_ADDR		0xfec01000
 #define SPI_BASE_ADDRESS		0xfec10000
+/* SMU and PSP MMIO windows that the native init assigns in the IOHC */
+#define SMU_MMIO_BASE_ADDRESS		0xfd000000
+#define PSP_MMIO_BASE_ADDRESS		0xfd100000
 
 /* FCH AL2AHB Registers */
 #define ALINK_AHB_ADDRESS		0xfedc0000

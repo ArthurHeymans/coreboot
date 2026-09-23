@@ -6,6 +6,10 @@
 #include <device/device.h>
 #include <types.h>
 
+/* ACP gen1 register offset, usable through either the PCI BAR or the SMN aperture. */
+#define ACP_GEN1_I2S_PIN_CONFIG		0x1400
+#define ACP_GEN1_I2S_PIN_CONFIG_MASK	0x7
+
 struct acp_config {
 	enum {
 #if CONFIG(SOC_AMD_COMMON_BLOCK_ACP_GEN2)

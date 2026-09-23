@@ -100,11 +100,11 @@ const struct domain_iohc_info *get_iohc_info(size_t *count)
 
 static const struct non_pci_mmio_reg non_pci_mmio[] = {
 	{ IOHC_MISC_PSP_MMIO_REG, 0xfffffff00000ull, 1 * MiB, NON_PCI_RES_IDX_AUTO },
-	{ 0x2e8, 0xfffffff00000ull,   1 * MiB, NON_PCI_RES_IDX_AUTO },
+	{ IOHC_MISC_SMU_MMIO_REG, 0xfffffff00000ull, 1 * MiB, NON_PCI_RES_IDX_AUTO },
 	/* The hardware has a 256 byte alignment requirement for the IOAPIC MMIO base, but we
 	   tell the FSP to configure a 4k-aligned base address and this is reported as 4 KiB
 	   resource. */
-	{ 0x2f0, 0xffffffffff00ull,   4 * KiB, IOMMU_IOAPIC_IDX },
+	{ IOHC_MISC_IOAPIC_MMIO_REG, 0xffffffffff00ull, 4 * KiB, IOMMU_IOAPIC_IDX },
 	{ 0x2f8, 0xfffffff00000ull,   1 * MiB, NON_PCI_RES_IDX_AUTO },
 	{ 0x300, 0xfffffff00000ull,   1 * MiB, NON_PCI_RES_IDX_AUTO },
 	{ 0x308, 0xfffffffff000ull,   4 * KiB, NON_PCI_RES_IDX_AUTO },

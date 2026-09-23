@@ -39,6 +39,9 @@ void print_soc_type(void);
 /* function to determine the connectivity feature set */
 bool soc_is_reduced_io_sku(void);
 
+/* CPUID-only test; unlike soc_is_raven2(), this does not consult the silicon ID. */
+bool soc_cpuid_is_raven2(void);
+
 /* function to determine the iGPU type */
 bool soc_is_raven2(void);
 

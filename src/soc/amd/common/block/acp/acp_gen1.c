@@ -8,8 +8,6 @@
 #include "acp_def.h"
 
 /* ACP registers and associated fields */
-#define ACP_I2S_PIN_CONFIG	0x1400	/* HDA, Soundwire, I2S */
-#define  PIN_CONFIG_MASK	(7 << 0)
 #define ACP_I2S_WAKE_EN		0x1414
 #define  WAKE_EN_MASK		(1 << 0)
 #define ACP_PME_EN		0x1418
@@ -34,7 +32,8 @@ void acp_init(struct device *dev)
 
 	/* Set the proper I2S_PIN_CONFIG state */
 	bar = (uintptr_t)res->base;
-	acp_update32(bar, ACP_I2S_PIN_CONFIG, PIN_CONFIG_MASK, cfg->acp_config.acp_pin_cfg);
+	acp_update32(bar, ACP_GEN1_I2S_PIN_CONFIG, ACP_GEN1_I2S_PIN_CONFIG_MASK,
+		     cfg->acp_config.acp_pin_cfg);
 
 	/* Enable ACP_PME_EN and ACP_I2S_WAKE_EN for I2S_WAKE event */
 	acp_update32(bar, ACP_I2S_WAKE_EN, WAKE_EN_MASK, !!cfg->acp_config.acp_i2s_wake_enable);
