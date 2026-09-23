@@ -10,6 +10,15 @@
 
 #define SMU_NUM_ARGS		6
 
+/* Runtime power-policy commands used by native ALIB. */
+#define SMC_MSG_SET_AC_MODE			0x18
+#define SMC_MSG_SET_DC_MODE			0x19
+#define SMC_MSG_SET_SUSTAINED_POWER_LIMIT	0x1a
+#define SMC_MSG_SET_FAST_PPT_LIMIT		0x1b
+#define SMC_MSG_SET_SLOW_PPT_LIMIT		0x1c
+#define SMC_MSG_SET_THERMAL_CONTROL_LIMIT	0x1f
+
+#ifndef __ACPI__
 enum smu_message_id {
 	SMC_MSG_TEST = 0x01,			/* argument 0xaa55aa55 */
 	SMC_MSG_SET_POLICY_VERSION = 0x03,
@@ -41,5 +50,7 @@ enum smu_message_id {
  * SlpTypeEn gets set by the SMU. Function does not return if successful.
  */
 void smu_sx_entry(void);
+
+#endif /* !__ACPI__ */
 
 #endif /* AMD_PICASSO_SMU_H */

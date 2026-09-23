@@ -3,15 +3,18 @@
 #ifndef AMD_BLOCK_SMU_H
 #define AMD_BLOCK_SMU_H
 
+#ifndef __ACPI__
 #include <types.h>
+#endif
 #include <soc/smu.h> /* SoC-dependent definitions for SMU access */
 
 /* Arguments indexed locations are contiguous; the number is SoC-dependent */
-#define SMN_SMU_MESG_ARG(x)	(SMN_SMU_MESG_ARGS_BASE + ((x) * sizeof(uint32_t)))
+#define SMN_SMU_MESG_ARG(x)	(SMN_SMU_MESG_ARGS_BASE + ((x) * 4))
 
 #define SMU_MESG_RESP_TIMEOUT	0x00
 #define SMU_MESG_RESP_OK	0x01
 
+#ifndef __ACPI__
 struct smu_payload {
 	uint32_t msg[SMU_NUM_ARGS];
 };
@@ -24,5 +27,7 @@ struct smu_payload {
  */
 int32_t send_smu_message_raw(enum smu_message_id message_id, struct smu_payload *arg);
 enum cb_err send_smu_message(enum smu_message_id message_id, struct smu_payload *arg);
+
+#endif /* !__ACPI__ */
 
 #endif /* AMD_BLOCK_SMU_H */

@@ -3,7 +3,11 @@
 #include <soc/amd/common/acpi/pci_root.asl>
 #include "globalnvs.asl"
 
-/* Power state notification to ALIB */
+#if CONFIG(SOC_AMD_PICASSO_NATIVE)
+/* FSP provides the ALIB SSDT. Without FSP provide the ALIB functions used by the boards. */
+#include "alib_native.asl"
+#endif
+
 #include "pnot.asl"
 
 /* Contains the supported sleep states for this chipset */
