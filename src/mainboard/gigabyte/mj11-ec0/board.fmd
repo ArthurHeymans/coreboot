@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# AMDFW: the vendor EFS, PSP/BIOS directories and blobs, kept verbatim.
+# BOOTBLOCK: the BIOS reset image. The vendor BIOS directories point at it
+# (flash 0xdb0000, 0x250000 bytes, copied by the PSP to 0x76db0000).
+FLASH 16M {
+	AMDFW@0x0 0x294000
+	FMAP@0x294000 0x1000
+	COREBOOT(CBFS)@0x295000 0xb1b000
+	BOOTBLOCK@0xdb0000 0x250000
+}

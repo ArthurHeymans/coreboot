@@ -1,0 +1,37 @@
+## SPDX-License-Identifier: GPL-2.0-only
+
+if BOARD_GIGABYTE_MJ11_EC0
+
+config BOARD_SPECIFIC_OPTIONS
+	def_bool y
+	select SOC_AMD_ZEPPELIN
+	select BOARD_ROMSIZE_KB_16384
+	select SUPERIO_ASPEED_AST2400
+	select DRIVERS_UART_8250IO
+	select IPMI_KCS
+	select HAVE_ACPI_TABLES
+
+config MAINBOARD_DIR
+	default "gigabyte/mj11-ec0"
+
+config MAINBOARD_PART_NUMBER
+	default "MJ11-EC0"
+
+config FMDFILE
+	default "src/mainboard/\$(CONFIG_MAINBOARD_DIR)/board.fmd"
+
+config CBFS_SIZE
+	default 0xb1b000
+
+config ZEPPELIN_VENDOR_ROM_SHA256
+	default "3631995d059e336863527f1511894bdfc61361bc0691a430b3896fb94746aded"
+	help
+	  Gigabyte MJ11-EC0 BIOS F02 (MJ11-EC0_F02.rom).
+
+config UART_FOR_CONSOLE
+	default 0
+
+config MAINBOARD_POWER_FAILURE_STATE
+	default 2
+
+endif # BOARD_GIGABYTE_MJ11_EC0
