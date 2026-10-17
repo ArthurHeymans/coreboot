@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+romstage-y += apob.c
+romstage-y += ccx.c
+romstage-y += ccx_tables.c
+romstage-y += data_fabric.c
+romstage-y += fch.c
+romstage-y += fch_sata.c
+romstage-y += nbio.c
+romstage-y += nbio_tables.c
+romstage-y += psp.c
+romstage-y += romstage.c
+romstage-y += smu.c
+romstage-y += topology.c
+
+ramstage-y += apob.c
+ramstage-y += ccx.c
+ramstage-y += ccx_tables.c
+ramstage-y += data_fabric.c
+ramstage-y += dxio.c
+ramstage-y += fch.c
+ramstage-y += fch_sata.c
+ramstage-y += fch_usb.c
+ramstage-y += memmap.c
+ramstage-y += mp.c
+ramstage-y += nbio.c
+ramstage-y += nbio_late.c
+ramstage-y += nbio_tables.c
+ramstage-y += psp.c
+ramstage-y += ramstage.c
+ramstage-y += smu.c
+ramstage-y += topology.c

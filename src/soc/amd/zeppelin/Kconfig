@@ -1,0 +1,223 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+config SOC_AMD_ZEPPELIN
+	bool
+	select ACPI_SOC_NVS
+	select ARCH_X86
+	select BOOT_DEVICE_SUPPORTS_WRITES if BOOT_DEVICE_SPI_FLASH
+	select DRIVERS_USB_PCI_XHCI
+	select GENERIC_GPIO_LIB
+	select HAVE_ACPI_TABLES
+	select HAVE_CF9_RESET
+	select HAVE_EM100_SUPPORT
+	select HAVE_SMI_HANDLER
+	select IDT_IN_EVERY_STAGE
+	select PARALLEL_MP_AP_WORK
+	select PROVIDES_ROM_SHARING
+	select RTC
+	select SOC_AMD_COMMON
+	select SOC_AMD_COMMON_BLOCK_ACPI
+	select SOC_AMD_COMMON_BLOCK_ACPIMMIO
+	select SOC_AMD_COMMON_BLOCK_ACPIMMIO_PM_IO_ACCESS
+	select SOC_AMD_COMMON_BLOCK_ACPI_ALIB
+	select SOC_AMD_COMMON_BLOCK_ACPI_CPU_POWER_STATE
+	select SOC_AMD_COMMON_BLOCK_ACPI_GPIO
+	select SOC_AMD_COMMON_BLOCK_ACPI_IVRS
+	select SOC_AMD_COMMON_BLOCK_ACPI_MADT
+	select SOC_AMD_COMMON_BLOCK_ALINK
+	select SOC_AMD_COMMON_BLOCK_APOB
+	select SOC_AMD_COMMON_BLOCK_BANKED_GPIOS
+	select SOC_AMD_COMMON_BLOCK_CONFIG
+	select SOC_AMD_COMMON_BLOCK_CPUFREQ_FAM17H_19H
+	select SOC_AMD_COMMON_BLOCK_CUSTOM_AP_START
+	select SOC_AMD_COMMON_BLOCK_DATA_FABRIC
+	select SOC_AMD_COMMON_BLOCK_DATA_FABRIC_DOMAIN
+	select SOC_AMD_COMMON_BLOCK_IOMMU
+	select SOC_AMD_COMMON_BLOCK_LPC
+	select SOC_AMD_COMMON_BLOCK_MCAX
+	select SOC_AMD_COMMON_BLOCK_NONCAR
+	select SOC_AMD_COMMON_BLOCK_NO_CPPC_MSR
+	select SOC_AMD_COMMON_BLOCK_APOB_NV_DISABLE
+	select AMD_FWM_POSITION_20000_DEFAULT
+	select SOC_AMD_COMMON_BLOCK_PCI
+	select SOC_AMD_COMMON_BLOCK_PCIE_GPP_DRIVER
+	select SOC_AMD_COMMON_BLOCK_PM
+	select SOC_AMD_COMMON_BLOCK_PM_CHIPSET_STATE_SAVE
+	select SOC_AMD_COMMON_BLOCK_PSP_GEN2
+	select SOC_AMD_COMMON_BLOCK_RESET
+	select SOC_AMD_COMMON_BLOCK_SATA
+	select SOC_AMD_COMMON_BLOCK_SMBUS
+	select SOC_AMD_COMMON_BLOCK_SMI
+	select SOC_AMD_COMMON_BLOCK_SMIHANDLER
+	select SOC_AMD_COMMON_BLOCK_SMM
+	select SOC_AMD_COMMON_BLOCK_SMU
+	select SOC_AMD_COMMON_BLOCK_SMU_SX_ENTRY
+	select SOC_AMD_COMMON_BLOCK_SPI
+	select SOC_AMD_COMMON_BLOCK_SVI2
+	select SOC_AMD_COMMON_BLOCK_TSC
+	select SOC_AMD_COMMON_BLOCK_UCODE
+	select SSE2
+	select DRAM_SUPPORT_DDR4
+	select X86_AMD_FIXED_MTRRS
+	select HAVE_X86_64_SUPPORT
+	help
+	  AMD Family 17h models 00h-0Fh (Zeppelin) in the SP4 and SP4r2
+	  packages (EPYC Embedded 3000). The PSP trains the memory with the
+	  vendor ABL and reports the result in the APOB. coreboot initializes
+	  the Data Fabric, CCX, NBIO, DXIO (PCIe/SATA) and FCH natively.
+
+if SOC_AMD_ZEPPELIN
+
+config CHIPSET_DEVICETREE
+	string
+	default "soc/amd/zeppelin/chipset.cb"
+
+config EARLY_RESERVED_DRAM_BASE
+	hex
+	default 0x76000000
+	help
+	  Base of the DRAM used by coreboot before ramstage. The vendor
+	  firmware uses 0x76000000-0x76ffffff the same way: its reset image
+	  is copied to 0x76db0000 and it caches that 16 MiB window first.
+	  This needs at least 2 GiB of DRAM.
+
+config EARLYRAM_BSP_STACK_SIZE
+	hex
+	default 0x1000
+
+config PSP_APOB_DRAM_ADDRESS
+	hex
+	default 0x30000000
+	help
+	  Location in DRAM where the PSP will copy the AGESA PSP Output
+	  Block. This is the destination of BIOS directory entry 0x61 in the
+	  vendor directories.
+
+config PSP_APOB_DRAM_SIZE
+	hex
+	default 0x20000
+	help
+	  The vendor firmware stores the whole APOB in its 128 KiB APOB_NV
+	  region, so the APOB is not larger than that.
+
+config PRERAM_CBMEM_CONSOLE_SIZE
+	hex
+	default 0x1600
+	help
+	  Increase this value if preram cbmem console is getting truncated
+
+config C_ENV_BOOTBLOCK_SIZE
+	hex
+	default 0x250000
+	help
+	  Size of the BIOS reset image (directory entry 0x62). The PSP copies
+	  this many bytes from the end of the flash to the end of the
+	  bootblock region, so the bootblock and the reset image coincide.
+
+config ROMSTAGE_ADDR
+	hex
+	default 0x77000000
+	help
+	  Sets the address in DRAM where romstage should be loaded.
+
+config ROMSTAGE_SIZE
+	hex
+	default 0x70000
+	help
+	  Sets the size of DRAM allocation for romstage in linker script.
+
+config ECAM_MMCONF_BASE_ADDRESS
+	default 0xF0000000
+
+config ECAM_MMCONF_BUS_NUMBER
+	default 128
+
+config MAX_CPUS
+	int
+	default 32
+	help
+	  Maximum number of threads the platform can have.
+
+config SERIRQ_CONTINUOUS_MODE
+	bool
+	default n
+	help
+	  Set this option to y for serial IRQ in continuous mode.
+	  Otherwise it is in quiet mode.
+
+config SMM_TSEG_SIZE
+	hex
+	default 0x800000 if HAVE_SMI_HANDLER
+	default 0x0
+
+config SMM_RESERVED_SIZE
+	hex
+	default 0x180000
+
+config SMM_MODULE_STACK_SIZE
+	hex
+	default 0x800
+
+config ACPI_BERT
+	bool "Build ACPI BERT Table"
+	default y
+	depends on HAVE_ACPI_TABLES
+	help
+	  Report Machine Check errors identified in POST to the OS in an
+	  ACPI Boot Error Record Table.
+
+config ACPI_BERT_SIZE
+	hex
+	default 0x4000 if ACPI_BERT
+	default 0x0
+	help
+	  Specify the amount of DRAM reserved for gathering the data used to
+	  generate the ACPI table.
+
+config DISABLE_SPI_FLASH_ROM_SHARING
+	def_bool n
+	help
+	  Instruct the chipset to not honor the EGPIO67_SPI_ROM_REQ pin
+	  which indicates a board level ROM transaction request. This
+	  removes arbitration with board and assumes the chipset controls
+	  the SPI flash bus entirely.
+
+config DISABLE_KEYBOARD_RESET_PIN
+	bool
+	help
+	  Instruct the SoC to not use the state of GPIO_129 as keyboard reset
+	  signal. When this pin is used as GPIO and the keyboard reset
+	  functionality isn't disabled, configuring it as an output and driving
+	  it as 0 will cause a reset.
+
+menu "Vendor firmware"
+
+config AMDFW_CONFIG_FILE
+	string
+	default ""
+
+config ZEPPELIN_VENDOR_ROM
+	string "Vendor firmware image"
+	default "3rdparty/blobs/mainboard/$(MAINBOARDDIR)/vendor.rom"
+	help
+	  The EFS, the PSP and BIOS directories and all signed PSP firmware
+	  (PSP boot loader, SMU, ABL, PMU, APCB, microcode) are taken
+	  unchanged from this image. Only the BIOS reset image is replaced.
+
+config ZEPPELIN_VENDOR_ROM_SHA256
+	string "SHA-256 of the vendor firmware image"
+	help
+	  The build stops if the vendor image does not have this hash. The
+	  directory layout is only known for the image that was analyzed.
+
+config ZEPPELIN_VENDOR_AMDFW_SIZE
+	hex
+	default 0x294000
+	help
+	  Size of the vendor region at the start of the flash that holds the
+	  EFS, the directories and every directory entry except the reset
+	  image.
+
+endmenu
+
+endif # SOC_AMD_ZEPPELIN
