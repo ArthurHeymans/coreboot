@@ -488,6 +488,19 @@ static const struct platform_info platform_table[] = {
 		.psp_ids = {0xbc0e0200, 0xbc0e0b00, 0xbc0e1000},
 		.psb_reserved_size = 0x200,
 	},
+	[PLATFORM_ZEPPELIN] = {
+		/* Family 17h models 00h-0Fh (Naples, Snowy Owl): no combo directory */
+		.name = "Zeppelin",
+		.needs_ish = false,
+		.is_multi_level = false,
+		.has_apob_nv_quirk = true,
+		.is_initial_alignment_required = true,
+		.is_second_gen = false,
+		.has_dir_header_v1 = false,
+		.num_psp_ids = 0,
+		.psp_ids = {0},
+		.psb_reserved_size = 0,
+	},
 };
 
 /**

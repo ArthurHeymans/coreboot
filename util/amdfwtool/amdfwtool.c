@@ -591,6 +591,7 @@ static void fill_psp_directory_to_efs(struct embedded_firmware *amd_romsig, void
 	case PLATFORM_STONEYRIDGE:
 	case PLATFORM_RAVEN:
 	case PLATFORM_PICASSO:
+	case PLATFORM_ZEPPELIN:
 	case PLATFORM_LUCIENNE:
 	case PLATFORM_RENOIR:
 	case PLATFORM_GENOA:
@@ -628,7 +629,10 @@ static void fill_bios_directory_to_efs(struct embedded_firmware *amd_romsig, voi
 	if (platform_needs_ish(cb_config->soc_id))
 		return;
 
-	if (!platform_is_multi_level(cb_config->soc_id)) {
+	if (cb_config->soc_id == PLATFORM_ZEPPELIN) {
+		/* Family 17h models 00h-0Fh read the BIOS directory from the first slot */
+		amd_romsig->bios0_entry = BUFF_TO_RUN_MODE(*ctx, biosdir, AMD_ADDR_REL_BIOS);
+	} else if (!platform_is_multi_level(cb_config->soc_id)) {
 		/*
 		 * Old SoCs always advertise BHD in EFS. There's no support for A/B
 		 * recovery since it doesn't support PSP L2 tables.
@@ -1592,6 +1596,7 @@ static int integrate_efs_table(context *ctx, amd_cb_config *cb_config)
 		amd_romsig->spi_readmode_f15_mod_60_6f = cb_config->efs_spi_readmode;
 		amd_romsig->fast_speed_new_f15_mod_60_6f = cb_config->efs_spi_speed;
 		break;
+	case PLATFORM_ZEPPELIN:
 	case PLATFORM_RAVEN:
 	case PLATFORM_PICASSO:
 		amd_romsig->spi_readmode_f17_mod_00_2f = cb_config->efs_spi_readmode;
