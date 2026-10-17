@@ -174,6 +174,9 @@ bool soc_fill_cpu_cache_info(uint8_t level, struct cpu_cache_info *info)
 
 static uint32_t get_max_boost_frequency(void)
 {
+	if (CONFIG(SOC_AMD_COMMON_BLOCK_NO_CPPC_MSR))
+		return smbios_cpu_get_current_speed_mhz();
+
 	msr_t msr = rdmsr(MSR_CPPC_CAPABILITY_1);
 	uint16_t nominal_perf = (msr.lo >> SHIFT_CPPC_CAPABILITY_1_NOMINAL_PERF) & 0xff;
 	uint16_t max_perf = (msr.lo >> SHIFT_CPPC_CAPABILITY_1_HIGHEST_PERF) & 0xff;

@@ -21,6 +21,6 @@ void write_resume_eip(void)
 	 * (crX , mtrrs, registers, etc) into the CC6 save area. On resume, the state will be
 	 * restored and execution will continue at the EIP.
 	 */
-	if (!acpi_is_wakeup_s3())
+	if (CONFIG(HAVE_ACPI_RESUME) && !acpi_is_wakeup_s3())
 		wrmsr(S3_RESUME_EIP_MSR, s3_resume_entry);
 }

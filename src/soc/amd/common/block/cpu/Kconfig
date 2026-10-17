@@ -49,6 +49,12 @@ config SOC_AMD_COMMON_ROMSTAGE_LEGACY_DMA_FIXUP
 
 endif # SOC_AMD_COMMON_BLOCK_NONCAR
 
+config SOC_AMD_COMMON_BLOCK_NO_CPPC_MSR
+	bool
+	help
+	  Select this on SoCs that don't implement MSR_CPPC_CAPABILITY_1
+	  (0xc00102b0). The maximum frequency then is the P0 frequency.
+
 config SOC_AMD_COMMON_BLOCK_CUSTOM_AP_START
 	bool
 	help
