@@ -1,14 +1,20 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
+#include <console/console.h>
+#include <device/i2c_simple.h>
+#include <device/mmio.h>
+#include <soc/i2c.h>
 #include <soc/platform_descriptors.h>
 #include <types.h>
 
+#include "mainboard.h"
+
 /*
  * The vendor CPM DXIO template ($A26) with the Setup defaults applied:
- * SlimSAS as PCIe, both I210s on and the x16 slot not bifurcated (the vendor
- * "Auto" reads a riser ID first and falls back to x16). The vendor sets
- * "turn off unused lanes" on every engine and leaves the link speed at its
- * maximum.
+ * SlimSAS as PCIe and both I210s on. The vendor sets "turn off unused lanes"
+ * on every engine and leaves the link speed at its maximum. The x16 slot
+ * (lanes 31..16, reversed) is split according to the riser, as the vendor
+ * "Auto" bifurcation does.
  */
 #define MJ11_PCIE(_start, _end, _dev, _fn) {	\
 	.engine_type = PCIE_ENGINE,		\
@@ -22,25 +28,152 @@
 	.turn_off_unused_lanes = true,		\
 }
 
-static const dxio_descriptor mj11_dxio_descriptors[] = {
-	{ /* 4x SATA */
-		.engine_type = SATA_ENGINE,
-		.start_logical_lane = 0,
-		.end_logical_lane = 3,
-		.gpio_group_id = 1,
-		.channel_type = SATA_CHANNEL_OTHER,
-		.turn_off_unused_lanes = true,
-	},
-	MJ11_PCIE(4, 7, 1, 2),		/* SlimSAS */
-	MJ11_PCIE(8, 11, 1, 3),		/* M.2 */
-	MJ11_PCIE(12, 13, 1, 4),	/* I210 #1 */
-	MJ11_PCIE(14, 14, 1, 5),	/* I210 #2 */
-	MJ11_PCIE(15, 15, 1, 1),	/* AST2500 */
-	MJ11_PCIE(31, 16, 3, 1),	/* x16 slot, lanes reversed */
+#define MJ11_FIXED_ENGINES						\
+	{ /* 4x SATA */							\
+		.engine_type = SATA_ENGINE,				\
+		.start_logical_lane = 0,				\
+		.end_logical_lane = 3,					\
+		.gpio_group_id = 1,					\
+		.channel_type = SATA_CHANNEL_OTHER,			\
+		.turn_off_unused_lanes = true,				\
+	},								\
+	MJ11_PCIE(4, 7, 1, 2),		/* SlimSAS */			\
+	MJ11_PCIE(8, 11, 1, 3),		/* M.2 */			\
+	MJ11_PCIE(12, 13, 1, 4),	/* I210 #1 */			\
+	MJ11_PCIE(14, 14, 1, 5),	/* I210 #2 */			\
+	MJ11_PCIE(15, 15, 1, 1)		/* AST2500 */
+
+/* Bifurcation modes of the vendor FUN_ffe08bf2 */
+enum riser_mode {
+	RISER_X4X4X4X4 = 0,
+	RISER_X4X4 = 1,		/* lanes 23..16 unused */
+	RISER_X8X4X4 = 2,
+	RISER_X8X8 = 3,
+	RISER_X16 = 7,
+	RISER_KEEP = 0xf,	/* the template: x16 */
 };
+
+static const dxio_descriptor mj11_x16[] = {
+	MJ11_FIXED_ENGINES,
+	MJ11_PCIE(31, 16, 3, 1),
+};
+
+static const dxio_descriptor mj11_x8x8[] = {
+	MJ11_FIXED_ENGINES,
+	MJ11_PCIE(31, 24, 3, 1),
+	MJ11_PCIE(23, 16, 3, 2),
+};
+
+static const dxio_descriptor mj11_x8x4x4[] = {
+	MJ11_FIXED_ENGINES,
+	MJ11_PCIE(31, 24, 3, 1),
+	MJ11_PCIE(23, 20, 3, 3),
+	MJ11_PCIE(19, 16, 3, 4),
+};
+
+static const dxio_descriptor mj11_x4x4[] = {
+	MJ11_FIXED_ENGINES,
+	MJ11_PCIE(31, 28, 3, 1),
+	MJ11_PCIE(27, 24, 3, 2),
+};
+
+static const dxio_descriptor mj11_x4x4x4x4[] = {
+	MJ11_FIXED_ENGINES,
+	MJ11_PCIE(31, 28, 3, 1),
+	MJ11_PCIE(27, 24, 3, 2),
+	MJ11_PCIE(23, 20, 3, 3),
+	MJ11_PCIE(19, 16, 3, 4),
+};
+
+#define RISER_MUX		0x74	/* PCA9545 */
+#define RISER_MUX_CHANNEL	BIT(2)
+#define RISER_EEPROM		0x57
+#define RISER_EEPROM_ID		0x11
+
+/* FUN_ffe08ace: the ID byte of the riser EEPROM behind channel 2 of the mux */
+static bool riser_id_from_eeprom(uint8_t *id)
+{
+	if (zeppelin_i2c_init(MJ11_I2C_BUS) != CB_SUCCESS ||
+	    i2c_writeb(MJ11_I2C_BUS, RISER_MUX, 0, RISER_MUX_CHANNEL) ||
+	    i2c_readb(MJ11_I2C_BUS, RISER_EEPROM, 1, id) ||	/* discarded */
+	    i2c_readb(MJ11_I2C_BUS, RISER_EEPROM, RISER_EEPROM_ID, id))
+		return false;
+
+	if (*id == 1)
+		*id = 2;
+	else if (*id == 2)
+		*id = 1;
+	else if (*id == 4)
+		*id = 7;
+	return true;
+}
+
+static bool gpio_high(unsigned int pin)
+{
+	return read32p(MJ11_GPIO_BANK(pin)) & MJ11_GPIO_PIN_STS;
+}
+
+/* FUN_ffe08b3e: the riser ID straps; 0 means no riser */
+static bool riser_id_from_gpios(uint8_t *id)
+{
+	*id = gpio_high(152) << 3 | gpio_high(151) << 2 | gpio_high(4) << 1 | gpio_high(3);
+	return *id != 0;
+}
+
+/* FUN_ffe08ba8 */
+static enum riser_mode riser_mode_from_id(uint8_t id)
+{
+	switch (id) {
+	case 0: case 4: case 5: case 8: case 0xc: case 0xd:
+		return RISER_X4X4X4X4;
+	case 1: case 9: case 0x10:
+		return RISER_X4X4;
+	case 2: case 6: case 0xa: case 0xe: case 0x11:
+		return RISER_X8X4X4;
+	case 3: case 0xb:
+		return RISER_X8X8;
+	default:
+		return RISER_KEEP;
+	}
+}
+
+static enum riser_mode riser_mode(void)
+{
+	uint8_t id;
+
+	if (riser_id_from_eeprom(&id)) {
+		printk(BIOS_INFO, "Riser EEPROM ID 0x%02x\n", id);
+		return riser_mode_from_id(id);
+	}
+	if (riser_id_from_gpios(&id)) {
+		printk(BIOS_INFO, "Riser strap ID 0x%x\n", id);
+		return riser_mode_from_id(id);
+	}
+	return RISER_X16;
+}
 
 void mainboard_get_dxio_descriptors(const dxio_descriptor **dxio, size_t *count)
 {
-	*dxio = mj11_dxio_descriptors;
-	*count = ARRAY_SIZE(mj11_dxio_descriptors);
+	switch (riser_mode()) {
+	case RISER_X4X4X4X4:
+		*dxio = mj11_x4x4x4x4;
+		*count = ARRAY_SIZE(mj11_x4x4x4x4);
+		break;
+	case RISER_X4X4:
+		*dxio = mj11_x4x4;
+		*count = ARRAY_SIZE(mj11_x4x4);
+		break;
+	case RISER_X8X4X4:
+		*dxio = mj11_x8x4x4;
+		*count = ARRAY_SIZE(mj11_x8x4x4);
+		break;
+	case RISER_X8X8:
+		*dxio = mj11_x8x8;
+		*count = ARRAY_SIZE(mj11_x8x8);
+		break;
+	default:
+		*dxio = mj11_x16;
+		*count = ARRAY_SIZE(mj11_x16);
+		break;
+	}
 }

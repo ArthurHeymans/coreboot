@@ -10,6 +10,9 @@ chip soc/amd/zeppelin
 		device ref gpp_bridge_3 on end		# 1.4 I210
 		device ref gpp_bridge_4 on end		# 1.5 I210
 		device ref gpp_bridge_8 on end		# 3.1 x16 slot
+		device ref gpp_bridge_9 on end		# 3.2-3.4 with a bifurcation riser
+		device ref gpp_bridge_10 on end
+		device ref gpp_bridge_11 on end
 		device ref internal_bridge_a on
 			device ref xhci_0 on end
 		end
