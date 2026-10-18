@@ -58,6 +58,7 @@ config SOC_AMD_ZEPPELIN
 	select SOC_AMD_COMMON_BLOCK_UCODE
 	select SSE2
 	select DRAM_SUPPORT_DDR4
+	select DRIVERS_I2C_DESIGNWARE
 	select X86_AMD_FIXED_MTRRS
 	select HAVE_X86_64_SUPPORT
 	help
@@ -144,6 +145,10 @@ config SERIRQ_CONTINUOUS_MODE
 	help
 	  Set this option to y for serial IRQ in continuous mode.
 	  Otherwise it is in quiet mode.
+
+config DRIVERS_I2C_DESIGNWARE_CLOCK_MHZ
+	int
+	default 150
 
 config SMM_TSEG_SIZE
 	hex

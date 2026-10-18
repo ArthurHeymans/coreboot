@@ -17,6 +17,8 @@
 #include "smu.h"
 #include "topology.h"
 
+void __weak mainboard_fch_reset_done(void) {}
+
 /* CBMEM goes below TSEG, which is at the top of the DRAM below 4 GiB */
 static uintptr_t calculate_cbmem_top(void)
 {
@@ -87,10 +89,12 @@ void soc_romstage_init(void)
 	/* AmdSocSp4ZpPei, AmdFabricZpPei */
 	zeppelin_df_mmio_init();
 	zeppelin_df_early_init();
+	zeppelin_df_scrub_init();
 
-	/* FchTaishanPei */
+	/* FchTaishanPei, then the board PEIMs that wait for its SMBus PPI */
 	zeppelin_fch_reset_init();
 	zeppelin_fch_sata_reset();
+	mainboard_fch_reset_done();
 
 	/* AmdNbioBaseZPPei, AmdCcxZenZpPei */
 	zeppelin_nbio_early_init();

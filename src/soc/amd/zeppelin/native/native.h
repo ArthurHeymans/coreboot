@@ -13,6 +13,7 @@ void zeppelin_psp_lock_df(void);
 /* data_fabric.c */
 void zeppelin_df_mmio_init(void);
 void zeppelin_df_early_init(void);
+void zeppelin_df_scrub_init(void);
 void zeppelin_df_late_init(void);
 void zeppelin_df_disable_ext_cfg(void);
 

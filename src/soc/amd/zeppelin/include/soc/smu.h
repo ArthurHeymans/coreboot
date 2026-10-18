@@ -14,7 +14,7 @@
 /* Messages of the SMU V9 firmware that the native initialization uses */
 enum smu_message_id {
 	SMC_MSG_TEST = 0x01,			/* argument 0xaa55aa55, also applies ThreadEn */
-	SMC_MSG_GET_VERSION = 0x03,
+	SMC_MSG_GET_VERSION = 0x03,		/* argument: expected interface version */
 	SMC_MSG_FINAL = 0x08,			/* after the APs are up */
 	SMC_MSG_ENABLE_FEATURES = 0x09,		/* argument: feature mask */
 	SMC_MSG_DXIO_SERVICE = 0x0f,
@@ -24,6 +24,7 @@ enum smu_message_id {
 	SMC_MSG_SET_POLICY_ADDRESS_LO = 0x1e,
 	SMC_MSG_TRANSFER_POLICY = 0x22,
 	SMC_MSG_AP_READY = 0x23,
+	SMC_MSG_DC_BTC = 0x25,			/* also the perfmon DRAM address, low */
 	SMC_MSG_GET_NAME_STRING = 0x28,		/* argument: dword index */
 	SMC_MSG_38 = 0x38,
 	SMC_MSG_39 = 0x39,

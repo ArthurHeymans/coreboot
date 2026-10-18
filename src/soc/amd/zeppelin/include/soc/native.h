@@ -15,4 +15,12 @@ void zeppelin_native_cpu_init(void);
 /* Report the DRAM above cbmem_top() */
 void zeppelin_native_add_memmap(struct device *dev, unsigned long *idx);
 
+/*
+ * Optional mainboard hooks at the points where the vendor board PEIMs run:
+ * after the FCH reset tasks (romstage, before NBIO and CCX init) and after
+ * DXIO link training (ramstage, before PCI enumeration).
+ */
+void mainboard_fch_reset_done(void);
+void mainboard_dxio_training_done(void);
+
 #endif /* AMD_ZEPPELIN_NATIVE_H */

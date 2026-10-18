@@ -69,6 +69,8 @@ void soc_amd_post_mp_init(void)
 		reset_vector_patched = false;
 	}
 
+	if (zeppelin_smu_aps_ready())
+		printk(BIOS_ERR, "SMU messages after AP launch failed\n");
 	if (zeppelin_smu_ccx_done())
 		printk(BIOS_ERR, "SMU CCX-done messages failed\n");
 }

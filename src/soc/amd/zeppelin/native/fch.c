@@ -11,6 +11,8 @@
 #include <amdblocks/smn.h>
 #include <amdblocks/amd_pci_util.h>
 #include <amdblocks/alink.h>
+#include <amdblocks/lpc.h>
+#include <amdblocks/spi.h>
 #include <arch/io.h>
 #include <console/console.h>
 #include <cpu/cpu.h>
@@ -40,6 +42,12 @@
 #define FCH_AL2AHB_BASE			ALINK_AHB_ADDRESS
 #define FCH_LPC_DEV			PCI_DEV(0, 0x14, 3)
 #define FCH_SMBUS_DEV			PCI_DEV(0, 0x14, 0)
+
+#define LPC_SPI_BASE			0xa0
+#define LPC_ROM_DMA_CTRL		0xba
+
+#define SPI_CNTRL1			0x0c
+#define SPI_ALT_CFG_1C			0x1c
 
 #define SMBUS_AUTOPOLL_CTRL		0x14
 #define ASF_BASE			0xb20
@@ -148,6 +156,36 @@ static void fch_hwacpi_reset(void)
 	pm_write8(0x54, (pm_read8(0x54) & ~BIT(6)) | BIT(7));
 }
 
+/*
+ * The vendor SPI reset task with its defaults: SPI100 on, normal speed 33 MHz,
+ * fast speed left alone (PCD 0x9a = 0), read mode 7 (fast read, PCD 0x98) and
+ * no 4-dword host prefetch. The vendor EFS lookup only matters when the policy
+ * read mode is 0, and its Micron dummy-cycle quirk (flash ID 0x20 stored in
+ * CMOS-RAM by the DXE SPI task) isn't ported.
+ */
+static void fch_spi_reset(void)
+{
+	const uintptr_t spi = SPI_BASE_ADDRESS;
+
+	pci_s_write_config32(FCH_LPC_DEV, LPC_SPI_BASE,
+			     (pci_s_read_config32(FCH_LPC_DEV, LPC_SPI_BASE) & 0x1f) |
+			     SPI_BASE_ADDRESS);
+	write32p(spi + SPI_CNTRL0, read32p(spi + SPI_CNTRL0) | 0x07080000);
+	write32p(spi + SPI_CNTRL1, read32p(spi + SPI_CNTRL1) & ~0x003f0000);
+	write8p(spi + SPI100_ENABLE, read8p(spi + SPI100_ENABLE) | SPI_USE_SPI100);
+	write16p(spi + SPI100_SPEED_CONFIG,
+		 (read16p(spi + SPI100_SPEED_CONFIG) & ~0xf000) | (SPI_SPEED_33M << 12));
+	write32p(spi + SPI_ALT_CFG_1C, read32p(spi + SPI_ALT_CFG_1C) & ~BIT(10));
+	write16p(spi + SPI100_HOST_PREF_CONFIG,
+		 (read16p(spi + SPI100_HOST_PREF_CONFIG) & ~SPI_RD4DW_EN_HOST) | BIT(14));
+	write32p(spi + SPI_CNTRL0, (read32p(spi + SPI_CNTRL0) & ~SPI_READ_MODE_MASK) |
+		 SPI_READ_MODE(SPI_READ_MODE_FAST_READ));
+	pci_s_write_config16(FCH_LPC_DEV, LPC_ROM_DMA_CTRL,
+			     pci_s_read_config16(FCH_LPC_DEV, LPC_ROM_DMA_CTRL) | BIT(8));
+	pci_s_write_config16(FCH_LPC_DEV, LPC_ROM_DMA_CTRL,
+			     pci_s_read_config16(FCH_LPC_DEV, LPC_ROM_DMA_CTRL) | BIT(7));
+}
+
 void zeppelin_fch_reset_init(void)
 {
 	/* Prelim */
@@ -163,6 +201,7 @@ void zeppelin_fch_reset_init(void)
 	/* A-Link index/data at 0xcd8, kept enabled */
 	pm_write32(PM_AB_REG_BAR, AB_INDX);
 
+	fch_spi_reset();
 	fch_hwacpi_reset();
 
 	/* LPC */

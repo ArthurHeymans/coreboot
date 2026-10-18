@@ -13,6 +13,8 @@
 #include "nbio.h"
 #include "smu.h"
 
+void __weak mainboard_dxio_training_done(void) {}
+
 void zeppelin_native_silicon_init(void)
 {
 	printk(BIOS_INFO, "Native silicon initialization (ramstage)\n");
@@ -22,6 +24,7 @@ void zeppelin_native_silicon_init(void)
 	/* AmdNbioPcieZPPei */
 	if (zeppelin_dxio_init() != CB_SUCCESS)
 		die("DXIO initialization failed\n");
+	mainboard_dxio_training_done();
 
 	/* FchTaishanPei USB, then the DXE drivers */
 	zeppelin_fch_usb_init();

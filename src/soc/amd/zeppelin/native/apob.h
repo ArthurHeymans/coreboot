@@ -7,6 +7,7 @@
 
 /* Maximum number of memory holes in the APOB system memory map */
 #define APOB_MAX_HOLES		18
+#define APOB_ANY_INSTANCE	UINT32_MAX
 
 /* The APOB reports the address ranges that aren't usable RAM as holes */
 enum apob_hole_type {
@@ -35,11 +36,11 @@ int zeppelin_apob_memory_map(const void *apob, uint64_t *top,
 			    struct zeppelin_apob_hole holes[APOB_MAX_HOLES]);
 /*
  * Byte at offset (from the start of the entry, header included) of the first
- * entry of a group and type. Returns false if there is no such entry or the
- * APOB is older than min_version.
+ * entry of a group, type and instance (or APOB_ANY_INSTANCE). Returns false if
+ * there is no such entry or the APOB is older than min_version.
  */
-bool zeppelin_apob_read8(const void *apob, uint32_t group, uint32_t type, size_t offset,
-			 uint32_t min_version, uint8_t *value);
+bool zeppelin_apob_read8(const void *apob, uint32_t group, uint32_t type, uint32_t instance,
+			 size_t offset, uint32_t min_version, uint8_t *value);
 /* Top of the DRAM below 4 GiB, 0 on error */
 uint32_t zeppelin_apob_tolm(const void *apob);
 

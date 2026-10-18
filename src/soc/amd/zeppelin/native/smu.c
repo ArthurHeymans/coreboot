@@ -13,6 +13,9 @@
 
 /* SMU features enabled on SP4 and SP4r2 (vendor PCD 0xbb) */
 #define SMU_FEATURES_SP4		0xe73d
+#define  SMU_FEATURE_CORE_CSTATES	BIT(8)
+
+#define SMU_INTERFACE_VERSION		7
 
 enum cb_err zeppelin_smu_test_message(unsigned int die)
 {
@@ -125,12 +128,40 @@ enum cb_err zeppelin_smu_init(void)
 
 	for (unsigned int die = 0; die < zeppelin_die_count(); die++) {
 		const uint8_t bus = zeppelin_die_bus(die);
+		struct smu_payload version = { .msg = { SMU_INTERFACE_VERSION } };
+
+		/* The vendor code asserts (AGESA event 0xa2411310) and goes on */
+		if (zeppelin_smu_send(die, SMC_MSG_GET_VERSION, &version))
+			return CB_ERR;
+		if (version.msg[0] != SMU_INTERFACE_VERSION)
+			printk(BIOS_ERR, "SMU %u: interface version %u, expected %u\n", die,
+			       version.msg[0], SMU_INTERFACE_VERSION);
 
 		if (smu_send_arg(die, SMC_MSG_SET_POLICY_ADDRESS_LO, (uintptr_t)policy_table) ||
 		    smu_send_arg(die, SMC_MSG_SET_POLICY_ADDRESS_HI, 0) ||
 		    smu_send_arg(die, SMC_MSG_TRANSFER_POLICY, 0) ||
 		    smu_send_arg(die, SMC_MSG_3B, bus) ||
 		    smu_send_arg(die, SMC_MSG_3D, bus))
+			return CB_ERR;
+	}
+
+	return CB_SUCCESS;
+}
+
+/*
+ * The vendor SMU driver's MP-services callback ("Callback Ac Btc"). AC BTC,
+ * which runs a workload on every AP with messages 0x23/0x24/0x25, is off
+ * (vendor PCD 0x1bf = 0). DC BTC is on for SP4 and SP4r2 (the SMU driver sets
+ * PCD 0x1be): message 0x25 with argument 0 to die 0. Then message 8 goes to
+ * every die with the CORE_CSTATES bit of the feature mask.
+ */
+enum cb_err zeppelin_smu_aps_ready(void)
+{
+	if (smu_send_arg(0, SMC_MSG_DC_BTC, 0))
+		return CB_ERR;
+
+	for (unsigned int die = 0; die < zeppelin_die_count(); die++) {
+		if (smu_send_arg(die, SMC_MSG_FINAL, SMU_FEATURES_SP4 & SMU_FEATURE_CORE_CSTATES))
 			return CB_ERR;
 	}
 

@@ -6,6 +6,7 @@ all_x86-y += gpio.c
 
 bootblock-y += early_fch.c
 
+romstage-y += i2c.c
 romstage-y += soc_util.c
 
 ramstage-$(CONFIG_HAVE_ACPI_TABLES) += acpi.c
@@ -13,6 +14,7 @@ ramstage-$(CONFIG_HAVE_ACPI_TABLES) += acpi_crat.c
 ramstage-y += chip.c
 ramstage-y += cpu.c
 ramstage-y += fch.c
+ramstage-y += i2c.c
 ramstage-y += mca.c
 ramstage-y += pcie_gpp.c
 ramstage-y += memmap.c
@@ -25,6 +27,7 @@ subdirs-y += native
 
 smm-y += gpio.c
 smm-y += root_complex.c
+smm-y += smihandler.c
 
 CPPFLAGS_common += -I$(src)/soc/amd/zeppelin/include
 CPPFLAGS_common += -I$(src)/soc/amd/zeppelin/acpi

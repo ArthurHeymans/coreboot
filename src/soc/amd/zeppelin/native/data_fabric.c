@@ -22,6 +22,9 @@
 
 /* Function 0 */
 #define DF_F0_INSTANCE_COUNT	0x040
+#define DF_F0_DRAM_HOLE		0x104	/* [31:24] hole base, [0] valid */
+#define DF_F0_DRAM_BASE(i)	(0x110 + 8 * (i))	/* [1] hole enable, [0] valid */
+#define DF_F0_DRAM_LIMIT(i)	(0x114 + 8 * (i))	/* [7:5] destination */
 #define DF_F0_VGA_EN		0x080
 #define DF_F0_IO_BASE(i)	(0x0c0 + 8 * (i))
 #define DF_F0_IO_LIMIT(i)	(0x0c4 + 8 * (i))
@@ -53,6 +56,9 @@
 #define DF_F5_PIE_PWR_354	0x354
 #define DF_F5_PIE_PWR_358	0x358
 /* Function 6 */
+#define DF_F6_SCRUB_BASE	0x048	/* [31:4] base >> 20, [0] enable */
+#define DF_F6_SCRUB_LIMIT	0x04c	/* [31:4] limit >> 20, [3:0] rate */
+#define DF_F6_REDIR_SCRUB	0x058	/* per UMC instance */
 #define DF_F6_ERR_STATUS_0	0x1f0
 #define DF_F6_ERR_STATUS_1	0x1f4
 #define DF_F6_CLK_GATE_DC	0x0dc
@@ -60,12 +66,14 @@
 #define DF_INST_CCM0		2
 #define DF_INST_CCM1		3
 #define DF_INST_IOMS		4
+#define DF_INST_CS_DRAM_MAP	5
 
 #define DF_MMIO_PAIRS		8
 #define DF_IO_PAIRS		8
 #define ALIGN_16M		(~(uint64_t)0xffffff)
 
 #define APOB_GROUP_MEMORY	1
+#define APOB_TYPE_MEM_CONFIG	2
 #define APOB_TYPE_PIE_PWR	0xf
 
 static void df_write_all(uint8_t fn, uint16_t reg, uint32_t value)
@@ -379,10 +387,94 @@ void zeppelin_df_early_init(void)
 		df_ccm_ioms_init(die, rev_a0);
 		df_pie_ras_init(die);
 	}
-	/*
-	 * The vendor code also programs the DRAM scrubber here from the APOB
-	 * channel population. It is not needed to boot and is not done yet.
-	 */
+}
+
+/* DRAM behind this die's scrubber, minus the MMIO hole if it is in this range */
+static uint64_t df_scrub_dram_size(unsigned int die)
+{
+	const uint32_t base = zeppelin_df_read32(die, 6, DF_F6_SCRUB_BASE, DIRECT);
+	const uint32_t limit = zeppelin_df_read32(die, 6, DF_F6_SCRUB_LIMIT, DIRECT);
+	uint64_t size;
+
+	if (!limit)
+		return 0;
+	size = (uint64_t)((limit >> 4) - (base >> 4) + 1) << 20;
+
+	for (unsigned int i = 0; i < 2; i++) {
+		const uint32_t dram_base =
+			zeppelin_df_read32(die, 0, DF_F0_DRAM_BASE(i), DF_INST_CS_DRAM_MAP);
+		const uint32_t dram_limit =
+			zeppelin_df_read32(die, 0, DF_F0_DRAM_LIMIT(i), DF_INST_CS_DRAM_MAP);
+		uint32_t hole;
+
+		/* Socket 0: the destination is the die number */
+		if (!(dram_base & BIT(0)) || (dram_limit & 0xe0) != die << 5 ||
+		    !(dram_base & BIT(1)))
+			continue;
+		hole = zeppelin_df_read32(die, 0, DF_F0_DRAM_HOLE, DF_INST_CS_DRAM_MAP);
+		if (hole & BIT(0))
+			size -= 4ULL * GiB - (hole & 0xff000000);
+	}
+
+	return size;
+}
+
+/*
+ * The scrub rate for one pass over size bytes in the given number of hours:
+ * the largest table index whose threshold (units inferred to be ns per 64-byte
+ * line) doesn't exceed hours * 3.96e12 / (size / 64).
+ */
+static uint8_t df_scrub_rate(uint64_t size, unsigned int hours)
+{
+	static const uint64_t thresholds[16] = {
+		640, 1280, 2560, 5120, 10200, 20500, 41000, 81900, 163800, 327700, 655400,
+		1310000, 2620000, 5240000, 10490000, 20970000,
+	};
+	uint64_t q;
+	uint8_t rate = 0;
+
+	if (!(size >> 6))
+		return 0;
+	q = hours * 3960000000000ULL / (size >> 6);
+	for (uint8_t i = 0; i < ARRAY_SIZE(thresholds) && thresholds[i] <= q; i++)
+		rate = i;
+	return rate;
+}
+
+/*
+ * The DRAM scrubber of the vendor AmdFabricZpPei with its defaults: scrub
+ * redirection on (PCD 0x8f) and one pass every 24 hours (PCD 0x8e). The ABL
+ * sets the scrub base and limit.
+ */
+void zeppelin_df_scrub_init(void)
+{
+	const unsigned int hours = 24;
+
+	for (unsigned int die = 0; die < zeppelin_die_count(); die++) {
+		const uint64_t size = df_scrub_dram_size(die);
+		uint8_t populated[2];
+		uint8_t rate;
+
+		if (!size)
+			continue;
+		/* Inferred meaning: the two UMC channels are populated */
+		if (!zeppelin_apob_read8(zeppelin_apob(), APOB_GROUP_MEMORY, APOB_TYPE_MEM_CONFIG,
+					 die, 0x38, 0, &populated[0]) ||
+		    !zeppelin_apob_read8(zeppelin_apob(), APOB_GROUP_MEMORY, APOB_TYPE_MEM_CONFIG,
+					 die, 0x39, 0, &populated[1]))
+			continue;
+		if (!populated[0] && !populated[1])
+			continue;
+
+		for (uint8_t i = 0; i < 2; i++)
+			zeppelin_df_write32(die, 6, DF_F6_REDIR_SCRUB, i, populated[i] ? 1 : 0);
+
+		rate = df_scrub_rate(size, hours);
+		zeppelin_df_clrsetbits32(die, 6, DF_F6_SCRUB_LIMIT, DIRECT, 0xf, rate);
+		zeppelin_df_clrsetbits32(die, 6, DF_F6_SCRUB_BASE, DIRECT, 0, BIT(0));
+		printk(BIOS_DEBUG, "DF %u: DRAM scrub rate %u for 0x%llx bytes\n", die, rate,
+		       size);
+	}
 }
 
 /* ---- AmdFabricZpDxe ---- */
@@ -398,8 +490,8 @@ void zeppelin_df_late_init(void)
 	uint8_t apob_flag = 0;
 
 	/* APOB group 1 type 0xf, byte 0x130 (meaning unknown), APOB version 9 and up */
-	zeppelin_apob_read8(zeppelin_apob(), APOB_GROUP_MEMORY, APOB_TYPE_PIE_PWR, 0x130,
-			    9, &apob_flag);
+	zeppelin_apob_read8(zeppelin_apob(), APOB_GROUP_MEMORY, APOB_TYPE_PIE_PWR,
+			    APOB_ANY_INSTANCE, 0x130, 9, &apob_flag);
 	apob_flag = !!apob_flag;
 
 	for (unsigned int die = 0; die < dies; die++) {

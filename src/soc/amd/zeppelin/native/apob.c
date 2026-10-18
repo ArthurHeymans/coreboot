@@ -53,8 +53,9 @@ bool zeppelin_apob_is_valid(const void *apob)
 			sizeof(struct apob_entry_header);
 }
 
-/* Returns the payload of the first entry of the given group and type */
-static const void *apob_find(const void *apob, uint32_t group, uint32_t type, size_t *size)
+/* Returns the payload of the first entry of the given group, type and instance */
+static const void *apob_find(const void *apob, uint32_t group, uint32_t type,
+			     uint32_t instance, size_t *size)
 {
 	const struct apob_base_header *header = apob;
 	const uint8_t *current;
@@ -70,7 +71,8 @@ static const void *apob_find(const void *apob, uint32_t group, uint32_t type, si
 
 		if (entry->size < sizeof(*entry) || entry->size > (size_t)(end - current))
 			return NULL;
-		if (entry->group == group && entry->type == type) {
+		if (entry->group == group && entry->type == type &&
+		    (instance == APOB_ANY_INSTANCE || entry->instance == instance)) {
 			*size = entry->size - sizeof(*entry);
 			return current + sizeof(*entry);
 		}
@@ -80,8 +82,8 @@ static const void *apob_find(const void *apob, uint32_t group, uint32_t type, si
 	return NULL;
 }
 
-bool zeppelin_apob_read8(const void *apob, uint32_t group, uint32_t type, size_t offset,
-			 uint32_t min_version, uint8_t *value)
+bool zeppelin_apob_read8(const void *apob, uint32_t group, uint32_t type, uint32_t instance,
+			 size_t offset, uint32_t min_version, uint8_t *value)
 {
 	const struct apob_base_header *header = apob;
 	const uint8_t *payload;
@@ -91,7 +93,7 @@ bool zeppelin_apob_read8(const void *apob, uint32_t group, uint32_t type, size_t
 	    offset < sizeof(struct apob_entry_header))
 		return false;
 
-	payload = apob_find(apob, group, type, &size);
+	payload = apob_find(apob, group, type, instance, &size);
 	offset -= sizeof(struct apob_entry_header);
 	if (!payload || offset >= size)
 		return false;
@@ -105,7 +107,8 @@ uint16_t zeppelin_apob_memclk(const void *apob)
 	const struct apob_memory_config *config;
 	size_t size;
 
-	config = apob_find(apob, APOB_GROUP_MEMORY, APOB_TYPE_MEMORY_CONFIG, &size);
+	config = apob_find(apob, APOB_GROUP_MEMORY, APOB_TYPE_MEMORY_CONFIG, APOB_ANY_INSTANCE,
+			   &size);
 	if (!config || size < sizeof(*config))
 		return 0;
 
@@ -118,7 +121,7 @@ int zeppelin_apob_memory_map(const void *apob, uint64_t *top,
 	const struct apob_system_map *map;
 	size_t size;
 
-	map = apob_find(apob, APOB_GROUP_FABRIC, APOB_TYPE_SYSTEM_MAP, &size);
+	map = apob_find(apob, APOB_GROUP_FABRIC, APOB_TYPE_SYSTEM_MAP, APOB_ANY_INSTANCE, &size);
 	if (!map || size < sizeof(*map) || map->hole_count > APOB_MAX_HOLES ||
 	    map->hole_count > (size - sizeof(*map)) / sizeof(map->holes[0]))
 		return -1;

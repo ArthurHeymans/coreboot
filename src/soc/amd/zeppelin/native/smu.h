@@ -28,6 +28,7 @@ unsigned int zeppelin_thread_count(void);
 enum cb_err zeppelin_smu_launch_aps(unsigned int ap_count);
 void zeppelin_smu_print_name(void);
 enum cb_err zeppelin_smu_init(void);
+enum cb_err zeppelin_smu_aps_ready(void);
 enum cb_err zeppelin_smu_ccx_done(void);
 enum cb_err zeppelin_smu_cac_weights(uint64_t weights[SMU_CAC_WEIGHT_COUNT]);
 
