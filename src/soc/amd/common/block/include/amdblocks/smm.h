@@ -13,6 +13,7 @@ void fch_apmc_smi_handler(void);
 void fch_power_button_handler(void);
 void fch_slp_typ_handler(void);
 void soc_smi_usb_s3_entry(void);
+void soc_smi_sleep_entry(uint8_t slp_typ);
 void clear_tvalid(void);
 void tseg_valid(void);
 bool is_smm_locked(void);

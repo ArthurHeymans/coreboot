@@ -19,6 +19,9 @@
 #include <soc/southbridge.h>
 #include <types.h>
 
+/* SoC-specific steps before the SMU puts the system to sleep */
+__weak void soc_smi_sleep_entry(uint8_t slp_typ) {}
+
 void fch_slp_typ_handler(void)
 {
 	uint32_t pci_ctrl, reg32;
@@ -58,6 +61,8 @@ void fch_slp_typ_handler(void)
 		wbinvd();
 
 		clear_all_smi_status();
+
+		soc_smi_sleep_entry(slp_typ);
 
 		/* Do not send SMI before AcpiPm1CntBlkx00[SlpTyp] */
 		pci_ctrl = pm_read32(PM_PCI_CTRL);
