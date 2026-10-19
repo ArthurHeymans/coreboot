@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
 #include <amdblocks/smu.h>
+#include <commonlib/bsd/helpers.h>
 #include <console/console.h>
 #include <soc/smu.h>
 #include <soc/soc_util.h>
@@ -116,15 +117,53 @@ void zeppelin_smu_print_name(void)
 }
 
 /*
- * The SMU DXE driver of the vendor firmware, per die. The BIOS policy table is
- * all zeros: every field defaults to 0 there, which selects the fused values.
+ * BIOS policy table of the SMU V9 firmware. Zero selects the fused value. The
+ * vendor SMU driver sets the determinism fields itself; everything else comes
+ * from PCDs that default to 0.
+ */
+struct smu_policy_table {
+	uint32_t tdp;			/* MaxSusPwr */
+	uint32_t tdc;
+	uint32_t edc;
+	uint8_t determinism_enable;
+	uint8_t reserved_0d[3];
+	uint32_t determinism_percent;
+	uint8_t reserved_14[0x7c - 0x14];
+} __packed;
+
+_Static_assert(sizeof(struct smu_policy_table) == 0x7c, "SMU V9 policy table size");
+
+/*
+ * DRAM that the SMU firmware writes its AGM log and performance monitor data
+ * to. Ramstage lives in CBMEM, so these stay reserved for the OS.
+ */
+static uint8_t agm_log[ZEPPELIN_MAX_DIES][4 * KiB] __aligned(4 * KiB);
+static uint8_t perfmon[ZEPPELIN_MAX_DIES][4 * KiB] __aligned(4 * KiB);
+
+static enum cb_err smu_set_address(unsigned int die, uint32_t msg_lo, uint32_t msg_hi,
+				   const void *buffer)
+{
+	const uint64_t address = (uintptr_t)buffer;
+
+	if (smu_send_arg(die, msg_lo, (uint32_t)address) ||
+	    smu_send_arg(die, msg_hi, address >> 32))
+		return CB_ERR;
+	return CB_SUCCESS;
+}
+
+/*
+ * The SMU DXE driver of the vendor firmware (AmdNbioSmuV9Dxe entry), per die.
+ * The SMU gets its AGM log and perfmon buffers before it enables features.
  */
 enum cb_err zeppelin_smu_init(void)
 {
 	/* The SMU reads it with DMA */
-	static uint8_t policy_table[0x7c] __aligned(64);
+	static struct smu_policy_table policy __aligned(64);
 
-	memset(policy_table, 0, sizeof(policy_table));
+	policy = (struct smu_policy_table) {
+		.determinism_enable = 1,
+		.determinism_percent = 100,
+	};
 
 	for (unsigned int die = 0; die < zeppelin_die_count(); die++) {
 		const uint8_t bus = zeppelin_die_bus(die);
@@ -137,9 +176,16 @@ enum cb_err zeppelin_smu_init(void)
 			printk(BIOS_ERR, "SMU %u: interface version %u, expected %u\n", die,
 			       version.msg[0], SMU_INTERFACE_VERSION);
 
-		if (smu_send_arg(die, SMC_MSG_SET_POLICY_ADDRESS_LO, (uintptr_t)policy_table) ||
-		    smu_send_arg(die, SMC_MSG_SET_POLICY_ADDRESS_HI, 0) ||
+		memset(agm_log[die], 0, sizeof(agm_log[die]));
+		memset(perfmon[die], 0, sizeof(perfmon[die]));
+
+		if (smu_set_address(die, SMC_MSG_SET_POLICY_ADDRESS_LO,
+				    SMC_MSG_SET_POLICY_ADDRESS_HI, &policy) ||
 		    smu_send_arg(die, SMC_MSG_TRANSFER_POLICY, 0) ||
+		    smu_set_address(die, SMC_MSG_SET_AGM_LOG_ADDRESS_LO,
+				    SMC_MSG_SET_AGM_LOG_ADDRESS_HI, agm_log[die]) ||
+		    smu_set_address(die, SMC_MSG_SET_PERFMON_ADDRESS_LO,
+				    SMC_MSG_SET_PERFMON_ADDRESS_HI, perfmon[die]) ||
 		    smu_send_arg(die, SMC_MSG_3B, bus) ||
 		    smu_send_arg(die, SMC_MSG_3D, bus))
 			return CB_ERR;
@@ -149,11 +195,10 @@ enum cb_err zeppelin_smu_init(void)
 }
 
 /*
- * The vendor SMU driver's MP-services callback ("Callback Ac Btc"). AC BTC,
- * which runs a workload on every AP with messages 0x23/0x24/0x25, is off
- * (vendor PCD 0x1bf = 0). DC BTC is on for SP4 and SP4r2 (the SMU driver sets
- * PCD 0x1be): message 0x25 with argument 0 to die 0. Then message 8 goes to
- * every die with the CORE_CSTATES bit of the feature mask.
+ * The vendor SMU driver's MP-services callback. AC BTC, which runs a workload
+ * on every AP with messages 0x23/0x24/0x25, is off (vendor PCD 0x1bf = 0).
+ * DC BTC is on for SP4 and SP4r2 (the SMU driver sets PCD 0x1be): message 0x26
+ * with argument 0 to die 0. Then every die enables the CORE_CSTATES feature.
  */
 enum cb_err zeppelin_smu_aps_ready(void)
 {
@@ -161,7 +206,8 @@ enum cb_err zeppelin_smu_aps_ready(void)
 		return CB_ERR;
 
 	for (unsigned int die = 0; die < zeppelin_die_count(); die++) {
-		if (smu_send_arg(die, SMC_MSG_FINAL, SMU_FEATURES_SP4 & SMU_FEATURE_CORE_CSTATES))
+		if (smu_send_arg(die, SMC_MSG_ENABLE_FEATURES,
+				 SMU_FEATURES_SP4 & SMU_FEATURE_CORE_CSTATES))
 			return CB_ERR;
 	}
 

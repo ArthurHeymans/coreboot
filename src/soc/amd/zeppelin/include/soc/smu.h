@@ -15,17 +15,19 @@
 enum smu_message_id {
 	SMC_MSG_TEST = 0x01,			/* argument 0xaa55aa55, also applies ThreadEn */
 	SMC_MSG_GET_VERSION = 0x03,		/* argument: expected interface version */
-	SMC_MSG_FINAL = 0x08,			/* after the APs are up */
 	SMC_MSG_ENABLE_FEATURES = 0x09,		/* argument: feature mask */
 	SMC_MSG_DXIO_SERVICE = 0x0f,
 	SMC_MSG_GET_CAC_WEIGHT = 0x10,		/* argument: index 0..20 */
 	SMC_MSG_S3ENTRY = 0x13,			/* sleep entry */
 	SMC_MSG_SET_POLICY_ADDRESS_HI = 0x1d,
 	SMC_MSG_SET_POLICY_ADDRESS_LO = 0x1e,
+	SMC_MSG_SET_AGM_LOG_ADDRESS_HI = 0x1f,
+	SMC_MSG_SET_AGM_LOG_ADDRESS_LO = 0x20,
 	SMC_MSG_TRANSFER_POLICY = 0x22,
-	SMC_MSG_AP_READY = 0x23,
-	SMC_MSG_DC_BTC = 0x25,			/* also the perfmon DRAM address, low */
+	SMC_MSG_DC_BTC = 0x26,			/* argument: 0 */
 	SMC_MSG_GET_NAME_STRING = 0x28,		/* argument: dword index */
+	SMC_MSG_SET_PERFMON_ADDRESS_HI = 0x2d,
+	SMC_MSG_SET_PERFMON_ADDRESS_LO = 0x2e,
 	SMC_MSG_38 = 0x38,
 	SMC_MSG_39 = 0x39,
 	SMC_MSG_3B = 0x3b,			/* argument: root bus of the die */
