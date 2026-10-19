@@ -80,14 +80,35 @@ static void program_vrs(void)
 	i2c_writeb(MJ11_I2C_BUS, VR_MUX_B, 0, BIT(0));
 }
 
+/* F09 GbtReDriverPei: ordered mux selection and external lane tuning. */
+static void program_ec1_redrivers(void)
+{
+	unsigned int failures = 0;
+
+	for (size_t i = 0; i < mj11_ec1_redriver_i2c_count; i++) {
+		const struct mj11_i2c_rmw *r = &mj11_ec1_redriver_i2c[i];
+		uint8_t value;
+
+		if (i2c_readb(MJ11_I2C_BUS, r->addr, r->reg, &value) ||
+		    i2c_writeb(MJ11_I2C_BUS, r->addr, r->reg,
+			       (value & r->and_mask) | r->or_mask))
+			failures++;
+	}
+	if (failures)
+		printk(BIOS_WARNING, "EC1 external re-driver: %u I2C accesses failed\n",
+		       failures);
+}
+
 void mainboard_fch_reset_done(void)
 {
 	/* I2C3 on GPIO19/20 */
 	mj11_iomux_write(19, 1);
 	mj11_iomux_write(20, 1);
-	if (zeppelin_i2c_init(MJ11_I2C_BUS) == CB_SUCCESS)
+	if (zeppelin_i2c_init(MJ11_I2C_BUS) == CB_SUCCESS) {
 		program_vrs();
-	else
+		if (CONFIG(BOARD_GIGABYTE_MJ11_EC1))
+			program_ec1_redrivers();
+	} else
 		printk(BIOS_ERR, "I2C%u setup failed, VRs not programmed\n", MJ11_I2C_BUS);
 
 	mj11_clear_pm1();

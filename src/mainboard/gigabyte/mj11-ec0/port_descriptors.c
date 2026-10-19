@@ -49,13 +49,24 @@ enum riser_mode {
 	RISER_X4X4 = 1,		/* lanes 23..16 unused */
 	RISER_X8X4X4 = 2,
 	RISER_X8X8 = 3,
-	RISER_X16 = 7,
-	RISER_KEEP = 0xf,	/* the template: x16 */
+	RISER_DEFAULT = 7,	/* enable engine 6, retaining the template's lanes */
+	RISER_KEEP = 0xf,	/* retain the board-specific template */
 };
 
 static const dxio_descriptor mj11_x16[] = {
 	MJ11_FIXED_ENGINES,
 	MJ11_PCIE(31, 16, 3, 1),
+};
+
+/*
+ * F09 AmdCpmOemInitPeim (7b8f8199-42c7-db87-307e-2892f3849538),
+ * PEI $A26 at 0xffe09da0: engines 6 and 8 form the default x8/x8 pair.
+ * This differs from explicit bifurcation mode 3, which uses engines 6/7.
+ */
+static const dxio_descriptor mj11_ec1_default[] = {
+	MJ11_FIXED_ENGINES,
+	MJ11_PCIE(31, 24, 3, 1),
+	MJ11_PCIE(23, 16, 3, 3),
 };
 
 static const dxio_descriptor mj11_x8x8[] = {
@@ -149,7 +160,7 @@ static enum riser_mode riser_mode(void)
 		printk(BIOS_INFO, "Riser strap ID 0x%x\n", id);
 		return riser_mode_from_id(id);
 	}
-	return RISER_X16;
+	return RISER_DEFAULT;
 }
 
 /* SP4r2: one die */
@@ -180,8 +191,13 @@ void mainboard_get_dxio_descriptors(unsigned int die, const dxio_descriptor **dx
 		*count = ARRAY_SIZE(mj11_x8x8);
 		break;
 	default:
-		*dxio = mj11_x16;
-		*count = ARRAY_SIZE(mj11_x16);
+		if (CONFIG(BOARD_GIGABYTE_MJ11_EC1)) {
+			*dxio = mj11_ec1_default;
+			*count = ARRAY_SIZE(mj11_ec1_default);
+		} else {
+			*dxio = mj11_x16;
+			*count = ARRAY_SIZE(mj11_x16);
+		}
 		break;
 	}
 }

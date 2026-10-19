@@ -25,10 +25,20 @@ struct mj11_smn_write {
 	uint32_t value;
 };
 
+struct mj11_i2c_rmw {
+	uint8_t addr;
+	uint8_t reg;
+	uint8_t and_mask;
+	uint8_t or_mask;
+};
+
 extern const struct mj11_vr_image mj11_vr_images[];
 extern const size_t mj11_vr_image_count;
 
 extern const struct mj11_smn_write mj11_post_training_smn[];
 extern const size_t mj11_post_training_smn_count;
+
+extern const struct mj11_i2c_rmw mj11_ec1_redriver_i2c[];
+extern const size_t mj11_ec1_redriver_i2c_count;
 
 #endif /* MJ11_BOARD_TABLES_H */

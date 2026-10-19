@@ -1,6 +1,6 @@
 ## SPDX-License-Identifier: GPL-2.0-only
 
-if BOARD_GIGABYTE_MJ11_EC0
+if BOARD_GIGABYTE_MJ11_EC0 || BOARD_GIGABYTE_MJ11_EC1
 
 config BOARD_SPECIFIC_OPTIONS
 	def_bool y
@@ -15,6 +15,7 @@ config MAINBOARD_DIR
 	default "gigabyte/mj11-ec0"
 
 config MAINBOARD_PART_NUMBER
+	default "MJ11-EC1" if BOARD_GIGABYTE_MJ11_EC1
 	default "MJ11-EC0"
 
 config FMDFILE
@@ -24,9 +25,11 @@ config CBFS_SIZE
 	default 0xb1b000
 
 config ZEPPELIN_VENDOR_ROM_SHA256
+	default "d71da440e44142e85b93f8a74ad7a0f251bf4113ef0782a2fd1498eb59f831cb" if BOARD_GIGABYTE_MJ11_EC1
 	default "3631995d059e336863527f1511894bdfc61361bc0691a430b3896fb94746aded"
 	help
-	  Gigabyte MJ11-EC0 BIOS F02 (MJ11-EC0_F02.rom).
+	  Gigabyte MJ11-EC0 BIOS F02 or MJ11-EC1 BIOS F09. A backup with
+	  modified NVRAM needs its own explicitly verified hash.
 
 config UART_FOR_CONSOLE
 	default 0
@@ -34,4 +37,4 @@ config UART_FOR_CONSOLE
 config MAINBOARD_POWER_FAILURE_STATE
 	default 2
 
-endif # BOARD_GIGABYTE_MJ11_EC0
+endif # BOARD_GIGABYTE_MJ11_EC0 || BOARD_GIGABYTE_MJ11_EC1

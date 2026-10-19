@@ -2,3 +2,6 @@
 
 config BOARD_GIGABYTE_MJ11_EC0
 	bool "MJ11-EC0"
+
+config BOARD_GIGABYTE_MJ11_EC1
+	bool "MJ11-EC1"

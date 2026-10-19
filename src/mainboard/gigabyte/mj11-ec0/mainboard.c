@@ -4,6 +4,7 @@
 #include <amdblocks/acpimmio.h>
 #include <amdblocks/acpimmio_map.h>
 #include <amdblocks/amd_pci_util.h>
+#include <amdblocks/smi.h>
 #include <amdblocks/smn.h>
 #include <bootstate.h>
 #include <console/console.h>
@@ -16,6 +17,7 @@
 #include <drivers/ipmi/ipmi_ops.h>
 #include <soc/amd_pci_int_defs.h>
 #include <soc/native.h>
+#include <soc/smi.h>
 #include <soc/southbridge.h>
 #include <types.h>
 
@@ -27,17 +29,35 @@
  * vendor firmware; the vendor PIC values aren't known, so INTA-D are left for
  * the OS to route through the ACPI link devices.
  */
-static const struct fch_irq_routing fch_irq_map[] = {
+static struct fch_irq_routing fch_irq_map[] = {
 	{ PIRQ_A,	PIRQ_NC,	16 },
 	{ PIRQ_B,	PIRQ_NC,	17 },
 	{ PIRQ_C,	PIRQ_NC,	18 },
 	{ PIRQ_D,	PIRQ_NC,	19 },
 	{ PIRQ_SCI,	ACPI_SCI_IRQ,	ACPI_SCI_IRQ },
 	{ PIRQ_GPIO,	7,		7 },
+	{ PIRQ_MISC,	0,		0 },
+	{ PIRQ_MISC0,	0,		0 },
+	{ PIRQ_MISC1,	0,		0 },
+	{ PIRQ_MISC2,	0,		0 },
 };
 
 const struct fch_irq_routing *mb_get_fch_irq_mapping(size_t *length)
 {
+	/*
+	 * These are control bitfields, not IRQ numbers. Preserve the native FCH
+	 * initialization instead of letting the routing code fill them with
+	 * PIRQ_NC, which disconnects the legacy timer interrupt.
+	 */
+	for (size_t i = 0; i < ARRAY_SIZE(fch_irq_map); i++) {
+		const uint8_t index = fch_irq_map[i].intr_index;
+
+		if (index < PIRQ_MISC || index > PIRQ_MISC2)
+			continue;
+		fch_irq_map[i].pic_irq_num = read_pci_int_idx(index, 0);
+		fch_irq_map[i].apic_irq_num = read_pci_int_idx(index, 1);
+	}
+
 	*length = ARRAY_SIZE(fch_irq_map);
 	return fch_irq_map;
 }
@@ -165,6 +185,12 @@ static void mainboard_final(void *chip_info)
 	ipmi_log_boot();
 	ipmi_apply_power_policy();
 	ipmi_set_erp();
+
+	/* GbtNmiBtn: the BMC diagnostic interrupt arrives on GEVENT11. */
+	if (CONFIG(HAVE_SMI_HANDLER)) {
+		smi_write32(SMI_REG_SMISTS0, BIT(SMITYPE_G_AGPIO7));
+		configure_smi(SMITYPE_G_AGPIO7, SMI_MODE_SMI);
+	}
 }
 
 #define SMN_IOMUX_136_139	0x02d01d88	/* FCH ACPI MMIO 0xfed80d88 */
