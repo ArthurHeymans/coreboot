@@ -37,6 +37,7 @@ struct non_pci_mmio_reg {
 };
 
 void read_non_pci_resources(struct device *domain, unsigned long *idx);
+uint64_t domain_smn_read64(const struct device *domain, uint32_t reg);
 
 void read_soc_memmap_resources(struct device *domain, unsigned long *idx);
 
