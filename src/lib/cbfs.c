@@ -8,6 +8,7 @@
 #include <commonlib/bsd/compression.h>
 #include <commonlib/list.h>
 #include <console/console.h>
+#include <decomp_probe.h>
 #include <fmap.h>
 #include <lib.h>
 #include <metadata_hash.h>
@@ -180,6 +181,24 @@ static inline bool cbfs_lzsa2_enabled(void)
 	return false;
 }
 
+static inline bool cbfs_fhl_enabled(void)
+{
+	if (ENV_PAYLOAD_LOADER && CONFIG(COMPRESSED_PAYLOAD_FHL))
+		return true;
+	if (ENV_RAMSTAGE_LOADER && CONFIG(COMPRESS_RAMSTAGE_FHL))
+		return true;
+	return false;
+}
+
+static inline bool cbfs_anz_enabled(void)
+{
+	if (ENV_PAYLOAD_LOADER && CONFIG(COMPRESSED_PAYLOAD_ANZ))
+		return true;
+	if (ENV_RAMSTAGE_LOADER && CONFIG(COMPRESS_RAMSTAGE_ANZ))
+		return true;
+	return false;
+}
+
 static bool cbfs_file_hash_mismatch(const void *buffer, size_t size,
 				    const union cbfs_mdata *mdata, bool skip_verification)
 {
@@ -267,8 +286,9 @@ static size_t cbfs_load_and_decompress(const struct region_device *rdev, void *b
 			return 0;
 
 		if (!cbfs_file_hash_mismatch(map, in_size, mdata, skip_verification)) {
+			const void *in = decomp_probe_input(map, in_size);
 			timestamp_add_now(TS_ULZ4F_START);
-			out_size = ulz4fn(map, in_size, buffer, buffer_size);
+			out_size = ulz4fn(in, in_size, buffer, buffer_size);
 			timestamp_add_now(TS_ULZ4F_END);
 		}
 
@@ -285,8 +305,9 @@ static size_t cbfs_load_and_decompress(const struct region_device *rdev, void *b
 
 		if (!cbfs_file_hash_mismatch(map, in_size, mdata, skip_verification)) {
 			/* Note: timestamp not useful for memory-mapped media (x86) */
+			const void *in = decomp_probe_input(map, in_size);
 			timestamp_add_now(TS_ULZMA_START);
-			out_size = ulzman(map, in_size, buffer, buffer_size);
+			out_size = ulzman(in, in_size, buffer, buffer_size);
 			timestamp_add_now(TS_ULZMA_END);
 		}
 
@@ -303,9 +324,46 @@ static size_t cbfs_load_and_decompress(const struct region_device *rdev, void *b
 
 		if (!cbfs_file_hash_mismatch(map, in_size, mdata, skip_verification)) {
 			/* Note: timestamp not useful for memory-mapped media (x86) */
+			const void *in = decomp_probe_input(map, in_size);
 			timestamp_add_now(TS_UZSTDF_START);
-			out_size = uzstdn(map, in_size, buffer, buffer_size);
+			out_size = uzstdn(in, in_size, buffer, buffer_size);
 			timestamp_add_now(TS_UZSTDF_END);
+		}
+
+		rdev_munmap(rdev, map);
+
+		return out_size;
+	case CBFS_COMPRESS_FHL:
+		if (!cbfs_fhl_enabled())
+			return 0;
+
+		map = rdev_mmap_full(rdev);
+		if (map == NULL)
+			return 0;
+
+		if (!cbfs_file_hash_mismatch(map, in_size, mdata, skip_verification)) {
+			const void *in = decomp_probe_input(map, in_size);
+			timestamp_add_now(TS_UFHL_START);
+			out_size = ufhln(in, in_size, buffer, buffer_size);
+			timestamp_add_now(TS_UFHL_END);
+		}
+
+		rdev_munmap(rdev, map);
+
+		return out_size;
+	case CBFS_COMPRESS_ANZ:
+		if (!cbfs_anz_enabled())
+			return 0;
+
+		map = rdev_mmap_full(rdev);
+		if (map == NULL)
+			return 0;
+
+		if (!cbfs_file_hash_mismatch(map, in_size, mdata, skip_verification)) {
+			const void *in = decomp_probe_input(map, in_size);
+			timestamp_add_now(TS_UANZ_START);
+			out_size = uanzn(in, in_size, buffer, buffer_size);
+			timestamp_add_now(TS_UANZ_END);
 		}
 
 		rdev_munmap(rdev, map);
@@ -321,8 +379,9 @@ static size_t cbfs_load_and_decompress(const struct region_device *rdev, void *b
 			return 0;
 
 		if (!cbfs_file_hash_mismatch(map, in_size, mdata, skip_verification)) {
+			const void *in = decomp_probe_input(map, in_size);
 			timestamp_add_now(TS_ULZSA2_START);
-			out_size = ulzsa2n(map, in_size, buffer, buffer_size);
+			out_size = ulzsa2n(in, in_size, buffer, buffer_size);
 			timestamp_add_now(TS_ULZSA2_END);
 		}
 
@@ -549,9 +608,13 @@ static void *do_alloc(union cbfs_mdata *mdata, struct region_device *rdev,
 		return NULL;
 	}
 
+	decomp_probe_start();
 	size = cbfs_load_and_decompress(rdev, loc, size, compression, mdata, skip_verification);
 	if (!size)
 		return NULL;
+	if ((ENV_RAMSTAGE_LOADER && compression != CBFS_COMPRESS_NONE) ||
+	    be32toh(mdata->h.type) == CBFS_TYPE_STAGE)
+		decomp_probe_report(mdata->h.filename, compression, region_device_sz(rdev), size);
 
 	return loc;
 }
@@ -687,18 +750,24 @@ enum cb_err cbfs_prog_stage_load(struct prog *pstage)
 
 	/* LZ4 stages can be decompressed in-place to save mapping scratch space. Load the
 	   compressed data to the end of the buffer and point &rdev to that memory location. */
+	const size_t compressed_size = region_device_sz(&rdev);
+	decomp_probe_start();
+
 	if (cbfs_lz4_enabled() && compression == CBFS_COMPRESS_LZ4) {
 		size_t in_size = region_device_sz(&rdev);
 		void *compr_start = prog_start(pstage) + prog_size(pstage) - in_size;
 		if (rdev_readat(&rdev, compr_start, 0, in_size) != in_size)
 			return CB_ERR;
 		rdev_chain_mem(&rdev, compr_start, in_size);
+		decomp_probe_input_in_ram();
 	}
 
 	size_t fsize = cbfs_load_and_decompress(&rdev, prog_start(pstage), prog_size(pstage),
 						compression, &mdata, false);
 	if (!fsize)
 		return CB_ERR;
+
+	decomp_probe_report(prog_name(pstage), compression, compressed_size, fsize);
 
 	/* Clear area not covered by file. */
 	memset(prog_start(pstage) + fsize, 0, prog_size(pstage) - fsize);

@@ -103,6 +103,18 @@ config COMPRESSED_PAYLOAD_LZSA2
 	help
 	  In order to reduce the size payloads take up in the ROM chip
 	  coreboot can compress them using the LZSA2 algorithm.
+
+config COMPRESSED_PAYLOAD_FHL
+	bool "Use FHL compression for payloads"
+	help
+	  In order to reduce the size payloads take up in the ROM chip
+	  coreboot can compress them using the FHL algorithm.
+
+config COMPRESSED_PAYLOAD_ANZ
+	bool "Use ANZ compression for payloads"
+	help
+	  In order to reduce the size payloads take up in the ROM chip
+	  coreboot can compress them using the ANZ algorithm.
 endchoice
 
 config PAYLOAD_OPTIONS

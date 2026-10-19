@@ -54,6 +54,9 @@ compressionobj += divsufsort.o
 compressionobj += divsufsort_utils.o
 compressionobj += sssort.o
 compressionobj += trsort.o
+# FHL and ANZ (ANZ reuses FHL's parser)
+compressionobj += fhl_host.o
+compressionobj += anz.o
 
 cbfsobj :=
 cbfsobj += cbfstool.o
@@ -197,6 +200,8 @@ endif
 
 LZ4CFLAGS ?= -Wno-strict-prototypes
 ZSTDCPPFLAGS ?= -DZSTD_DISABLE_ASM=1
+# The FHL and ANZ encoders are threaded and use GNU C.
+COMPRESSIONLIBS := -pthread -lm
 
 VBOOT_HOSTLIB = $(VBOOT_HOST_BUILD)/libvboot_host.a
 
@@ -243,6 +248,14 @@ $(objutil)/cbfstool/%.o: $(top)/src/commonlib/bsd/zstd/*/%.c
 	printf "    HOSTCC     $(subst $(objutil)/,,$(@))\n"
 	$(HOSTCC) $(TOOLCPPFLAGS) $(TOOLCFLAGS) $(HOSTCFLAGS) $(ZSTDCPPFLAGS) -c -o $@ $<
 
+$(objutil)/cbfstool/fhl_host.o: $(top)/util/cbfstool/fhl_host.c $(top)/src/commonlib/bsd/fhl/fhl.c
+	printf "    HOSTCC     $(subst $(objutil)/,,$(@))\n"
+	$(HOSTCC) -O2 -std=gnu11 -pthread -I$(top)/src/commonlib/bsd $(HOSTCFLAGS) -c -o $@ $<
+
+$(objutil)/cbfstool/anz.o: $(top)/src/commonlib/bsd/anz/anz.c
+	printf "    HOSTCC     $(subst $(objutil)/,,$(@))\n"
+	$(HOSTCC) -O2 -std=gnu11 -pthread -DANZ_LIB -I$(top)/src/commonlib/bsd $(HOSTCFLAGS) -c -o $@ $<
+
 $(objutil)/cbfstool/%.o: $(top)/util/cbfstool/lz4/lib/%.c
 	printf "    HOSTCC     $(subst $(objutil)/,,$(@))\n"
 	$(HOSTCC) $(TOOLCPPFLAGS) $(TOOLCFLAGS) $(HOSTCFLAGS) $(LZ4CFLAGS) -c -o $@ $<
@@ -265,7 +278,7 @@ $(objutil)/cbfstool/%.o: $(top)/util/cbfstool/bpdt_formats/%.c
 
 $(objutil)/cbfstool/cbfstool: $(addprefix $(objutil)/cbfstool/,$(cbfsobj)) $(VBOOT_HOSTLIB)
 	printf "    HOSTCC     $(subst $(objutil)/,,$(@)) (link)\n"
-	$(HOSTCC) -v $(TOOLLDFLAGS) -o $@ $(addprefix $(objutil)/cbfstool/,$(cbfsobj)) $(VBOOT_HOSTLIB)
+	$(HOSTCC) -v $(TOOLLDFLAGS) -o $@ $(addprefix $(objutil)/cbfstool/,$(cbfsobj)) $(VBOOT_HOSTLIB) $(COMPRESSIONLIBS)
 
 $(objutil)/cbfstool/fmaptool: $(addprefix $(objutil)/cbfstool/,$(fmapobj))
 	printf "    HOSTCC     $(subst $(objutil)/,,$(@)) (link)\n"
@@ -281,11 +294,11 @@ $(objutil)/cbfstool/ifwitool: $(addprefix $(objutil)/cbfstool/,$(ifwiobj))
 
 $(objutil)/cbfstool/ifittool: $(addprefix $(objutil)/cbfstool/,$(ifitobj)) $(VBOOT_HOSTLIB)
 	printf "    HOSTCC     $(subst $(objutil)/,,$(@)) (link)\n"
-	$(HOSTCC) $(TOOLLDFLAGS) -o $@ $(addprefix $(objutil)/cbfstool/,$(ifitobj)) $(VBOOT_HOSTLIB)
+	$(HOSTCC) $(TOOLLDFLAGS) -o $@ $(addprefix $(objutil)/cbfstool/,$(ifitobj)) $(VBOOT_HOSTLIB) $(COMPRESSIONLIBS)
 
 $(objutil)/cbfstool/cbfs-compression-tool: $(addprefix $(objutil)/cbfstool/,$(cbfscompobj))
 	printf "    HOSTCC     $(subst $(objutil)/,,$(@)) (link)\n"
-	$(HOSTCC) $(TOOLLDFLAGS) -o $@ $(addprefix $(objutil)/cbfstool/,$(cbfscompobj))
+	$(HOSTCC) $(TOOLLDFLAGS) -o $@ $(addprefix $(objutil)/cbfstool/,$(cbfscompobj)) $(COMPRESSIONLIBS)
 
 $(objutil)/cbfstool/amdcompress: $(addprefix $(objutil)/cbfstool/,$(amdcompobj))
 	printf "    HOSTCC     $(subst $(objutil)/,,$(@)) (link)\n"

@@ -488,3 +488,9 @@ ifeq ($(CONFIG_PLATFORM_HAS_OFF_MODE_CHARGING_INDICATOR),y)
 $(eval $(call add_bmp_logo_file_to_cbfs,CONFIG_PLATFORM_HAS_SECONDARY_BOOT_INDICATOR_LOGO, \
 	      off_mode_charging_alt.bmp,CONFIG_PLATFORM_OFF_MODE_CHARGING_INDICATOR_LOGO_SECONDARY_PATH))
 endif
+
+bootblock-$(CONFIG_DECOMP_PROBE) += decomp_probe.c
+verstage-$(CONFIG_DECOMP_PROBE) += decomp_probe.c
+romstage-$(CONFIG_DECOMP_PROBE) += decomp_probe.c
+postcar-$(CONFIG_DECOMP_PROBE) += decomp_probe.c
+ramstage-$(CONFIG_DECOMP_PROBE) += decomp_probe.c

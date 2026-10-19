@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
+#include <bootstate.h>
 #include <console/console.h>
+#include <cpu/x86/cache.h>
 #include <cpu/x86/mtrr.h>
 #include <cpu/x86/mp.h>
 #include <cpu/intel/microcode.h>
@@ -93,8 +95,37 @@ static const struct mp_ops mp_ops = {
 	.post_mp_init = post_mp_init,
 };
 
+static int rom_mtrr = -1;
+
 void mp_init_cpus(struct bus *cpu_bus)
 {
 	/* TODO: Handle mp_init_with_smm failure? */
 	mp_init_with_smm(cpu_bus, &mp_ops);
+
+	if (!CONFIG(CACHE_ROM_AFTER_MP_INIT))
+		return;
+
+	/*
+	 * pre_mp_init left the flash uncached, so every read of it is a separate
+	 * SPI transaction. Cache it WP on the BSP until the payload starts.
+	 * mtrr_use_temp_range() cannot be used: it rewrites all variable MTRRs,
+	 * and with SMRR enabled writing MTRR 7 faults on these CPUs.
+	 */
+	rom_mtrr = acquire_and_configure_mtrr(CACHE_ROM_BASE, CAR_CACHE_ROM_SIZE,
+					      MTRR_TYPE_WRPROT);
+	if (rom_mtrr < 0)
+		printk(BIOS_WARNING, "No free MTRR to cache the boot ROM\n");
 }
+
+static void uncache_rom(void *unused)
+{
+	if (rom_mtrr < 0)
+		return;
+	disable_cache();
+	clear_var_mtrr(rom_mtrr);
+	enable_cache();
+	rom_mtrr = -1;
+}
+
+BOOT_STATE_INIT_ENTRY(BS_OS_RESUME, BS_ON_ENTRY, uncache_rom, NULL);
+BOOT_STATE_INIT_ENTRY(BS_PAYLOAD_BOOT, BS_ON_ENTRY, uncache_rom, NULL);

@@ -8,6 +8,11 @@
 #include "lz4/lib/lz4frame.h"
 #include <zstd.h>
 #include <commonlib/bsd/compression.h>
+#include <commonlib/bsd/fhl/fhl.h>
+#include <commonlib/bsd/anz/anz.h>
+
+/* util/cbfstool/fhl_host.c */
+size_t fhl_compress(const uint8_t *in, uint32_t n, uint8_t *out);
 
 static int
 lz4_compress(char *in, int in_len, char *out, int *out_len)
@@ -118,6 +123,63 @@ static int zstd_decompress(char *in, int in_len, char *out, int out_len,
 	return 0;
 }
 
+static int fhl_compress_cbfs(char *in, int in_len, char *out, int *out_len)
+{
+	uint8_t *bounce = malloc((size_t)in_len * 2 + 65536);
+	if (!bounce)
+		return -1;
+	size_t ret = fhl_compress((const uint8_t *)in, in_len, bounce);
+	if (ret == 0 || ret >= (size_t)in_len) {
+		free(bounce);
+		return -1;
+	}
+	memcpy(out, bounce, ret);
+	*out_len = ret;
+	free(bounce);
+	return 0;
+}
+
+static int fhl_decompress_cbfs(char *in, int in_len, char *out, int out_len,
+			       size_t *actual_size)
+{
+	static uint64_t work[FHL_WORK_SIZE / sizeof(uint64_t)];
+	size_t ret = fhl_decode(in, in_len, out, out_len, work);
+	if (ret == 0)
+		return -1;
+	if (actual_size != NULL)
+		*actual_size = ret;
+	return 0;
+}
+
+static int anz_compress_cbfs(char *in, int in_len, char *out, int *out_len)
+{
+	uint8_t *bounce = malloc((size_t)in_len * 2 + 4096);
+	if (!bounce)
+		return -1;
+	/* The ANZ CLI defaults: lclo 6, three parse settings on three threads. */
+	size_t ret = anz_compress((const uint8_t *)in, in_len, 6, 3, bounce);
+	if (ret == 0 || ret >= (size_t)in_len) {
+		free(bounce);
+		return -1;
+	}
+	memcpy(out, bounce, ret);
+	*out_len = ret;
+	free(bounce);
+	return 0;
+}
+
+static int anz_decompress_cbfs(char *in, int in_len, char *out, int out_len,
+			       size_t *actual_size)
+{
+	static uint64_t work[ANZ_WORK_SIZE / sizeof(uint64_t)] __attribute__((aligned(16)));
+	size_t ret = anz_decode(in, in_len, out, out_len, work);
+	if (ret == 0)
+		return -1;
+	if (actual_size != NULL)
+		*actual_size = ret;
+	return 0;
+}
+
 static int none_compress(char *in, int in_len, char *out, int *out_len)
 {
 	memcpy(out, in, in_len);
@@ -157,6 +219,12 @@ comp_func_ptr compression_function(enum cbfs_compression algo)
 	case CBFS_COMPRESS_LZSA2:
 		compress = lzsa2_compress;
 		break;
+	case CBFS_COMPRESS_FHL:
+		compress = fhl_compress_cbfs;
+		break;
+	case CBFS_COMPRESS_ANZ:
+		compress = anz_compress_cbfs;
+		break;
 	default:
 		ERROR("Unknown compression algorithm %d!\n", algo);
 		return NULL;
@@ -182,6 +250,12 @@ decomp_func_ptr decompression_function(enum cbfs_compression algo)
 		break;
 	case CBFS_COMPRESS_LZSA2:
 		decompress = lzsa2_decompress;
+		break;
+	case CBFS_COMPRESS_FHL:
+		decompress = fhl_decompress_cbfs;
+		break;
+	case CBFS_COMPRESS_ANZ:
+		decompress = anz_decompress_cbfs;
 		break;
 	default:
 		ERROR("Unknown compression algorithm %d!\n", algo);

@@ -29,4 +29,10 @@ size_t uzstdn(const void *src, size_t srcn, void *dst, size_t dstn);
  */
 size_t ulzsa2n(const void *src, size_t srcn, void *dst, size_t dstn);
 
+/* Decompress FHL and ANZ streams. The decoders trust the stream beyond its
+   header. FHL stages literals in the tail of dst, so neither decompresses in
+   place. Return the decompressed size, or 0 on error. */
+size_t ufhln(const void *src, size_t srcn, void *dst, size_t dstn);
+size_t uanzn(const void *src, size_t srcn, void *dst, size_t dstn);
+
 #endif	/* _COMMONLIB_COMPRESSION_H_ */

@@ -398,3 +398,38 @@ config HAVE_EARLY_POWEROFF_SUPPORT
 	  necessary hardware operations to initiate an early power off sequence.
 	  This might involve configuring hardware registers, sending commands to
 	  power management controllers, or other platform-specific operations.
+
+config DECOMP_PROBE
+	bool "Print ramstage and payload decompression timings"
+	default n
+	help
+	  Experiment instrumentation. Prints the TSC ticks spent loading the
+	  compressed ramstage and payload segments on the console.
+
+config DECOMP_PROBE_STAGE_IN_RAM
+	bool "Copy compressed data to RAM before decoding"
+	depends on DECOMP_PROBE
+	default n
+	help
+	  Read the whole compressed input into a CBMEM scratch buffer first,
+	  so flash read and decode times are reported separately.
+
+config DECOMP_PROBE_CACHE_ROM
+	bool "Cache the boot ROM write-protect while loading the payload"
+	depends on DECOMP_PROBE && ARCH_X86
+	default n
+	help
+	  Some platforms leave the ROM uncached in ramstage, so every payload
+	  byte is a separate flash transaction.
+
+config DECOMP_INPUT_PREFETCH
+	bool "Prefetch FHL and ANZ input"
+	default n
+	help
+	  Issue prefetch hints ahead of the FHL and ANZ input streams, as the
+	  LZMA decoder does, so decoding can overlap with flash reads.
+
+config DECOMP_PROBE_SCRATCH_SIZE
+	hex
+	depends on DECOMP_PROBE
+	default 0x100000

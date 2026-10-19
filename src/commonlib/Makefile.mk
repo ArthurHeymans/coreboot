@@ -70,6 +70,30 @@ postcar-y += bsd/lzsa2.c
 all-y += list.c
 all-y += bsd/zstd_wrapper.c
 
+ifneq ($(CONFIG_COMPRESS_RAMSTAGE_FHL)$(CONFIG_COMPRESSED_PAYLOAD_FHL),)
+postcar-y += bsd/fhl_wrapper.c
+romstage-y += bsd/fhl_wrapper.c
+ramstage-y += bsd/fhl_wrapper.c
+endif
+ifeq ($(CONFIG_FHL_ANZ_O2),y)
+# Both codecs are tuned at -O2; -Os leaves their hot helpers out of line.
+# ANZ also relies on the compiler expanding its fixed-size memcpy() loads.
+$(foreach class,postcar romstage ramstage, \
+	$(eval $(obj)/$(class)/commonlib/bsd/fhl_wrapper.o: CFLAGS_$(class) += -O2) \
+	$(eval $(obj)/$(class)/commonlib/bsd/anz_wrapper.o: CFLAGS_$(class) += -O2 -fhosted -fbuiltin))
+endif
+ifneq ($(CONFIG_COMPRESS_RAMSTAGE_ANZ)$(CONFIG_COMPRESSED_PAYLOAD_ANZ),)
+postcar-y += bsd/anz_wrapper.c
+romstage-y += bsd/anz_wrapper.c
+ramstage-y += bsd/anz_wrapper.c
+ifeq ($(CONFIG_ANZ_SSE2),y)
+# The SSE2 decoder needs the compiler's own <emmintrin.h>.
+$(foreach class,postcar romstage ramstage, \
+	$(eval $(obj)/$(class)/commonlib/bsd/anz_wrapper.o: \
+		CFLAGS_$(class) += -isystem $(shell $(CC_x86_32) -print-file-name=include)))
+endif
+endif
+
 ramstage-y += sort.c
 
 romstage-y += bsd/elog.c

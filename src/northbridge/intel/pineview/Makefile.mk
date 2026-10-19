@@ -8,6 +8,7 @@ bootblock-y += bootblock.c
 ramstage-y += memmap.c
 ramstage-y += northbridge.c
 ramstage-y += gma.c
+ramstage-$(CONFIG_CBFS_PRELOAD) += preload.c
 
 pineview-gma-mainboard-ads := \
 	$(wildcard $(src)/mainboard/$(MAINBOARDDIR)/gma-mainboard.ads) \

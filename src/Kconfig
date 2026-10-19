@@ -253,7 +253,35 @@ config COMPRESS_RAMSTAGE_LZSA2
 	  worse than LZMA/ZSTD, while decompressing faster than ZSTD with a
 	  decompressor that is as small as LZ4's and needs no scratch memory.
 	  A good fit for platforms where decompression scratch space is scarce.
+
+config COMPRESS_RAMSTAGE_FHL
+	bool "Compress ramstage with FHL"
+	help
+	  FHL is a semi-static Huffman LZ77 codec with a small decoder. It is
+	  denser than LZ4 and decodes at a similar speed to ZSTD. The decoder
+	  needs 45 KiB of BSS.
+
+config COMPRESS_RAMSTAGE_ANZ
+	bool "Compress ramstage with ANZ"
+	help
+	  ANZ is an LZ77 codec with adaptive nibble-wise rANS coding. It comes
+	  within about 1% of LZMA's size and decodes faster. The decoder needs
+	  83 KiB of BSS.
 endchoice
+
+config FHL_ANZ_O2
+	bool "Build the FHL and ANZ decoders with -O2"
+	depends on COMPRESS_RAMSTAGE_FHL || COMPRESSED_PAYLOAD_FHL || COMPRESS_RAMSTAGE_ANZ || COMPRESSED_PAYLOAD_ANZ
+	default y
+
+config ANZ_SSE2
+	bool "Use SSE2 in the ANZ decoder"
+	depends on SSE2
+	depends on COMPRESS_RAMSTAGE_ANZ || COMPRESSED_PAYLOAD_ANZ
+	default y
+	help
+	  The SSE2 ANZ symbol decoder is about three times as fast as the
+	  scalar one.
 
 config COMPRESS_PRERAM_STAGES
 	bool "Compress romstage and verstage"

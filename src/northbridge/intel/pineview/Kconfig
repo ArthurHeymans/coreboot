@@ -42,4 +42,9 @@ config FIXED_EPBAR_MMIO_BASE
 config DOMAIN_RESOURCE_32BIT_LIMIT
 	default 0xfec00000
 
+# Room for the uncompressed payload; the x86 default with
+# ASYNC_FILE_LOADING_CACHE (2 MiB of BSS) overflows the TSEG stage cache.
+config RAMSTAGE_CBFS_CACHE_SIZE
+	default 0x28000 if ASYNC_FILE_LOADING_CACHE
+
 endif

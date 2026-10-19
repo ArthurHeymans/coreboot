@@ -3,6 +3,7 @@
 #include <commonlib/bsd/compression.h>
 #include <commonlib/endian.h>
 #include <console/console.h>
+#include <decomp_probe.h>
 #include <string.h>
 #include <symbols.h>
 #include <cbfs.h>
@@ -67,12 +68,17 @@ static int load_one_segment(uint8_t *dest,
 	/* Compute the boundaries of the segment */
 	end = dest + memsz;
 
+	const size_t in_len = len;
+	const uint8_t *in;
+
 	/* Copy data from the initial buffer */
 	switch (compression) {
 	case CBFS_COMPRESS_LZMA: {
 		printk(BIOS_DEBUG, "using LZMA\n");
+		decomp_probe_start();
+		in = decomp_probe_input(src, len);
 		timestamp_add_now(TS_ULZMA_START);
-		len = ulzman(src, len, dest, memsz);
+		len = ulzman(in, len, dest, memsz);
 		timestamp_add_now(TS_ULZMA_END);
 		if (!len) /* Decompression Error. */
 			return 0;
@@ -80,8 +86,10 @@ static int load_one_segment(uint8_t *dest,
 	}
 	case CBFS_COMPRESS_LZ4: {
 		printk(BIOS_DEBUG, "using LZ4\n");
+		decomp_probe_start();
+		in = decomp_probe_input(src, len);
 		timestamp_add_now(TS_ULZ4F_START);
-		len = ulz4fn(src, len, dest, memsz);
+		len = ulz4fn(in, len, dest, memsz);
 		timestamp_add_now(TS_ULZ4F_END);
 		if (!len) /* Decompression Error. */
 			return 0;
@@ -92,8 +100,10 @@ static int load_one_segment(uint8_t *dest,
 			return 0;
 
 		printk(BIOS_DEBUG, "using ZSTD\n");
+		decomp_probe_start();
+		in = decomp_probe_input(src, len);
 		timestamp_add_now(TS_UZSTDF_START);
-		len = uzstdn(src, len, dest, memsz);
+		len = uzstdn(in, len, dest, memsz);
 		timestamp_add_now(TS_UZSTDF_END);
 		if (!len) /* Decompression Error. */
 			return 0;
@@ -105,9 +115,40 @@ static int load_one_segment(uint8_t *dest,
 			return 0;
 
 		printk(BIOS_DEBUG, "using LZSA2\n");
+		decomp_probe_start();
+		in = decomp_probe_input(src, len);
 		timestamp_add_now(TS_ULZSA2_START);
-		len = ulzsa2n(src, len, dest, memsz);
+		len = ulzsa2n(in, len, dest, memsz);
 		timestamp_add_now(TS_ULZSA2_END);
+		if (!len) /* Decompression Error. */
+			return 0;
+		break;
+	}
+
+	case CBFS_COMPRESS_FHL: {
+		if (!CONFIG(COMPRESSED_PAYLOAD_FHL))
+			return 0;
+
+		printk(BIOS_DEBUG, "using FHL\n");
+		decomp_probe_start();
+		in = decomp_probe_input(src, len);
+		timestamp_add_now(TS_UFHL_START);
+		len = ufhln(in, len, dest, memsz);
+		timestamp_add_now(TS_UFHL_END);
+		if (!len) /* Decompression Error. */
+			return 0;
+		break;
+	}
+	case CBFS_COMPRESS_ANZ: {
+		if (!CONFIG(COMPRESSED_PAYLOAD_ANZ))
+			return 0;
+
+		printk(BIOS_DEBUG, "using ANZ\n");
+		decomp_probe_start();
+		in = decomp_probe_input(src, len);
+		timestamp_add_now(TS_UANZ_START);
+		len = uanzn(in, len, dest, memsz);
+		timestamp_add_now(TS_UANZ_END);
 		if (!len) /* Decompression Error. */
 			return 0;
 		break;
@@ -115,13 +156,17 @@ static int load_one_segment(uint8_t *dest,
 
 	case CBFS_COMPRESS_NONE: {
 		printk(BIOS_DEBUG, "it's not compressed!\n");
-		memcpy(dest, src, len);
+		decomp_probe_start();
+		in = decomp_probe_input(src, len);
+		memcpy(dest, in, len);
 		break;
 	}
 	default:
 		printk(BIOS_INFO, "CBFS:  Unknown compression type %d\n", compression);
 		return 0;
 	}
+	decomp_probe_report("payload segment", compression, in_len, len);
+
 	/* Calculate middle after any changes to len. */
 	middle = dest + len;
 	printk(BIOS_SPEW, "[ 0x%08lx, %08lx, 0x%08lx) <- %08lx\n",

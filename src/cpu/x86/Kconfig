@@ -298,3 +298,10 @@ config RUNTIME_CONFIGURABLE_SMM_LOGLEVEL
 	  be referenced directly in SMM.
 
 endif # ARCH_X86
+
+config CACHE_ROM_AFTER_MP_INIT
+	bool "Cache the boot ROM in ramstage after MP init"
+	default n
+	help
+	  Experiment: cache the boot ROM write-protect from MP init until the
+	  payload starts, on CPUs using cpu/intel/model_1067x/mp_init.c.
