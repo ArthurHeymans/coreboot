@@ -310,6 +310,26 @@ void zeppelin_df_mmio_init(void)
 	}
 }
 
+/*
+ * The vendor code keeps the top 8 MiB of every die's below-4G window (pair
+ * 2 * die) as its non-PCI MMIO pool. On die 0 that's 0xfe400000-0xfebfffff.
+ */
+uint32_t zeppelin_nonpci_mmio_base(unsigned int node)
+{
+	const unsigned int pair = 2 * node;
+	const uint32_t ctrl = zeppelin_df_read32(0, 0, DF_F0_MMIO_CTRL(pair), DIRECT);
+	const uint64_t base =
+		(uint64_t)zeppelin_df_read32(0, 0, DF_F0_MMIO_BASE(pair), DIRECT) << 16;
+	const uint64_t top =
+		((uint64_t)zeppelin_df_read32(0, 0, DF_F0_MMIO_LIMIT(pair), DIRECT) + 1) << 16;
+
+	if ((ctrl & 3) != 3 || ((ctrl >> 4) & 0xff) != zeppelin_ioms_fabric_id(node) ||
+	    top > 4ULL * GiB || top - base < ZEPPELIN_NONPCI_MMIO_SIZE)
+		die("No below-4G DF MMIO window for die %u\n", node);
+
+	return top - ZEPPELIN_NONPCI_MMIO_SIZE;
+}
+
 /* ---- AmdFabricZpPei ---- */
 
 static void df_clock_gating(unsigned int die, bool single_die)
@@ -458,10 +478,10 @@ void zeppelin_df_scrub_init(void)
 		if (!size)
 			continue;
 		/* Inferred meaning: the two UMC channels are populated */
-		if (!zeppelin_apob_read8(zeppelin_apob(), APOB_GROUP_MEMORY, APOB_TYPE_MEM_CONFIG,
-					 die, 0x38, 0, &populated[0]) ||
-		    !zeppelin_apob_read8(zeppelin_apob(), APOB_GROUP_MEMORY, APOB_TYPE_MEM_CONFIG,
-					 die, 0x39, 0, &populated[1]))
+		if (!zeppelin_apob_read8(zeppelin_apob(), APOB_GROUP_MEMORY,
+					 APOB_TYPE_MEM_CONFIG, die, 0x38, 0, &populated[0]) ||
+		    !zeppelin_apob_read8(zeppelin_apob(), APOB_GROUP_MEMORY,
+					 APOB_TYPE_MEM_CONFIG, die, 0x39, 0, &populated[1]))
 			continue;
 		if (!populated[0] && !populated[1])
 			continue;
@@ -523,10 +543,16 @@ void zeppelin_df_late_init(void)
 		}
 	}
 
-	/* Route the legacy VGA ranges to the IOMS of die 0 */
-	for (unsigned int die = 0; die < dies; die++)
+	/* Legacy VGA goes to die 0 until PCI enumeration finds it on another die */
+	zeppelin_df_route_vga(0);
+}
+
+/* Route the legacy VGA ranges to the IOMS of a die, on every die's DF */
+void zeppelin_df_route_vga(unsigned int target)
+{
+	for (unsigned int die = 0; die < zeppelin_die_count(); die++)
 		zeppelin_df_clrsetbits32(die, 0, DF_F0_VGA_EN, DIRECT, 0xff4,
-					 zeppelin_ioms_fabric_id(0) << 4 | 1);
+					 zeppelin_ioms_fabric_id(target) << 4 | 1);
 }
 
 /* ReadyToBoot in the vendor code: "Disable extended configuration access" */

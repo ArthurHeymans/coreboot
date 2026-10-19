@@ -11,11 +11,11 @@ void zeppelin_fch_env_init(void);
 void zeppelin_fch_late_init(void);
 
 /* fch_sata.c */
-void zeppelin_fch_sata_reset(void);
-void zeppelin_fch_sata_init(void);
-void zeppelin_fch_sata_late(pci_devfn_t sata);
+void zeppelin_fch_sata_reset(unsigned int die);
+void zeppelin_fch_sata_init(unsigned int die);
+void zeppelin_fch_sata_late(unsigned int die, pci_devfn_t sata);
 
 /* fch_usb.c */
-void zeppelin_fch_usb_init(void);
+void zeppelin_fch_usb_init(unsigned int die);
 
 #endif /* AMD_ZEPPELIN_NATIVE_FCH_H */

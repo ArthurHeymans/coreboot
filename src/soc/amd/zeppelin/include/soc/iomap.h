@@ -9,12 +9,10 @@
 /* IO_APIC_ADDR defined in arch/x86	0xfec00000 */
 #define SPI_BASE_ADDRESS		0xfec10000
 /*
- * Non-PCI MMIO of die 0. The vendor firmware keeps the top 8 MiB of die 0's
- * below-4G Data Fabric window (0xfe400000-0xfebfffff) for these. Unlike
- * 0xfec01000 on Picasso, this range is routed to the die by the DF.
+ * The non-PCI MMIO (PSP BAR, NBIO IOAPIC) of every die is in the top 8 MiB of
+ * the die's below-4G Data Fabric window, as in the vendor firmware; on die 0
+ * that's 0xfe400000-0xfebfffff (native/data_fabric.c).
  */
-#define PSP_MMIO_BASE_ADDRESS		0xfe400000
-#define GNB_IO_APIC_ADDR		0xfeb00000
 
 /* FCH A-Link to AHB bridge and the AHB devices behind it */
 #define ALINK_AHB_ADDRESS		0xfedc0000

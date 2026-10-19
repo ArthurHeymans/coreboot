@@ -9,6 +9,8 @@
 /* psp.c */
 void zeppelin_psp_bar_init(void);
 void zeppelin_psp_lock_df(void);
+void zeppelin_psp_cache_bars(void);
+uint32_t zeppelin_psp_bar(unsigned int die);
 
 /* data_fabric.c */
 void zeppelin_df_mmio_init(void);
@@ -16,6 +18,7 @@ void zeppelin_df_early_init(void);
 void zeppelin_df_scrub_init(void);
 void zeppelin_df_late_init(void);
 void zeppelin_df_disable_ext_cfg(void);
+void zeppelin_df_route_vga(unsigned int die);
 
 /* ccx.c */
 void zeppelin_ccx_bsp_init(void);

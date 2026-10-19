@@ -152,8 +152,16 @@ static enum riser_mode riser_mode(void)
 	return RISER_X16;
 }
 
-void mainboard_get_dxio_descriptors(const dxio_descriptor **dxio, size_t *count)
+/* SP4r2: one die */
+void mainboard_get_dxio_descriptors(unsigned int die, const dxio_descriptor **dxio,
+				    size_t *count)
 {
+	if (die) {
+		*dxio = NULL;
+		*count = 0;
+		return;
+	}
+
 	switch (riser_mode()) {
 	case RISER_X4X4X4X4:
 		*dxio = mj11_x4x4x4x4;

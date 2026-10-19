@@ -119,14 +119,19 @@ void zeppelin_nbio_tom_init(void)
 }
 
 /*
- * The NBIO IOAPIC of die 0. The vendor firmware assigns it in DXE and sets
- * its ID to 0x81 + die; coreboot sets the ID when it registers the IOAPIC.
+ * The NBIO IOAPIC of every die, 1 MiB below the top of the die's non-PCI MMIO
+ * pool (0xfeb00000 on die 0). The vendor firmware assigns it in DXE and sets
+ * its ID to 0x81 + die; coreboot sets the IDs when it registers the IOAPICs.
  */
 void zeppelin_nbio_ioapic_init(void)
 {
-	smn_write32(IOAPIC_BASE_ADDR_HI, 0);
-	smn_write32(IOAPIC_BASE_ADDR_LO, GNB_IO_APIC_ADDR & 0xffffff00);
-	smn_write32(IOAPIC_BASE_ADDR_LO, (GNB_IO_APIC_ADDR & 0xffffff00) | IOHC_MMIO_EN);
+	for (unsigned int die = 0; die < zeppelin_die_count(); die++) {
+		const uint32_t base = zeppelin_nonpci_mmio_base(die) + ZEPPELIN_NONPCI_IOAPIC;
+
+		zeppelin_smn_write32(die, IOAPIC_BASE_ADDR_HI, 0);
+		zeppelin_smn_write32(die, IOAPIC_BASE_ADDR_LO, base);
+		zeppelin_smn_write32(die, IOAPIC_BASE_ADDR_LO, base | IOHC_MMIO_EN);
+	}
 }
 
 static struct zeppelin_pcie_topology pcie_topology[ZEPPELIN_MAX_DIES];

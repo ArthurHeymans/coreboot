@@ -8,9 +8,11 @@
 #include <vendorcode/amd/fsp/picasso/platform_descriptors.h>
 
 /*
- * DXIO engines of die 0. Lanes 0-15 belong to PCIe core 0 (devices 1.x and
- * 2.1), lanes 16-31 to PCIe core 1 (devices 3.x and 4.1).
+ * DXIO engines of a die. On every die lanes 0-15 belong to PCIe core 0
+ * (devices 1.x and 2.1), lanes 16-31 to PCIe core 1 (devices 3.x and 4.1).
+ * Called once per die; a die without engines gets *count = 0.
  */
-void mainboard_get_dxio_descriptors(const dxio_descriptor **dxio, size_t *count);
+void mainboard_get_dxio_descriptors(unsigned int die, const dxio_descriptor **dxio,
+				    size_t *count);
 
 #endif /* AMD_ZEPPELIN_PLATFORM_DESCRIPTORS_H */

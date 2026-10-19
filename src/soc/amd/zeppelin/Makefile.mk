@@ -13,6 +13,7 @@ ramstage-$(CONFIG_HAVE_ACPI_TABLES) += acpi.c
 ramstage-$(CONFIG_HAVE_ACPI_TABLES) += acpi_crat.c
 ramstage-y += chip.c
 ramstage-y += cpu.c
+ramstage-y += domain.c
 ramstage-y += fch.c
 ramstage-y += i2c.c
 ramstage-y += mca.c

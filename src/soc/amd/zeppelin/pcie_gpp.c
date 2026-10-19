@@ -2,6 +2,7 @@
 
 #include <amdblocks/amd_pci_util.h>
 #include <commonlib/bsd/helpers.h>
+#include <device/device.h>
 #include <device/pci_def.h>
 #include <soc/pci_devs.h>
 #include <stddef.h>
@@ -36,4 +37,14 @@ const struct pci_routing_info *get_pci_routing_table(size_t *entries)
 {
 	*entries = ARRAY_SIZE(pci_routing_table);
 	return pci_routing_table;
+}
+
+/*
+ * The bridges of die n interrupt through that die's NBIO IOAPIC. The MADT lists
+ * the FCH IOAPIC (GSI 0-23) and then one 32-pin NBIO IOAPIC per die in domain
+ * order, as the vendor tables do (die 0: GSI 24-55, die 1: 56-87).
+ */
+unsigned int soc_get_gsi_base(const struct device *dev)
+{
+	return 24 + 32 * dev_get_domain_id(dev);
 }

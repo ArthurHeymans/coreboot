@@ -673,10 +673,6 @@ enum cb_err zeppelin_dxio_init(void)
 	/* The DXIO firmware accesses these with DMA */
 	static struct dxio_engine_config configs[ZEPPELIN_MAX_DIES];
 	const unsigned int dies = zeppelin_die_count();
-	const dxio_descriptor *dxio;
-	size_t count;
-
-	mainboard_get_dxio_descriptors(&dxio, &count);
 
 	if (zeppelin_smu_test_message(0))
 		return CB_ERR;
@@ -686,12 +682,10 @@ enum cb_err zeppelin_dxio_init(void)
 	for (unsigned int die = 0; die < dies; die++) {
 		struct dxio_die d = {
 			.die = die,
-			/* The board descriptors describe die 0 only */
-			.dxio = die ? NULL : dxio,
-			.count = die ? 0 : count,
 			.config = &configs[die],
 		};
 
+		mainboard_get_dxio_descriptors(die, &d.dxio, &d.count);
 		build_engine_config(&d);
 		if (die_has_sata(&d))
 			nbif_sata_enable(die);

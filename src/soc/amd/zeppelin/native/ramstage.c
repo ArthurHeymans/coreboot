@@ -20,6 +20,7 @@ void zeppelin_native_silicon_init(void)
 	printk(BIOS_INFO, "Native silicon initialization (ramstage)\n");
 
 	zeppelin_nbio_ioapic_init();
+	zeppelin_psp_cache_bars();
 
 	/* AmdNbioPcieZPPei */
 	if (zeppelin_dxio_init() != CB_SUCCESS)
@@ -27,7 +28,7 @@ void zeppelin_native_silicon_init(void)
 	mainboard_dxio_training_done();
 
 	/* FchTaishanPei USB, then the DXE drivers */
-	zeppelin_fch_usb_init();
+	zeppelin_fch_usb_init(0);
 	if (zeppelin_smu_init() != CB_SUCCESS)
 		printk(BIOS_ERR, "SMU initialization failed\n");
 	zeppelin_ccx_get_cac_weights();
@@ -37,7 +38,7 @@ void zeppelin_native_silicon_init(void)
 	fch_init_acpi_decode();
 	zeppelin_fch_env_init();
 	if (is_dev_enabled(DEV_PTR(sata)))
-		zeppelin_fch_sata_init();
+		zeppelin_fch_sata_init(0);
 }
 
 /* ReadyToBoot in the vendor firmware */
@@ -46,7 +47,7 @@ static void zeppelin_ready_to_boot(void *unused)
 	const struct device *sata = DEV_PTR(sata);
 
 	if (is_dev_enabled(sata) && sata->upstream)
-		zeppelin_fch_sata_late(PCI_BDF(sata));
+		zeppelin_fch_sata_late(0, PCI_BDF(sata));
 	zeppelin_fch_late_init();
 	zeppelin_df_disable_ext_cfg();
 	zeppelin_psp_lock_df();

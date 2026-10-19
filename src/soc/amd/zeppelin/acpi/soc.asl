@@ -28,6 +28,13 @@ Scope(\_SB) { /* Start \_SB scope */
 		#include <soc/amd/common/acpi/platform.asl>
 	}
 
+	/* Die 1 of SP4 parts, with the same root bus layout; hidden on SP4r2 */
+	ROOT_BRIDGE(PCI1)
+
+	Scope(PCI1) {
+		#include "pci.asl"
+	}
+
 	/* PCI IRQ mapping for the Southbridge */
 	#include "pci_int_defs.asl"
 

@@ -148,9 +148,9 @@ void zeppelin_native_cpu_init(void)
 	/* The APs start with the reset value of MMIO_CONF_BASE */
 	enable_pci_mmconf();
 
-	/* RDRAND needs the PSP MMIO base of the die. Only die 0 has one mapped. */
-	if (((initial_apicid() >> 4) & 3) == 0 && get_psp_mmio_base())
-		msr_write(PSP_ADDR_MSR, get_psp_mmio_base());
+	/* RDRAND needs the PSP MMIO base of the core's own die (APIC ID [5:4]) */
+	if (zeppelin_psp_bar((initial_apicid() >> 4) & 3))
+		msr_write(PSP_ADDR_MSR, zeppelin_psp_bar((initial_apicid() >> 4) & 3));
 
 	/* MTRRs: memory above 4 GiB is write-back */
 	if (msr_read(SYSCFG_MSR) & SYSCFG_MSR_TOM2En) {

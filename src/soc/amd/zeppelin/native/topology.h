@@ -16,6 +16,13 @@
 
 /* Dies in the system, from the DF system configuration (1 on SP4r2, 2 on SP4) */
 unsigned int zeppelin_die_count(void);
+
+/* Non-PCI MMIO pool of a die: the PSP BAR at +0, the NBIO IOAPIC at +7 MiB */
+#define ZEPPELIN_NONPCI_MMIO_SIZE	(8 * MiB)
+#define ZEPPELIN_NONPCI_PSP		0
+#define ZEPPELIN_NONPCI_IOAPIC		(7 * MiB)
+uint32_t zeppelin_nonpci_mmio_base(unsigned int die);
+
 /* Root bus of a die */
 uint8_t zeppelin_die_bus(unsigned int die);
 /* Fabric ID of the IOMS (the PCIe root) of a die */
