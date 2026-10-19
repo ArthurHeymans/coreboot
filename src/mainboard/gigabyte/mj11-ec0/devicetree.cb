@@ -20,21 +20,25 @@ chip soc/amd/zeppelin
 			device ref sata on end
 		end
 		device ref lpc_bridge on
-			chip superio/aspeed/ast2400
-				register "use_espi" = "false"
-				device pnp 2e.2 on		# SUART1
-					io 0x60 = 0x3f8
-					irq 0x70 = 4
-					drq 0xf0 = 0
+			chip superio/common
+				device pnp 2e.0 on
+					chip superio/aspeed/ast2400
+						register "use_espi" = "false"
+						device pnp 2e.2 on		# SUART1
+							io 0x60 = 0x3f8
+							irq 0x70 = 4
+							drq 0xf0 = 0
+						end
+						device pnp 2e.3 off end		# SUART2
+						device pnp 2e.4 off end		# SWC
+						device pnp 2e.5 off end		# KBC (USB HID instead)
+						device pnp 2e.7 off end		# Host GPIO interface
+						device pnp 2e.b off end		# SUART3
+						device pnp 2e.c off end		# SUART4 belongs to BMC SOL
+						device pnp 2e.d on end		# iLPC2AHB
+						device pnp 2e.e off end		# Mailbox
+					end
 				end
-				device pnp 2e.3 off end		# SUART2
-				device pnp 2e.4 off end		# SWC
-				device pnp 2e.5 off end		# KBC (USB HID instead)
-				device pnp 2e.7 off end		# Host GPIO interface
-				device pnp 2e.b off end		# SUART3
-				device pnp 2e.c off end		# SUART4 belongs to BMC SOL
-				device pnp 2e.d on end		# iLPC2AHB
-				device pnp 2e.e off end		# Mailbox
 			end
 			chip drivers/ipmi		# BMC KCS
 				device pnp ca2.0 on end

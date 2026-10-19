@@ -37,4 +37,8 @@ config UART_FOR_CONSOLE
 config MAINBOARD_POWER_FAILURE_STATE
 	default 2
 
+# The vendor firmware runs SERIRQ in continuous mode (PMx54 = 0x90)
+config SERIRQ_CONTINUOUS_MODE
+	default y
+
 endif # BOARD_GIGABYTE_MJ11_EC0 || BOARD_GIGABYTE_MJ11_EC1
