@@ -8,7 +8,7 @@ chip soc/amd/zeppelin
 	device domain 0 on
 		ops zeppelin_pci_domain_ops
 		device pci 00.0 alias gnb on ops zeppelin_root_complex_operations end
-		device pci 00.2 alias iommu off ops amd_iommu_ops end
+		device pci 00.2 alias iommu on ops amd_iommu_ops end
 		# PCIe core 0: lanes 0-15
 		device pci 01.0 on end # Dummy device function, do not disable
 		device pci 01.1 alias gpp_bridge_0 off ops amd_external_pcie_gpp_ops end
@@ -35,7 +35,7 @@ chip soc/amd/zeppelin
 		device pci 07.1 alias internal_bridge_a on # internal bridge to bus A
 			ops amd_internal_pcie_gpp_ops
 			device pci 0.0 on end # dummy function
-			device pci 0.2 alias crypto off end # PSP cryptographic coprocessor
+			device pci 0.2 alias crypto on end # PSP cryptographic coprocessor
 			device pci 0.3 alias xhci_0 off
 				ops xhci_pci_ops
 			end
@@ -66,7 +66,7 @@ chip soc/amd/zeppelin
 	device domain 1 on
 		ops zeppelin_pci_domain_ops
 		device pci 00.0 alias die1_gnb on ops zeppelin_root_complex_operations end
-		device pci 00.2 alias die1_iommu off ops amd_iommu_ops end
+		device pci 00.2 alias die1_iommu on ops amd_iommu_ops end
 		# PCIe core 0: lanes 0-15
 		device pci 01.0 on end # Dummy device function, do not disable
 		device pci 01.1 alias die1_gpp_bridge_0 off ops amd_external_pcie_gpp_ops end
@@ -93,7 +93,7 @@ chip soc/amd/zeppelin
 		device pci 07.1 alias die1_internal_bridge_a on # internal bridge to bus A
 			ops amd_internal_pcie_gpp_ops
 			device pci 0.0 on end # dummy function
-			device pci 0.2 alias die1_crypto off end # PSP cryptographic coprocessor
+			device pci 0.2 alias die1_crypto on end # PSP cryptographic coprocessor
 			device pci 0.3 alias die1_xhci_0 off
 				ops xhci_pci_ops
 			end
