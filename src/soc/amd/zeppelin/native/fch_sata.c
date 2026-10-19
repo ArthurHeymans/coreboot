@@ -8,6 +8,8 @@
  */
 
 #include <amdblocks/acpimmio.h>
+#include <amdblocks/acpimmio_map.h>
+#include <device/mmio.h>
 #include <amdblocks/amd_pci_util.h>
 #include <console/console.h>
 #include <delay.h>
@@ -105,10 +107,13 @@ void zeppelin_fch_sata_init(unsigned int die)
 	/* No disabled ports */
 	zeppelin_smn_clrsetbits32(die, SATA_SMN_MISC, 0x00ff0000, 0);
 
-	/* No eSATA ports, no SGPIO */
+	/* No eSATA ports, no SGPIO: its pins (IOMUX 5 and 6 of the die's FCH) are GPIOs */
+	write8p(zeppelin_fch_acpimmio(die) + ACPIMMIO_IOMUX_BANK + 5, 0);
+	write8p(zeppelin_fch_acpimmio(die) + ACPIMMIO_IOMUX_BANK + 6, 0);
 	zeppelin_smn_clrsetbits32(die, SATA_SMN_10F8, 0x00ff00ff, 0);
 	zeppelin_smn_clrsetbits32(die, SATA_SMN_10F8, BIT(20), 0);
-	zeppelin_smn_clrsetbits32(die, SATA_SMN_10F4, BIT(4) | BIT(8) | BIT(9), 0);
+	/* SGPIO0/1 port select (vendor PCD 0x15c) is 0 for both, so bit 8 twice */
+	zeppelin_smn_clrsetbits32(die, SATA_SMN_10F4, BIT(4) | BIT(8), 0);
 
 	for (unsigned int n = 0; n < SATA_PORT_COUNT; n++) {
 		zeppelin_smn_clrsetbits32(die, SATA_SMN_PORT_CFG(n), 0x700, n << 8);

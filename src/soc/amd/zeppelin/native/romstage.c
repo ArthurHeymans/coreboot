@@ -93,8 +93,8 @@ void soc_romstage_init(void)
 
 	/* FchTaishanPei, then the board PEIMs that wait for its SMBus PPI */
 	zeppelin_fch_reset_init();
-	/* Die 1's FCH needs the vendor second-die setup first, which isn't ported */
 	zeppelin_fch_sata_reset(0);
+	zeppelin_fch_multi_reset();
 	mainboard_fch_reset_done();
 
 	/* AmdNbioBaseZPPei, AmdCcxZenZpPei */

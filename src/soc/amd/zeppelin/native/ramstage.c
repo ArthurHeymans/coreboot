@@ -29,6 +29,7 @@ void zeppelin_native_silicon_init(void)
 
 	/* FchTaishanPei USB, then the DXE drivers */
 	zeppelin_fch_usb_init(0);
+	zeppelin_fch_multi_usb();
 	if (zeppelin_smu_init() != CB_SUCCESS)
 		printk(BIOS_ERR, "SMU initialization failed\n");
 	zeppelin_ccx_get_cac_weights();
@@ -39,6 +40,8 @@ void zeppelin_native_silicon_init(void)
 	zeppelin_fch_env_init();
 	if (is_dev_enabled(DEV_PTR(sata)))
 		zeppelin_fch_sata_init(0);
+	zeppelin_fch_xgbe_init(0);
+	zeppelin_fch_multi_env();
 }
 
 /* ReadyToBoot in the vendor firmware */
@@ -48,6 +51,7 @@ static void zeppelin_ready_to_boot(void *unused)
 
 	if (is_dev_enabled(sata) && sata->upstream)
 		zeppelin_fch_sata_late(0, PCI_BDF(sata));
+	zeppelin_fch_multi_late();
 	zeppelin_fch_late_init();
 	zeppelin_df_disable_ext_cfg();
 	zeppelin_psp_lock_df();

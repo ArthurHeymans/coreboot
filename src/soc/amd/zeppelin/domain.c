@@ -38,6 +38,22 @@ static void zeppelin_domain_enable(struct device *domain)
 		mark_disabled(domain);
 }
 
+/* Not 0: the auto index of the common non-PCI resources */
+#define NONPCI_POOL_IDX		0x20000200
+
+/*
+ * The vendor firmware keeps every die's non-PCI MMIO pool (PSP, NBIO IOAPIC,
+ * the moved FCH ACPI MMIO of the other dies) out of PCI allocation.
+ */
+static void zeppelin_domain_read_resources(struct device *domain)
+{
+	const unsigned int die = dev_get_domain_id(domain);
+
+	amd_pci_domain_read_resources(domain);
+	mmio_range(domain, NONPCI_POOL_IDX, zeppelin_nonpci_mmio_base(die),
+		   ZEPPELIN_NONPCI_MMIO_SIZE);
+}
+
 static void zeppelin_domain_set_resources(struct device *domain)
 {
 	/* The vendor code routes the legacy VGA ranges to the die with the VGA bus */
@@ -78,7 +94,7 @@ static void zeppelin_domain_fill_ssdt(const struct device *domain)
 }
 
 struct device_operations zeppelin_pci_domain_ops = {
-	.read_resources	= amd_pci_domain_read_resources,
+	.read_resources	= zeppelin_domain_read_resources,
 	.set_resources	= zeppelin_domain_set_resources,
 	.scan_bus	= amd_pci_domain_scan_bus,
 	.enable		= zeppelin_domain_enable,
