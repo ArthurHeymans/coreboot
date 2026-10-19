@@ -6,42 +6,9 @@
 #include <soc/i2c.h>
 #include <soc/platform_descriptors.h>
 #include <types.h>
+#include <variant/dxio.h>
 
 #include "mainboard.h"
-
-/*
- * The vendor CPM DXIO template ($A26) with the Setup defaults applied:
- * SlimSAS as PCIe and both I210s on. The vendor sets "turn off unused lanes"
- * on every engine and leaves the link speed at its maximum. The x16 slot
- * (lanes 31..16, reversed) is split according to the riser, as the vendor
- * "Auto" bifurcation does.
- */
-#define MJ11_PCIE(_start, _end, _dev, _fn) {	\
-	.engine_type = PCIE_ENGINE,		\
-	.start_logical_lane = _start,		\
-	.end_logical_lane = _end,		\
-	.gpio_group_id = 1,			\
-	.port_present = true,			\
-	.device_number = _dev,			\
-	.function_number = _fn,			\
-	.link_speed_capability = GEN_MAX,	\
-	.turn_off_unused_lanes = true,		\
-}
-
-#define MJ11_FIXED_ENGINES						\
-	{ /* 4x SATA */							\
-		.engine_type = SATA_ENGINE,				\
-		.start_logical_lane = 0,				\
-		.end_logical_lane = 3,					\
-		.gpio_group_id = 1,					\
-		.channel_type = SATA_CHANNEL_OTHER,			\
-		.turn_off_unused_lanes = true,				\
-	},								\
-	MJ11_PCIE(4, 7, 1, 2),		/* SlimSAS */			\
-	MJ11_PCIE(8, 11, 1, 3),		/* M.2 */			\
-	MJ11_PCIE(12, 13, 1, 4),	/* I210 #1 */			\
-	MJ11_PCIE(14, 14, 1, 5),	/* I210 #2 */			\
-	MJ11_PCIE(15, 15, 1, 1)		/* AST2500 */
 
 /* Bifurcation modes of the vendor FUN_ffe08bf2 */
 enum riser_mode {
@@ -51,22 +18,6 @@ enum riser_mode {
 	RISER_X8X8 = 3,
 	RISER_DEFAULT = 7,	/* enable engine 6, retaining the template's lanes */
 	RISER_KEEP = 0xf,	/* retain the board-specific template */
-};
-
-static const dxio_descriptor mj11_x16[] = {
-	MJ11_FIXED_ENGINES,
-	MJ11_PCIE(31, 16, 3, 1),
-};
-
-/*
- * F09 AmdCpmOemInitPeim (7b8f8199-42c7-db87-307e-2892f3849538),
- * PEI $A26 at 0xffe09da0: engines 6 and 8 form the default x8/x8 pair.
- * This differs from explicit bifurcation mode 3, which uses engines 6/7.
- */
-static const dxio_descriptor mj11_ec1_default[] = {
-	MJ11_FIXED_ENGINES,
-	MJ11_PCIE(31, 24, 3, 1),
-	MJ11_PCIE(23, 16, 3, 3),
 };
 
 static const dxio_descriptor mj11_x8x8[] = {
@@ -191,13 +142,7 @@ void mainboard_get_dxio_descriptors(unsigned int die, const dxio_descriptor **dx
 		*count = ARRAY_SIZE(mj11_x8x8);
 		break;
 	default:
-		if (CONFIG(BOARD_GIGABYTE_MJ11_EC1)) {
-			*dxio = mj11_ec1_default;
-			*count = ARRAY_SIZE(mj11_ec1_default);
-		} else {
-			*dxio = mj11_x16;
-			*count = ARRAY_SIZE(mj11_x16);
-		}
+		variant_default_dxio(dxio, count);
 		break;
 	}
 }

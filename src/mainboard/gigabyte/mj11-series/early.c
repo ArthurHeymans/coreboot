@@ -8,7 +8,7 @@
 #include <soc/native.h>
 #include <types.h>
 
-#include "board_tables.h"
+#include <variant/tables.h>
 #include "mainboard.h"
 
 #define VR_MUX_A	0x73
@@ -86,18 +86,18 @@ static bool is_i2c_mux(uint8_t addr)
 }
 
 /*
- * F09 GbtReDriverPei: ordered mux selection and external lane tuning. The
+ * EC1 F09 GbtReDriverPei: ordered mux selection and external lane tuning. The
  * re-drivers sit on the riser and backplane of the G431 chassis; without them
  * the downstream mux doesn't answer. Skip the re-driver accesses behind a mux
  * that failed to switch instead of timing out on every one of them.
  */
-static void program_ec1_redrivers(void)
+static void program_redrivers(void)
 {
 	unsigned int failures = 0, skipped = 0;
 	bool path_ok = true;
 
-	for (size_t i = 0; i < mj11_ec1_redriver_i2c_count; i++) {
-		const struct mj11_i2c_rmw *r = &mj11_ec1_redriver_i2c[i];
+	for (size_t i = 0; i < mj11_redriver_i2c_count; i++) {
+		const struct mj11_i2c_rmw *r = &mj11_redriver_i2c[i];
 		const bool mux = is_i2c_mux(r->addr);
 		uint8_t value;
 		bool ok;
@@ -116,7 +116,7 @@ static void program_ec1_redrivers(void)
 			path_ok = ok;
 	}
 	if (failures || skipped)
-		printk(BIOS_INFO, "EC1 external re-drivers: %u accesses failed, %u skipped\n",
+		printk(BIOS_INFO, "External re-drivers: %u accesses failed, %u skipped\n",
 		       failures, skipped);
 }
 
@@ -127,8 +127,8 @@ void mainboard_fch_reset_done(void)
 	mj11_iomux_write(20, 1);
 	if (zeppelin_i2c_init(MJ11_I2C_BUS) == CB_SUCCESS) {
 		program_vrs();
-		if (CONFIG(BOARD_GIGABYTE_MJ11_EC1))
-			program_ec1_redrivers();
+		if (CONFIG(MJ11_HAS_REDRIVERS))
+			program_redrivers();
 	} else
 		printk(BIOS_ERR, "I2C%u setup failed, VRs not programmed\n", MJ11_I2C_BUS);
 

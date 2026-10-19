@@ -21,7 +21,7 @@
 #include <soc/southbridge.h>
 #include <types.h>
 
-#include "board_tables.h"
+#include <variant/tables.h>
 #include "mainboard.h"
 
 /*

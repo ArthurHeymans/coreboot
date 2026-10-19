@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
-#ifndef MJ11_BOARD_TABLES_H
-#define MJ11_BOARD_TABLES_H
+#ifndef MJ11_VARIANT_TABLES_H
+#define MJ11_VARIANT_TABLES_H
 
 #include <types.h>
 
@@ -32,13 +32,15 @@ struct mj11_i2c_rmw {
 	uint8_t or_mask;
 };
 
+/* The tables of a variant, generated from its vendor firmware */
 extern const struct mj11_vr_image mj11_vr_images[];
 extern const size_t mj11_vr_image_count;
 
 extern const struct mj11_smn_write mj11_post_training_smn[];
 extern const size_t mj11_post_training_smn_count;
 
-extern const struct mj11_i2c_rmw mj11_ec1_redriver_i2c[];
-extern const size_t mj11_ec1_redriver_i2c_count;
+/* Only with MJ11_HAS_REDRIVERS */
+extern const struct mj11_i2c_rmw mj11_redriver_i2c[];
+extern const size_t mj11_redriver_i2c_count;
 
-#endif /* MJ11_BOARD_TABLES_H */
+#endif /* MJ11_VARIANT_TABLES_H */

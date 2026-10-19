@@ -1,9 +1,7 @@
 ## SPDX-License-Identifier: GPL-2.0-only
 
-if BOARD_GIGABYTE_MJ11_EC0 || BOARD_GIGABYTE_MJ11_EC1
-
-config BOARD_SPECIFIC_OPTIONS
-	def_bool y
+config BOARD_GIGABYTE_MJ11_SERIES
+	def_bool n
 	select SOC_AMD_ZEPPELIN
 	select BOARD_ROMSIZE_KB_16384
 	select SUPERIO_ASPEED_AST2400
@@ -14,12 +12,31 @@ config BOARD_SPECIFIC_OPTIONS
 	select MEMORY_MAPPED_TPM
 	select MAINBOARD_HAS_TPM2
 
+config BOARD_GIGABYTE_MJ11_EC0
+	select BOARD_GIGABYTE_MJ11_SERIES
+
+config BOARD_GIGABYTE_MJ11_EC1
+	select BOARD_GIGABYTE_MJ11_SERIES
+	select MJ11_HAS_REDRIVERS
+
+if BOARD_GIGABYTE_MJ11_SERIES
+
+config MJ11_HAS_REDRIVERS
+	bool
+	help
+	  The vendor firmware tunes external PCIe re-drivers over I2C3
+	  (GbtReDriverPei); the variant provides the ordered table.
+
 config MAINBOARD_DIR
-	default "gigabyte/mj11-ec0"
+	default "gigabyte/mj11-series"
+
+config VARIANT_DIR
+	default "mj11-ec0" if BOARD_GIGABYTE_MJ11_EC0
+	default "mj11-ec1" if BOARD_GIGABYTE_MJ11_EC1
 
 config MAINBOARD_PART_NUMBER
+	default "MJ11-EC0" if BOARD_GIGABYTE_MJ11_EC0
 	default "MJ11-EC1" if BOARD_GIGABYTE_MJ11_EC1
-	default "MJ11-EC0"
 
 config FMDFILE
 	default "src/mainboard/\$(CONFIG_MAINBOARD_DIR)/board.fmd"
@@ -27,9 +44,12 @@ config FMDFILE
 config CBFS_SIZE
 	default 0xb1b000
 
+config ZEPPELIN_VENDOR_ROM
+	default "3rdparty/blobs/mainboard/\$(MAINBOARDDIR)/\$(VARIANT_DIR)/vendor.rom"
+
 config ZEPPELIN_VENDOR_ROM_SHA256
+	default "3631995d059e336863527f1511894bdfc61361bc0691a430b3896fb94746aded" if BOARD_GIGABYTE_MJ11_EC0
 	default "d71da440e44142e85b93f8a74ad7a0f251bf4113ef0782a2fd1498eb59f831cb" if BOARD_GIGABYTE_MJ11_EC1
-	default "3631995d059e336863527f1511894bdfc61361bc0691a430b3896fb94746aded"
 	help
 	  Gigabyte MJ11-EC0 BIOS F02 or MJ11-EC1 BIOS F09. A backup with
 	  modified NVRAM needs its own explicitly verified hash.
@@ -44,4 +64,4 @@ config MAINBOARD_POWER_FAILURE_STATE
 config SERIRQ_CONTINUOUS_MODE
 	default y
 
-endif # BOARD_GIGABYTE_MJ11_EC0 || BOARD_GIGABYTE_MJ11_EC1
+endif # BOARD_GIGABYTE_MJ11_SERIES
