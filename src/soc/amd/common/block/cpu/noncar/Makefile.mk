@@ -20,10 +20,11 @@ ramstage-y += mpinit.c
 #    Assembly will copy .datacopy to .data at runtime
 # 2. Mark .data and .bss as NOLOAD
 #    Drops the second PT_LOAD segment from ELF
+# Work on a copy: objcopy rewrites its input even when only dumping a section.
 $(objcbfs)/bootblock_fixed_data.elf: $(objcbfs)/bootblock.elf
 	@printf "    OBJCOPY    $(notdir $(@))\n"
-	$(OBJCOPY_bootblock) --dump-section .data=$(objcbfs)/data.section $<
 	cp $< $@
+	$(OBJCOPY_bootblock) --dump-section .data=$(objcbfs)/data.section $@
 	$(OBJCOPY_bootblock) --set-section-flags .datacopy=load,alloc \
 		--set-section-flags .bss=noload --set-section-flags .data=noload $@
 	$(OBJCOPY_bootblock) --update-section .datacopy=$(objcbfs)/data.section $@
