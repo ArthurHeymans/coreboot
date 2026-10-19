@@ -195,6 +195,7 @@ void print_supported_filetypes(void);
 
 /* lzma/lzma.c */
 int do_lzma_compress(char *in, int in_len, char *out, int *out_len);
+int do_lzsa2_compress(char *in, int in_len, char *out, int *out_len);
 int do_lzma_uncompress(char *dst, int dst_len, char *src, int src_len,
 			size_t *actual_size);
 

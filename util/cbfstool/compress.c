@@ -50,6 +50,23 @@ static int lzma_compress(char *in, int in_len, char *out, int *out_len)
 	return do_lzma_compress(in, in_len, out, out_len);
 }
 
+static int lzsa2_compress(char *in, int in_len, char *out, int *out_len)
+{
+	return do_lzsa2_compress(in, in_len, out, out_len);
+}
+
+static int lzsa2_decompress(char *in, int in_len, char *out, int out_len,
+			    size_t *actual_size)
+{
+	size_t result = ulzsa2n(in, in_len, out, out_len);
+
+	if (result == 0)
+		return -1;
+	if (actual_size != NULL)
+		*actual_size = result;
+	return 0;
+}
+
 static int lzma_decompress(char *in, int in_len, char *out, unused int out_len,
 				size_t *actual_size)
 {
@@ -137,6 +154,9 @@ comp_func_ptr compression_function(enum cbfs_compression algo)
 	case CBFS_COMPRESS_ZSTD:
 		compress = zstd_compress;
 		break;
+	case CBFS_COMPRESS_LZSA2:
+		compress = lzsa2_compress;
+		break;
 	default:
 		ERROR("Unknown compression algorithm %d!\n", algo);
 		return NULL;
@@ -159,6 +179,9 @@ decomp_func_ptr decompression_function(enum cbfs_compression algo)
 		break;
 	case CBFS_COMPRESS_ZSTD:
 		decompress = zstd_decompress;
+		break;
+	case CBFS_COMPRESS_LZSA2:
+		decompress = lzsa2_decompress;
 		break;
 	default:
 		ERROR("Unknown compression algorithm %d!\n", algo);

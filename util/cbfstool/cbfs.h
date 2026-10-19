@@ -26,6 +26,7 @@ static const struct typedesc_t types_cbfs_compression[] = {
 	{CBFS_COMPRESS_LZMA, "LZMA"},
 	{CBFS_COMPRESS_LZ4, "LZ4"},
 	{CBFS_COMPRESS_ZSTD, "ZSTD"},
+	{CBFS_COMPRESS_LZSA2, "LZSA2"},
 	{0, NULL},
 };
 

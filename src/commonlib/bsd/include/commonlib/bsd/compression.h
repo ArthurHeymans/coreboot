@@ -21,4 +21,12 @@ size_t ulz4f(const void *src, void *dst);
 /* Decompresses ZSTD image */
 size_t uzstdn(const void *src, size_t srcn, void *dst, size_t dstn);
 
+/* Decompresses an LZSA2 stream image (multiple frames with a header/footer)
+ * from src to dst, ensuring that it doesn't read more than srcn bytes and
+ * doesn't write more than dstn. Back references may reach up to 64 KiB into
+ * already decompressed output, so dst must be a single contiguous buffer.
+ * Returns amount of decompressed bytes, or 0 on error.
+ */
+size_t ulzsa2n(const void *src, size_t srcn, void *dst, size_t dstn);
+
 #endif	/* _COMMONLIB_COMPRESSION_H_ */

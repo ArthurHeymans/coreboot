@@ -11,6 +11,7 @@ enum cbfs_compression {
 	CBFS_COMPRESS_LZMA	= 1,
 	CBFS_COMPRESS_LZ4	= 2,
 	CBFS_COMPRESS_ZSTD	= 3,
+	CBFS_COMPRESS_LZSA2	= 4,
 };
 
 enum cbfs_type {

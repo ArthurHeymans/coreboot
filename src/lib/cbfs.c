@@ -131,7 +131,7 @@ static inline bool cbfs_lz4_enabled(void)
 	if (fspm_env() && CONFIG(FSP_COMPRESS_FSP_M_LZ4))
 		return true;
 
-	if (ENV_ROMSTAGE_OR_BEFORE && CONFIG(COMPRESS_PRERAM_STAGES))
+	if (ENV_ROMSTAGE_OR_BEFORE && CONFIG(COMPRESS_PRERAM_STAGES_LZ4))
 		return true;
 
 	if (ENV_SMM)
@@ -165,6 +165,17 @@ static inline bool cbfs_zstd_enabled(void)
 	if (ENV_PAYLOAD_LOADER && CONFIG(COMPRESSED_PAYLOAD_ZSTD))
 		return true;
 	if (ENV_RAMSTAGE_LOADER && CONFIG(COMPRESS_RAMSTAGE_ZSTD))
+		return true;
+	return false;
+}
+
+static inline bool cbfs_lzsa2_enabled(void)
+{
+	if (ENV_ROMSTAGE_OR_BEFORE && CONFIG(COMPRESS_PRERAM_STAGES_LZSA2))
+		return true;
+	if (ENV_PAYLOAD_LOADER && CONFIG(COMPRESSED_PAYLOAD_LZSA2))
+		return true;
+	if (ENV_RAMSTAGE_LOADER && CONFIG(COMPRESS_RAMSTAGE_LZSA2))
 		return true;
 	return false;
 }
@@ -295,6 +306,24 @@ static size_t cbfs_load_and_decompress(const struct region_device *rdev, void *b
 			timestamp_add_now(TS_UZSTDF_START);
 			out_size = uzstdn(map, in_size, buffer, buffer_size);
 			timestamp_add_now(TS_UZSTDF_END);
+		}
+
+		rdev_munmap(rdev, map);
+
+		return out_size;
+
+	case CBFS_COMPRESS_LZSA2:
+		if (!cbfs_lzsa2_enabled())
+			return 0;
+
+		map = rdev_mmap_full(rdev);
+		if (map == NULL)
+			return 0;
+
+		if (!cbfs_file_hash_mismatch(map, in_size, mdata, skip_verification)) {
+			timestamp_add_now(TS_ULZSA2_START);
+			out_size = ulzsa2n(map, in_size, buffer, buffer_size);
+			timestamp_add_now(TS_ULZSA2_END);
 		}
 
 		rdev_munmap(rdev, map);

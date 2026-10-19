@@ -100,6 +100,19 @@ static int load_one_segment(uint8_t *dest,
 		break;
 	}
 
+	case CBFS_COMPRESS_LZSA2: {
+		if (!CONFIG(COMPRESSED_PAYLOAD_LZSA2))
+			return 0;
+
+		printk(BIOS_DEBUG, "using LZSA2\n");
+		timestamp_add_now(TS_ULZSA2_START);
+		len = ulzsa2n(src, len, dest, memsz);
+		timestamp_add_now(TS_ULZSA2_END);
+		if (!len) /* Decompression Error. */
+			return 0;
+		break;
+	}
+
 	case CBFS_COMPRESS_NONE: {
 		printk(BIOS_DEBUG, "it's not compressed!\n");
 		memcpy(dest, src, len);

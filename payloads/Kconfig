@@ -97,6 +97,12 @@ config COMPRESSED_PAYLOAD_LZ4
 	help
 	  In order to reduce the size payloads take up in the ROM chip
 	  coreboot can compress them using the LZ4 algorithm.
+
+config COMPRESSED_PAYLOAD_LZSA2
+	bool "Use LZSA2 compression for payloads"
+	help
+	  In order to reduce the size payloads take up in the ROM chip
+	  coreboot can compress them using the LZSA2 algorithm.
 endchoice
 
 config PAYLOAD_OPTIONS

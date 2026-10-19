@@ -4,6 +4,7 @@ tests-y += helpers-test
 tests-y += gcd-test
 tests-y += ipchksum-test
 tests-y += string-test
+tests-y += lzsa2-test
 
 helpers-test-srcs += tests/commonlib/bsd/helpers-test.c
 
@@ -15,3 +16,6 @@ ipchksum-test-srcs += src/commonlib/bsd/ipchksum.c
 
 string-test-srcs += tests/commonlib/bsd/string-test.c
 string-test-srcs += src/commonlib/bsd/string.c
+
+lzsa2-test-srcs += tests/commonlib/bsd/lzsa2-test.c
+lzsa2-test-srcs += src/commonlib/bsd/lzsa2.c

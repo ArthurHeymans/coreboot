@@ -40,6 +40,20 @@ compressionobj += zstd_ddict.o
 compressionobj += zstd_decompress_block.o
 compressionobj += zstd_decompress.o
 #compressionobj += huf_decomppress_amd64.o
+# LZSA2 (reference encoder + shared coreboot decoder)
+compressionobj += lzsa2.o
+compressionobj += lzsa.o
+compressionobj += shrink_inmem.o
+compressionobj += shrink_context.o
+compressionobj += shrink_block_v1.o
+compressionobj += shrink_block_v2.o
+compressionobj += matchfinder.o
+compressionobj += frame.o
+compressionobj += dictionary.o
+compressionobj += divsufsort.o
+compressionobj += divsufsort_utils.o
+compressionobj += sssort.o
+compressionobj += trsort.o
 
 cbfsobj :=
 cbfsobj += cbfstool.o
@@ -233,6 +247,14 @@ $(objutil)/cbfstool/%.o: $(top)/util/cbfstool/lz4/lib/%.c
 	printf "    HOSTCC     $(subst $(objutil)/,,$(@))\n"
 	$(HOSTCC) $(TOOLCPPFLAGS) $(TOOLCFLAGS) $(HOSTCFLAGS) $(LZ4CFLAGS) -c -o $@ $<
 
+$(objutil)/cbfstool/%.o: $(top)/util/cbfstool/lzsa/%.c
+	printf "    HOSTCC     $(subst $(objutil)/,,$(@))\n"
+	$(HOSTCC) $(TOOLCPPFLAGS) $(TOOLCFLAGS) $(HOSTCFLAGS) -c -o $@ $<
+
+$(objutil)/cbfstool/%.o: $(top)/util/cbfstool/lzsa/libdivsufsort/lib/%.c
+	printf "    HOSTCC     $(subst $(objutil)/,,$(@))\n"
+	$(HOSTCC) $(TOOLCPPFLAGS) $(TOOLCFLAGS) $(HOSTCFLAGS) -c -o $@ $<
+
 $(objutil)/cbfstool/%.o: $(top)/util/cbfstool/fpt_formats/%.c
 	printf "    HOSTCC     $(subst $(objutil)/,,$(@))\n"
 	$(HOSTCC) $(TOOLCPPFLAGS) $(TOOLCFLAGS) $(HOSTCFLAGS) -c -o $@ $<
@@ -298,6 +320,13 @@ $(objutil)/cbfstool/cbfs_private.o: TOOLCFLAGS += -Wno-sign-compare
 # Tolerate lz4 warnings
 $(objutil)/cbfstool/lz4.o: TOOLCFLAGS += -Wno-missing-prototypes
 $(objutil)/cbfstool/lz4_wrapper.o: TOOLCFLAGS += -Wno-attributes
+# Tolerate LZSA reference implementation warnings and provide its includes
+LZSA2_OBJS := $(addprefix $(objutil)/cbfstool/,lzsa.o shrink_inmem.o \
+	shrink_context.o shrink_block_v1.o shrink_block_v2.o matchfinder.o \
+	frame.o dictionary.o divsufsort.o divsufsort_utils.o sssort.o trsort.o)
+$(LZSA2_OBJS): TOOLCPPFLAGS += -I$(top)/util/cbfstool/lzsa
+$(LZSA2_OBJS): TOOLCPPFLAGS += -I$(top)/util/cbfstool/lzsa/libdivsufsort/include
+$(LZSA2_OBJS): TOOLCFLAGS += -Wno-sign-compare -Wno-cast-qual -Wno-unused-but-set-variable
 
 $(objutil)/cbfstool/fmd.o: $(objutil)/cbfstool/fmd_parser.h
 $(objutil)/cbfstool/fmd.o: $(objutil)/cbfstool/fmd_scanner.h

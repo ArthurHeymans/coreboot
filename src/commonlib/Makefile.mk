@@ -61,6 +61,12 @@ romstage-y += bsd/lz4_wrapper.c
 ramstage-y += bsd/lz4_wrapper.c
 postcar-y += bsd/lz4_wrapper.c
 
+bootblock-y += bsd/lzsa2.c
+verstage-y += bsd/lzsa2.c
+romstage-y += bsd/lzsa2.c
+ramstage-y += bsd/lzsa2.c
+postcar-y += bsd/lzsa2.c
+
 all-y += list.c
 all-y += bsd/zstd_wrapper.c
 

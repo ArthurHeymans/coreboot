@@ -207,11 +207,17 @@ config MB_COMPRESS_RAMSTAGE_ZSTD
 	help
 	  Select this in a mainboard to use ZSTD compression by default
 
+config MB_COMPRESS_RAMSTAGE_LZSA2
+	bool
+	help
+	  Select this in a mainboard to use LZSA2 compression by default
+
 choice
 	prompt "Ramstage compression"
 	depends on HAVE_RAMSTAGE && !UNCOMPRESSED_RAMSTAGE
 	default COMPRESS_RAMSTAGE_LZ4 if MB_COMPRESS_RAMSTAGE_LZ4
 	default COMPRESS_RAMSTAGE_ZSTD if MB_COMPRESS_RAMSTAGE_ZSTD
+	default COMPRESS_RAMSTAGE_LZSA2 if MB_COMPRESS_RAMSTAGE_LZSA2
 	default COMPRESS_RAMSTAGE_LZMA
 
 config COMPRESS_RAMSTAGE_LZMA
@@ -239,18 +245,43 @@ config COMPRESS_RAMSTAGE_ZSTD
 	  This is faster than LZMA but uses more BSS.
 	  However it decompresses faster on slower CPUs and is suited for
 	  platforms with high speed SPI interfaces, but limited computing power.
+
+config COMPRESS_RAMSTAGE_LZSA2
+	bool "Compress ramstage with LZSA2"
+	help
+	  Compress ramstage with LZSA2. This compresses better than LZ4 but
+	  worse than LZMA/ZSTD, while decompressing faster than ZSTD with a
+	  decompressor that is as small as LZ4's and needs no scratch memory.
+	  A good fit for platforms where decompression scratch space is scarce.
 endchoice
 
 config COMPRESS_PRERAM_STAGES
-	bool "Compress romstage and verstage with LZ4"
+	bool "Compress romstage and verstage"
 	depends on (HAVE_ROMSTAGE || HAVE_VERSTAGE) && NO_XIP_EARLY_STAGES
 	# Default value set at the end of the file
 	help
-	  Compress romstage and (if it exists) verstage with LZ4 to save flash
-	  space and speed up boot, since the time for reading the image from SPI
-	  (and in the vboot case verifying it) is usually much greater than the
-	  time spent decompressing. Doesn't work for XIP stages for obvious
-	  reasons.
+	  Compress romstage and (if it exists) verstage to save flash space and
+	  speed up boot, since the time for reading the image from SPI (and in
+	  the vboot case verifying it) is usually much greater than the time
+	  spent decompressing. Doesn't work for XIP stages for obvious reasons.
+
+choice
+	prompt "Pre-RAM stage compression algorithm"
+	depends on COMPRESS_PRERAM_STAGES
+	default COMPRESS_PRERAM_STAGES_LZ4
+
+config COMPRESS_PRERAM_STAGES_LZ4
+	bool "Compress romstage and verstage with LZ4"
+	help
+	  LZ4 decompresses very fast, but compresses less well than LZSA2.
+
+config COMPRESS_PRERAM_STAGES_LZSA2
+	bool "Compress romstage and verstage with LZSA2"
+	help
+	  LZSA2 compresses better than LZ4 with a similarly sized decompressor
+	  that needs no scratch memory, at the cost of somewhat slower
+	  decompression. A good fit for pre-RAM stages running out of CAR.
+endchoice
 
 config COMPRESS_BOOTBLOCK
 	bool
