@@ -19,6 +19,7 @@ ramstage-y += i2c.c
 ramstage-y += mca.c
 ramstage-y += pcie_gpp.c
 ramstage-y += memmap.c
+ramstage-y += numa.c
 ramstage-y += root_complex.c
 ramstage-y += sata.c
 ramstage-y += soc_util.c

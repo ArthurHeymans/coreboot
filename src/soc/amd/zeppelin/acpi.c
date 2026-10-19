@@ -18,6 +18,8 @@
 #include <amdblocks/chip.h>
 #include <amdblocks/cpu.h>
 #include <amdblocks/ioapic.h>
+#include <soc/data_fabric.h>
+#include <soc/numa.h>
 #include <soc/pci_devs.h>
 #include <soc/southbridge.h>
 #include "chip.h"
@@ -58,6 +60,70 @@ void acpi_fill_fadt(acpi_fadt_t *fadt)
 	fadt->flags |= cfg->fadt_flags; /* additional board-specific flags */
 }
 
+#define ZEPPELIN_MAX_DRAM_RANGES	(3 * ZEPPELIN_NUM_DRAM_REG)
+
+static unsigned long acpi_fill_srat(unsigned long current)
+{
+	struct zeppelin_dram_range ranges[ZEPPELIN_MAX_DRAM_RANGES];
+	uint8_t apic_ids[ZEPPELIN_APIC_ID_MAP_SIZE];
+	size_t count;
+
+	/* The vendor SRAT: the CPUs (xAPIC entries), then the DRAM ranges */
+	zeppelin_cpu_apic_ids(apic_ids);
+	for (unsigned int id = 0; id < 8 * sizeof(apic_ids); id++) {
+		if (zeppelin_apic_present(apic_ids, id))
+			current += acpi_create_srat_lapic((acpi_srat_lapic_t *)current,
+							  zeppelin_numa_domain_of_apic(id), id);
+	}
+
+	count = zeppelin_dram_ranges(ranges, ARRAY_SIZE(ranges));
+	for (size_t i = 0; i < count; i++)
+		current += acpi_create_srat_mem((acpi_srat_mem_t *)current, ranges[i].domain,
+						ranges[i].base >> 10, ranges[i].size >> 10,
+						ACPI_SRAT_MEMORY_ENABLED);
+
+	return current;
+}
+
+/* One socket: 10 within a die, 16 between dies (vendor PCD 0x156 default) */
+static unsigned long acpi_fill_slit(unsigned long current)
+{
+	const unsigned int domains = zeppelin_numa_domain_count();
+	uint8_t *p = (uint8_t *)current;
+
+	*(uint64_t *)p = domains;
+	p += sizeof(uint64_t);
+	for (unsigned int i = 0; i < domains; i++)
+		for (unsigned int j = 0; j < domains; j++)
+			*p++ = i == j ? 10 : 16;
+
+	return (unsigned long)p;
+}
+
+static unsigned long add_numa_tables(unsigned long current, acpi_rsdp_t *rsdp)
+{
+	acpi_srat_t *srat;
+	acpi_slit_t *slit;
+
+	current = acpi_align_current(current);
+	srat = (acpi_srat_t *)current;
+	acpi_create_srat(srat, acpi_fill_srat);
+	current += srat->header.length;
+	acpi_add_table(rsdp, srat);
+
+	/* Like the vendor code, no SLIT with a single domain */
+	if (zeppelin_numa_domain_count() < 2)
+		return current;
+
+	current = acpi_align_current(current);
+	slit = (acpi_slit_t *)current;
+	acpi_create_slit(slit, acpi_fill_slit);
+	current += slit->header.length;
+	acpi_add_table(rsdp, slit);
+
+	return current;
+}
+
 unsigned long soc_acpi_write_tables(const struct device *device, unsigned long current,
 				    acpi_rsdp_t *rsdp)
 {
@@ -67,7 +133,8 @@ unsigned long soc_acpi_write_tables(const struct device *device, unsigned long c
 	/* IVRS */
 	current = acpi_add_ivrs_table(current, rsdp);
 
-	/* Add SRAT, MSCT, SLIT if needed in the future */
+	/* SRAT and SLIT; the vendor's MSCT and CDIT are optional for OSes */
+	current = add_numa_tables(current, rsdp);
 
 	if (CONFIG(PLATFORM_USES_FSP2_0))
 		current = acpi_add_fsp_tables(current, rsdp);

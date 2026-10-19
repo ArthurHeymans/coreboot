@@ -12,21 +12,42 @@
 #include <device/device.h>
 #include <device/mmio.h>
 #include <soc/data_fabric.h>
+#include <soc/numa.h>
 #include <soc/pci_devs.h>
 #include <stdint.h>
 
-static unsigned long gen_crat_hsa_entry(struct acpi_crat_header *crat, unsigned long current)
+/* One HSA CPU entry per NUMA domain, starting at its lowest APIC ID */
+static unsigned long gen_crat_hsa_entries(struct acpi_crat_header *crat, unsigned long current)
 {
-	struct crat_hsa_processing_unit *hsa_entry = (struct crat_hsa_processing_unit *)current;
-	memset(hsa_entry, 0, sizeof(struct crat_hsa_processing_unit));
+	uint8_t apic_ids[ZEPPELIN_APIC_ID_MAP_SIZE];
 
-	hsa_entry->flags = CRAT_HSA_PR_FLAG_EN | CRAT_HSA_PR_FLAG_CPU_PRES;
-	hsa_entry->wave_front_size = 4;
-	hsa_entry->num_cpu_cores = get_cpu_count();
-	hsa_entry->length = sizeof(struct crat_hsa_processing_unit);
-	crat->total_entries++;
+	zeppelin_cpu_apic_ids(apic_ids);
+	for (unsigned int domain = 0; domain < zeppelin_numa_domain_count(); domain++) {
+		struct crat_hsa_processing_unit *hsa_entry =
+			(struct crat_hsa_processing_unit *)current;
+		unsigned int cores = 0, first = 0;
 
-	current += hsa_entry->length;
+		for (unsigned int id = 8 * sizeof(apic_ids); id-- > 0;) {
+			if (!zeppelin_apic_present(apic_ids, id) ||
+			    zeppelin_numa_domain_of_apic(id) != domain)
+				continue;
+			cores++;
+			first = id;
+		}
+		if (!cores)
+			continue;
+
+		memset(hsa_entry, 0, sizeof(struct crat_hsa_processing_unit));
+		hsa_entry->flags = CRAT_HSA_PR_FLAG_EN | CRAT_HSA_PR_FLAG_CPU_PRES;
+		hsa_entry->proximity_node = domain;
+		hsa_entry->processor_id_low = first;
+		hsa_entry->wave_front_size = 4;
+		hsa_entry->num_cpu_cores = cores;
+		hsa_entry->length = sizeof(struct crat_hsa_processing_unit);
+		crat->total_entries++;
+		current += hsa_entry->length;
+	}
+
 	return current;
 }
 
@@ -38,7 +59,7 @@ static unsigned long create_crat_memory_entry(uint32_t domain, uint64_t region_b
 
 	mem_affinity->type = CRAT_MEMORY_TYPE;
 	mem_affinity->length = sizeof(struct crat_memory);
-	mem_affinity->proximity_domain = 0;
+	mem_affinity->proximity_domain = domain;
 	mem_affinity->base_address_low = region_base & 0xffffffff;
 	mem_affinity->base_address_high = (region_base >> 32) & 0xffffffff;
 	mem_affinity->length_low = region_size & 0xffffffff;
@@ -53,54 +74,13 @@ static unsigned long create_crat_memory_entry(uint32_t domain, uint64_t region_b
 static unsigned long gen_crat_memory_entries(struct acpi_crat_header *crat,
 					     unsigned long current)
 {
-	uint32_t dram_base_reg, dram_limit_reg, dram_hole_ctl;
-	uint64_t memory_length, memory_base, hole_base, size_below_hole;
-	size_t new_entries = 0;
+	struct zeppelin_dram_range ranges[3 * ZEPPELIN_NUM_DRAM_REG];
+	const size_t count = zeppelin_dram_ranges(ranges, ARRAY_SIZE(ranges));
 
-	for (size_t dram_map_idx = 0; dram_map_idx < ZEPPELIN_NUM_DRAM_REG;
-	     dram_map_idx++) {
-		dram_base_reg =
-			data_fabric_read32(DF_DRAM_BASE(dram_map_idx), IOMS0_FABRIC_ID);
-
-		if (dram_base_reg & DRAM_BASE_REG_VALID) {
-			dram_limit_reg = data_fabric_read32(DF_DRAM_LIMIT(dram_map_idx),
-								IOMS0_FABRIC_ID);
-			memory_length =
-				((dram_limit_reg & DRAM_LIMIT_ADDR) >> DRAM_LIMIT_ADDR_SHFT) + 1
-				- ((dram_base_reg & DRAM_BASE_ADDR) >> DRAM_BASE_ADDR_SHFT);
-			memory_length = memory_length << 28;
-			memory_base = (uint64_t)(dram_base_reg & DRAM_BASE_ADDR)
-				      << (28 - DRAM_BASE_ADDR_SHFT);
-
-			if (memory_base == 0) {
-				current =
-					create_crat_memory_entry(0, 0ull, 0xa0000ull, current);
-				memory_base = 1 * MiB;
-				memory_length = memory_base;
-				new_entries++;
-			}
-
-			if (dram_base_reg & DRAM_BASE_HOLE_EN) {
-				dram_hole_ctl = data_fabric_read32(DF_DRAM_HOLE_CTL,
-								       IOMS0_FABRIC_ID);
-				hole_base = (dram_hole_ctl & DRAM_HOLE_CTL_BASE);
-				size_below_hole = hole_base - memory_base;
-				current = create_crat_memory_entry(0, memory_base,
-								   size_below_hole, current);
-				memory_length = (uint64_t)(((dram_limit_reg & DRAM_LIMIT_ADDR)
-						  >> DRAM_LIMIT_ADDR_SHFT)
-						 + 1 - 0x10)
-						<< 28;
-				memory_base = 0x100000000;
-				new_entries++;
-			}
-
-			current = create_crat_memory_entry(0, memory_base, memory_length,
-							   current);
-			new_entries++;
-		}
-	}
-	crat->total_entries += new_entries;
+	for (size_t i = 0; i < count; i++)
+		current = create_crat_memory_entry(ranges[i].domain, ranges[i].base,
+						   ranges[i].size, current);
+	crat->total_entries += count;
 	return current;
 }
 
@@ -165,14 +145,15 @@ static uint8_t get_associativity(uint32_t encoded_associativity)
 
 static unsigned long gen_crat_cache_entry(struct acpi_crat_header *crat, unsigned long current)
 {
-	size_t total_num_threads, num_threads_sharing0, num_threads_sharing1,
+	uint8_t apic_ids[ZEPPELIN_APIC_ID_MAP_SIZE];
+	size_t num_threads_sharing0, num_threads_sharing1,
 		num_threads_sharing2, num_threads_sharing3, thread, new_entries;
 	struct cpuid_result cache_props0, cache_props1, cache_props2, cache_props3;
 	uint8_t sibling_mask = 0;
 	uint32_t l1_data_cache_ids, l1_inst_cache_ids, l2_cache_ids, l3_cache_ids;
 	struct crat_cache *cache_affinity = NULL;
 
-	total_num_threads = get_cpu_count();
+	zeppelin_cpu_apic_ids(apic_ids);
 
 	cache_props0 = cpuid_ext(CPUID_CACHE_PROPS, CACHE_PROPS_0);
 	cache_props1 = cpuid_ext(CPUID_CACHE_PROPS, CACHE_PROPS_1);
@@ -194,7 +175,11 @@ static unsigned long gen_crat_cache_entry(struct acpi_crat_header *crat, unsigne
 		((cache_props3.eax & NUM_SHARE_CACHE_MASK) >> NUM_SHARE_CACHE_SHFT) + 1;
 
 	new_entries = 0;
-	for (thread = 0; thread < total_num_threads; thread++) {
+	/* The processor IDs and sibling maps are APIC IDs */
+	for (thread = 0; thread < 8 * sizeof(apic_ids); thread++) {
+		if (!zeppelin_apic_present(apic_ids, thread))
+			continue;
+
 		/* L1 data cache */
 		if (thread % num_threads_sharing0 == 0) {
 			current = add_crat_cache_entry(&cache_affinity, current);
@@ -340,7 +325,8 @@ static unsigned long add_crat_tlb_entry(struct crat_tlb **tlb_affinity, unsigned
 
 static unsigned long gen_crat_tlb_entry(struct acpi_crat_header *crat, unsigned long current)
 {
-	size_t total_num_threads, num_threads_sharing0, num_threads_sharing1,
+	uint8_t apic_ids[ZEPPELIN_APIC_ID_MAP_SIZE];
+	size_t num_threads_sharing0, num_threads_sharing1,
 		num_threads_sharing2, thread, new_entries;
 	struct cpuid_result cache_props0, cache_props1, cache_props2;
 	uint8_t sibling_mask = 0;
@@ -348,7 +334,7 @@ static unsigned long gen_crat_tlb_entry(struct acpi_crat_header *crat, unsigned 
 		l2_tlb_1G_ids;
 	struct crat_tlb *tlb_affinity = NULL;
 
-	total_num_threads = get_cpu_count();
+	zeppelin_cpu_apic_ids(apic_ids);
 	cache_props0 = cpuid_ext(CPUID_CACHE_PROPS, CACHE_PROPS_0);
 	cache_props1 = cpuid_ext(CPUID_CACHE_PROPS, CACHE_PROPS_1);
 	cache_props2 = cpuid_ext(CPUID_CACHE_PROPS, CACHE_PROPS_2);
@@ -368,7 +354,11 @@ static unsigned long gen_crat_tlb_entry(struct acpi_crat_header *crat, unsigned 
 		((cache_props2.eax & NUM_SHARE_CACHE_MASK) >> NUM_SHARE_CACHE_SHFT) + 1;
 
 	new_entries = 0;
-	for (thread = 0; thread < total_num_threads; thread++) {
+	/* The processor IDs and sibling maps are APIC IDs */
+	for (thread = 0; thread < 8 * sizeof(apic_ids); thread++) {
+		if (!zeppelin_apic_present(apic_ids, thread))
+			continue;
+
 		/* L1 data TLB */
 		if (thread % num_threads_sharing0 == 0) {
 			current = add_crat_tlb_entry(&tlb_affinity, current);
@@ -525,11 +515,11 @@ static unsigned long gen_crat_tlb_entry(struct acpi_crat_header *crat, unsigned 
 
 static unsigned long acpi_fill_crat(struct acpi_crat_header *crat, unsigned long current)
 {
-	current = gen_crat_hsa_entry(crat, current);
+	current = gen_crat_hsa_entries(crat, current);
 	current = gen_crat_memory_entries(crat, current);
 	current = gen_crat_cache_entry(crat, current);
 	current = gen_crat_tlb_entry(crat, current);
-	crat->num_nodes++;
+	crat->num_nodes = zeppelin_numa_domain_count();
 
 	return current;
 }

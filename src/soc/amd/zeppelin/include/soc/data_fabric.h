@@ -90,7 +90,7 @@ union df_io_limit {
 #define   DRAM_LIMIT_ADDR_SHFT			12
 #define   DRAM_LIMIT_ADDR			(0xfffff << DRAM_LIMIT_ADDR_SHFT)
 
-#define ZEPPELIN_NUM_DRAM_REG		2
+#define ZEPPELIN_NUM_DRAM_REG		16
 
 #define DF_DRAM_BASE(dram_map_pair)	((dram_map_pair) * 2 * sizeof(uint32_t) \
 						+ DF_DRAM_BASE0)
