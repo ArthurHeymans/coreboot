@@ -80,23 +80,44 @@ static void program_vrs(void)
 	i2c_writeb(MJ11_I2C_BUS, VR_MUX_B, 0, BIT(0));
 }
 
-/* F09 GbtReDriverPei: ordered mux selection and external lane tuning. */
+static bool is_i2c_mux(uint8_t addr)
+{
+	return addr >= 0x70 && addr <= 0x77;	/* PCA954x */
+}
+
+/*
+ * F09 GbtReDriverPei: ordered mux selection and external lane tuning. The
+ * re-drivers sit on the riser and backplane of the G431 chassis; without them
+ * the downstream mux doesn't answer. Skip the re-driver accesses behind a mux
+ * that failed to switch instead of timing out on every one of them.
+ */
 static void program_ec1_redrivers(void)
 {
-	unsigned int failures = 0;
+	unsigned int failures = 0, skipped = 0;
+	bool path_ok = true;
 
 	for (size_t i = 0; i < mj11_ec1_redriver_i2c_count; i++) {
 		const struct mj11_i2c_rmw *r = &mj11_ec1_redriver_i2c[i];
+		const bool mux = is_i2c_mux(r->addr);
 		uint8_t value;
+		bool ok;
 
-		if (i2c_readb(MJ11_I2C_BUS, r->addr, r->reg, &value) ||
-		    i2c_writeb(MJ11_I2C_BUS, r->addr, r->reg,
-			       (value & r->and_mask) | r->or_mask))
+		if (!mux && !path_ok) {
+			skipped++;
+			continue;
+		}
+		ok = !i2c_readb(MJ11_I2C_BUS, r->addr, r->reg, &value) &&
+		     !i2c_writeb(MJ11_I2C_BUS, r->addr, r->reg,
+				 (value & r->and_mask) | r->or_mask);
+		if (!ok)
 			failures++;
+		/* Only a channel selection (a nonzero value) opens a path */
+		if (mux && r->or_mask)
+			path_ok = ok;
 	}
-	if (failures)
-		printk(BIOS_WARNING, "EC1 external re-driver: %u I2C accesses failed\n",
-		       failures);
+	if (failures || skipped)
+		printk(BIOS_INFO, "EC1 external re-drivers: %u accesses failed, %u skipped\n",
+		       failures, skipped);
 }
 
 void mainboard_fch_reset_done(void)
