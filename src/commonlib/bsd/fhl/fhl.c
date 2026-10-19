@@ -27,7 +27,8 @@
  * Stream: u32 size | u8 K | u32 nlit | u32 nfast | u32 offsets of literal
  * streams A and B and of the distance stream | map | meta lengths | code
  * lengths | commands (code, literal-run and match-length extras) | the three
- * other streams. Every stream ends in 8 zero bytes of refill slack.
+ * other streams. Every stream ends in 8 zero bytes of refill slack, the
+ * last in 16 (the word reader looks one word further ahead).
  * -DFHL_DECODER_ONLY leaves only fhl_decode(); -DFHL_LIB drops main().
  */
 #include <stddef.h>
@@ -68,11 +69,6 @@ static unsigned log2k(unsigned k) { return k > 8 ? 4 : k > 4 ? 3 : k > 2 ? 2 : k
 /* ------------------------------------------------------------------ */
 
 struct br { uint64_t bb; unsigned bc; const uint8_t *p; };
-
-/* Optional input prefetch hint, e.g. to overlap decoding with flash reads. */
-#ifndef FHL_PREFETCH
-#define FHL_PREFETCH(p) ((void)0)
-#endif
 
 /* Explicit builtins keep fixed-size loads/copies inline in freestanding builds. */
 static inline uint64_t rd64(const uint8_t *p) { uint64_t v; __builtin_memcpy(&v, p, 8); return v; }
@@ -212,6 +208,69 @@ __attribute__((noinline)) static uint64_t fhl_setup(const uint8_t *src, struct d
 	return (uint64_t)(b.p - src) * 8 - b.bc;
 }
 
+/* FHL_WORD_READS reads the bitstreams as aligned native words instead of
+ * unaligned 8-byte loads. It is faster where those loads are expensive:
+ * 32-bit targets, where the 64-bit bit buffer costs several instructions
+ * per operation (30% on a Ryzen 9, 10% on an Atom D410), and targets that
+ * split or trap misaligned loads. It is 15-20% slower on x86-64. */
+#ifndef FHL_WORD_READS
+#if __SIZEOF_POINTER__ >= 8 && (defined(__x86_64__) || defined(__aarch64__) || \
+				  defined(__riscv_misaligned_fast))
+#define FHL_WORD_READS 0
+#else
+#define FHL_WORD_READS 1
+#endif
+#endif
+
+#if FHL_WORD_READS
+/* Aligned word window: w0 holds the word containing the next bit, w1 the
+ * one after. A peek returns the FW_BITS bits from the current position;
+ * skipping at most FW_BITS bits moves the window by at most one word. */
+#if __SIZEOF_POINTER__ > 4
+typedef uint64_t fw;
+typedef unsigned __int128 fdw;
+#define FW_LOG 6
+#else
+typedef uint32_t fw;
+typedef uint64_t fdw;
+#define FW_LOG 5
+#endif
+#define FW_BITS (1u << FW_LOG)
+#define FW_MASK(n) ((fw)t->msk[n])
+#define LPW (FW_BITS / MAXL)        /* literal codes per window peek */
+struct win { fw w0, w1, w2; unsigned bit; const fw *p; };
+static inline void win_init(struct win *w, const fw *base, uint64_t pos)
+{
+	w->p = base + (pos >> FW_LOG);
+	w->bit = (unsigned)pos & (FW_BITS - 1);
+	w->w0 = w->p[0];
+	w->w1 = w->p[1];
+	w->w2 = w->p[2];
+}
+static inline fw win_peek(const struct win *w)
+{
+	return (fw)((((fdw)w->w1 << FW_BITS) | w->w0) >> (w->bit & (FW_BITS - 1)));
+}
+/* Stateless peek at an absolute bit position: two aligned loads. */
+static inline fw peek_at(const fw *base, uint64_t pos)
+{
+	const fw *p = base + (pos >> FW_LOG);
+	return (fw)((((fdw)p[1] << FW_BITS) | p[0]) >> ((unsigned)pos & (FW_BITS - 1)));
+}
+/* The third word keeps the load off the critical path: the next peek only
+ * waits for the selects, the load is needed one advance later. */
+static inline void win_skip(struct win *w, unsigned n)
+{
+	unsigned b = w->bit + n, adv = b >> FW_LOG;
+	w->bit = b & (FW_BITS - 1);
+	w->p += adv;
+	w->w0 = adv ? w->w1 : w->w0;
+	w->w1 = adv ? w->w2 : w->w1;
+	w->w2 = w->p[2];
+}
+
+#endif
+
 /* gcc's SLP pass turns the rep array below into xmm inserts: slower */
 #if defined(__GNUC__) && !defined(__clang__)
 __attribute__((optimize("no-tree-slp-vectorize")))
@@ -228,6 +287,105 @@ __attribute__((noinline)) size_t fhl_decode(const void *srcv, size_t n, void *ds
 	uint8_t *o = dst, *const end = dst + size;
 	const uint8_t *lr = end - nlit;
 
+#if FHL_WORD_READS
+	/* Every stream is read through a window of two aligned native words,
+	 * so no load straddles a word (or cache line) and the bit buffer is a
+	 * register wide on any target. Bit positions count from the aligned
+	 * word below src. */
+	const uintptr_t mis = (uintptr_t)src & (sizeof(fw) - 1);
+	const fw *const base = (const fw *)(const void *)(src - mis);
+	const uint64_t bias = (uint64_t)mis * 8;
+
+	/* pass 1: literal 2i from stream A, 2i+1 from stream B, into the tail */
+	{
+		struct win a, b;
+		win_init(&a, base, bias + (uint64_t)rd32le(src + 13) * 8);
+		win_init(&b, base, bias + (uint64_t)rd32le(src + 17) * 8);
+		const uint16_t *const lits = t->lit[0];
+		const uint16_t *ta = t->lit[t->lit0], *tb = ta;
+		uint8_t *q = end - nlit;
+		uint32_t k = nlit;
+#define LIT(v, s, tt) do {                                                     \
+		unsigned e_ = tt[v & ((1u << MAXL) - 1)], k_ = (e_ >> 8) & 15; \
+		v >>= k_; s += k_;                                            \
+		*q++ = (uint8_t)e_;                                           \
+		tt = lits + ((size_t)(e_ >> 12) << MAXL);                     \
+	} while (0)
+		while (k >= 2 * LPW) {     /* LPW codes of <= MAXL bits per window */
+			fw va = win_peek(&a), vb = win_peek(&b);
+			unsigned sa = 0, sb = 0;
+#pragma GCC unroll 8
+			for (unsigned i = 0; i < LPW; i++) { LIT(va, sa, ta); LIT(vb, sb, tb); }
+			win_skip(&a, sa); win_skip(&b, sb);
+			k -= 2 * LPW;
+		}
+		while (k >= 2) {
+			fw va = win_peek(&a), vb = win_peek(&b);
+			unsigned sa = 0, sb = 0;
+			LIT(va, sa, ta); LIT(vb, sb, tb);
+			win_skip(&a, sa); win_skip(&b, sb);
+			k -= 2;
+		}
+		if (k) { fw va = win_peek(&a); unsigned sa = 0; LIT(va, sa, ta); (void)sa; }
+#undef LIT
+	}
+
+	/* pass 2: commands. One peek covers a command code and both length
+	 * extras unless they exceed a word; distances come from their own
+	 * stream. Both are read by absolute bit position, which keeps the
+	 * state to one register each. */
+	uint64_t cp = bias + cpos, dp = bias + (uint64_t)rd32le(src + 21) * 8;
+	uint32_t r0 = 1, r1 = 1, r2 = 1;
+	unsigned fast = nfast != 0;
+	for (;;) {
+		fw pk = peek_at(base, cp);
+		uint32_t ce = t->cmd[pk & ((1u << MAXL) - 1)];
+		unsigned l0 = ce & 15, llx = (ce >> 4) & 31, mlx = (ce >> 18) & 31;
+		uint32_t L = (ce >> 9) & 511, M = ce >> 23;
+		if (__builtin_expect(l0 + llx + mlx <= FW_BITS, 1)) {
+			L += (uint32_t)((pk >> l0) & FW_MASK(llx));
+			M += (uint32_t)((pk >> (l0 + llx)) & FW_MASK(mlx));
+		} else {
+			L += (uint32_t)(peek_at(base, cp + l0) & FW_MASK(llx));
+			M += (uint32_t)(peek_at(base, cp + l0 + llx) & FW_MASK(mlx));
+		}
+		cp += l0 + llx + mlx;
+		if (__builtin_expect(fast, 1)) {
+			__builtin_memcpy(o, lr, 16);
+			if (L > 16) __builtin_memmove(o + 16, lr + 16, L - 16);
+			o += L; lr += L;
+		} else {
+			while (L--) *o++ = *lr++;
+			if (o >= end) break;
+		}
+		fw dk = peek_at(base, dp);
+		uint32_t de = t->dist[dk & ((1u << MAXL) - 1)];
+		unsigned d0 = de & 15, rep = (de >> 4) & 3, nb = (de >> 6) & 31;
+		uint32_t far = (de >> 11) + (uint32_t)((dk >> d0) & FW_MASK(nb));
+		dp += d0 + nb;
+		uint32_t rr[4] = { r0, r1, r2, far };  /* indexed: a branch chain mispredicts */
+		uint32_t d = rr[rep];
+		r2 = rep >= 2 ? r1 : r2;
+		r1 = rep >= 1 ? r0 : r1;
+		r0 = d;
+		const uint8_t *s = o - d;
+		uint8_t *e = o + M;
+		if (__builtin_expect(fast && d >= 8, 1)) {
+			/* two 8-byte halves: valid for any d >= 8, covers M <= 16 */
+			__builtin_memcpy(o, s, 8);
+			__builtin_memcpy(o + 8, s + 8, 8);
+			if (__builtin_expect(M > 16, 0)) {
+				o += 16; s += 16;
+				do { __builtin_memcpy(o, s, 8); o += 8; s += 8; } while (o < e);
+			}
+		} else {
+			while (o < e) *o++ = *s++;
+		}
+		o = e;
+		/* Once cleared, fast stays clear even when the countdown wraps. */
+		fast &= --nfast != 0;
+	}
+#else
 	/* pass 1: literal 2i from stream A, 2i+1 from stream B, into the tail */
 	{
 		const uint8_t *pa = src + rd32le(src + 13), *pb = src + rd32le(src + 17);
@@ -237,7 +395,7 @@ __attribute__((noinline)) size_t fhl_decode(const void *srcv, size_t n, void *ds
 		unsigned ca = 0, cb = 0;
 		uint8_t *q = end - nlit;
 		uint32_t k = nlit;
-#define RF(b, c, p) do { b |= rd64(p) << c; FHL_PREFETCH(p + 256); p += (63 - c) >> 3; c |= 56; } while (0)
+#define RF(b, c, p) do { b |= rd64(p) << c; p += (63 - c) >> 3; c |= 56; } while (0)
 #define LIT(b, c, tt) do {                                                     \
 		unsigned e_ = tt[b & ((1u << MAXL) - 1)], k_ = (e_ >> 8) & 15; \
 		b >>= k_; c -= k_;                                            \
@@ -265,7 +423,6 @@ __attribute__((noinline)) size_t fhl_decode(const void *srcv, size_t n, void *ds
 	unsigned fast = nfast != 0;
 	for (;;) {
 		uint64_t pk = rd64(src + (cpos >> 3)) >> (cpos & 7);
-		FHL_PREFETCH(src + (cpos >> 3) + 256);
 		uint32_t ce = t->cmd[pk & ((1u << MAXL) - 1)];
 		unsigned l0 = ce & 15, llx = (ce >> 4) & 31, mlx = (ce >> 18) & 31;
 		uint32_t L = ((ce >> 9) & 511) + (uint32_t)((pk >> l0) & t->msk[llx]);
@@ -280,7 +437,6 @@ __attribute__((noinline)) size_t fhl_decode(const void *srcv, size_t n, void *ds
 			if (o >= end) break;
 		}
 		uint64_t dk = rd64(src + (dpos >> 3)) >> (dpos & 7);
-		FHL_PREFETCH(src + (dpos >> 3) + 256);
 		uint32_t de = t->dist[dk & ((1u << MAXL) - 1)];
 		unsigned d0 = de & 15, rep = (de >> 4) & 3, nb = (de >> 6) & 31;
 		uint32_t far = (de >> 11) + (uint32_t)((dk >> d0) & t->msk[nb]);
@@ -307,6 +463,7 @@ __attribute__((noinline)) size_t fhl_decode(const void *srcv, size_t n, void *ds
 		/* Once cleared, fast stays clear even when the countdown wraps. */
 		fast &= --nfast != 0;
 	}
+#endif
 	return (size_t)(o - dst);
 }
 
@@ -1038,6 +1195,7 @@ static size_t emit(const uint8_t *in, uint32_t n, const struct seq *s, size_t ns
 		w.p += ws[q].p - sb[q];
 		free(sb[q]);
 	}
+	for (int i = 0; i < 16; i++) *w.p++ = 0;   /* the decoder's look-ahead words */
 	free(len); free(code);
 	return (size_t)(w.p - out);
 }
