@@ -1,10 +1,13 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
 #include <acpi/acpigen.h>
+#include <acpi/acpigen_pci.h>
+#include <amdblocks/amd_pci_util.h>
 #include <amdblocks/data_fabric.h>
 #include <amdblocks/root_complex.h>
 #include <device/device.h>
 #include <device/pci.h>
+#include <device/pci_ops.h>
 #include <stdio.h>
 #include <types.h>
 
@@ -70,11 +73,89 @@ static const char *zeppelin_domain_acpi_name(const struct device *domain)
 	return id < ARRAY_SIZE(domain_acpi_names) ? domain_acpi_names[id] : NULL;
 }
 
+/* A root bus device with an INTx pin of its own */
+struct root_irq {
+	unsigned int slot;
+	unsigned int pin;
+	unsigned int gsi;
+};
+
+static void write_fch_prt_entries(void)
+{
+	static const char *const links[] = { "\\_SB.INTA", "\\_SB.INTB", "\\_SB.INTC",
+					     "\\_SB.INTD" };
+
+	/* IOMMU (0.2) and SMBus/LPC (14.0/14.3) */
+	for (unsigned int slot = 0; slot <= 0x14; slot += 0x14)
+		for (unsigned int pin = 0; pin < ARRAY_SIZE(links); pin++)
+			acpigen_write_PRT_source_entry(slot, pin, links[pin], 0);
+}
+
+/*
+ * The _PRT of a die's root bus. The FCH devices on die 0 interrupt through the
+ * INTA-D links. Root bus bridges with an INTx pin of their own (the internal
+ * bridges 7.1 and 8.1; the GPP bridges have none) interrupt at their bridge IRQ
+ * of the die's NBIO IOAPIC, as the vendor DSDT has it. That IOAPIC has no PIC
+ * route, so the PIC table leaves them out.
+ */
+static void zeppelin_write_root_prt(const struct device *domain)
+{
+	const bool fch = dev_get_domain_id(domain) == 0;
+	struct root_irq bridges[8];
+	size_t count = 0;
+
+	for (struct device *dev = domain->downstream->children; dev; dev = dev->sibling) {
+		const struct pci_routing_info *info;
+		uint8_t pin;
+
+		if (!dev->enabled || dev->path.type != DEVICE_PATH_PCI)
+			continue;
+		info = get_pci_routing_info(dev->path.pci.devfn);
+		if (!info)
+			continue;
+		pin = pci_read_config8(dev, PCI_INTERRUPT_PIN);
+		if (!pin || pin > 4 || count == ARRAY_SIZE(bridges))
+			continue;
+		bridges[count++] = (struct root_irq) {
+			.slot = PCI_SLOT(dev->path.pci.devfn),
+			.pin = pin - 1,
+			.gsi = soc_get_gsi_base(dev) + info->bridge_irq,
+		};
+	}
+	if (!fch && !count)
+		return;
+
+	acpigen_write_scope(acpi_device_path(domain));
+	acpigen_write_method("_PRT", 0);
+
+	acpigen_write_if();
+	acpigen_emit_namestring("PICM");
+	acpigen_emit_byte(RETURN_OP);
+	acpigen_write_package((fch ? 8 : 0) + count);
+	if (fch)
+		write_fch_prt_entries();
+	for (size_t i = 0; i < count; i++)
+		acpigen_write_PRT_GSI_entry(bridges[i].slot, bridges[i].pin, bridges[i].gsi);
+	acpigen_pop_len(); /* Package */
+
+	acpigen_write_else();
+	acpigen_emit_byte(RETURN_OP);
+	acpigen_write_package(fch ? 8 : 0);
+	if (fch)
+		write_fch_prt_entries();
+	acpigen_pop_len(); /* Package */
+	acpigen_pop_len(); /* Else */
+
+	acpigen_pop_len(); /* Method */
+	acpigen_pop_len(); /* Scope */
+}
+
 static void zeppelin_domain_fill_ssdt(const struct device *domain)
 {
 	const unsigned int id = dev_get_domain_id(domain);
 
 	amd_pci_domain_fill_ssdt(domain);
+	zeppelin_write_root_prt(domain);
 
 	acpigen_write_scope(acpi_device_path(domain));
 	acpigen_write_name_integer("_UID", id);

@@ -18,9 +18,8 @@ Scope(\_SB) { /* Start \_SB scope */
 
 	ROOT_BRIDGE(PCI0)
 
+	/* The root bus _PRT of each die comes from the SSDT (domain.c) */
 	Scope(PCI0) {
-		/* Describe the AMD Northbridge */
-		#include "northbridge.asl"
 		#include "pci.asl"
 
 		/* Describe the AMD Fusion Controller Hub */
