@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Rome bench donor: preserve signed firmware and the complete upper half.
+FLASH 32M {
+	AMDFW@0x0 0x50b000
+	FMAP@0x50b000 0x1000
+	COREBOOT(CBFS)@0x50c000 0x8a4000
+	BOOTBLOCK@0xdb0000 0x250000
+	VENDOR_UPPER(PRESERVE)@0x1000000 0x1000000
+}

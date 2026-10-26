@@ -1,0 +1,15 @@
+## SPDX-License-Identifier: GPL-2.0-only
+
+if VENDOR_TYAN
+
+choice
+	prompt "Mainboard model"
+source "src/mainboard/tyan/*/Kconfig.name"
+endchoice
+
+source "src/mainboard/tyan/*/Kconfig"
+
+config MAINBOARD_VENDOR
+	default "Tyan"
+
+endif

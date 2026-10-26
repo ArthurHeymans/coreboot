@@ -1,0 +1,46 @@
+## SPDX-License-Identifier: GPL-2.0-only
+
+if BOARD_TYAN_S8030
+
+config BOARD_SPECIFIC_OPTIONS
+	def_bool y
+	select SOC_AMD_SP3
+	select BOARD_ROMSIZE_KB_32768
+	select SUPERIO_ASPEED_AST2400
+	select DRIVERS_UART_8250IO
+	select IPMI_KCS
+	select HAVE_ACPI_TABLES
+
+config MAINBOARD_DIR
+	default "tyan/s8030"
+
+config MAINBOARD_PART_NUMBER
+	default "S8030"
+
+config FMDFILE
+	default "src/mainboard/tyan/s8030/board.fmd"
+
+config CBFS_SIZE
+	default 0x8a4000
+
+
+config SP3_VENDOR_ROM
+	default "3rdparty/blobs/mainboard/tyan/s8030/vendor.rom"
+
+config SP3_VENDOR_ROM_SHA256
+	default "bca9c7c6c7484ceb8b32fc3b43bd66158fa8255a456c217ba5bdb8e85b0af93d"
+
+config UART_FOR_CONSOLE
+	default 0
+
+config SERIRQ_CONTINUOUS_MODE
+	default y
+
+config S8030_SLOT_BIFURCATION
+	string "PCIe slot widths (five digits in PCIE#1..5 order)"
+	default "11111"
+	help
+	  Each digit is 1 (x16), 2 (x8x8) or 4 (x4x4x4x4).
+	  The S8030 lab bench's NVMe carrier needs 11411.
+
+endif

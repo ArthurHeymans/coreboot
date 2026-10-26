@@ -9,6 +9,7 @@ This section contains documentation about coreboot on specific AMD SOCs.
 
 Family 15h <family15h.md>
 Family 17h <family17h.md>
+SP3 native port status <sp3.md>
 Platform Security Processor Integration <psp_integration.md>
 ROM Armor <psp_rom_armor.md>
 ```

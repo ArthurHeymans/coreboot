@@ -178,6 +178,14 @@ static void configure_child_lpc_windows(struct device *dev, struct device *child
 			dev_path(child), base, end);
 		/* find a resource size */
 		switch (base) {
+		case 0x2e:
+			set_x |= DECODE_SIO_ENABLE;
+			rsize = 2;
+			break;
+		case 0x4e:
+			set_x |= DECODE_ALTERNATE_SIO_ENABLE;
+			rsize = 2;
+			break;
 		case 0x60:	/*  KB */
 		case 0x64:	/*  MS */
 			set |= DECODE_ENABLE_KBC_PORT;

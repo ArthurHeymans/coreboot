@@ -1,0 +1,232 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+config SOC_AMD_SP3
+	bool
+	select ACPI_SOC_NVS
+	select ARCH_X86
+	select BOOT_DEVICE_SUPPORTS_WRITES if BOOT_DEVICE_SPI_FLASH
+	select DRIVERS_USB_PCI_XHCI
+	select GENERIC_GPIO_LIB
+	select HAVE_ACPI_TABLES
+	select HAVE_CF9_RESET
+	select HAVE_EM100_SUPPORT
+	select HAVE_SMI_HANDLER
+	select IDT_IN_EVERY_STAGE
+	select PARALLEL_MP_AP_WORK
+	select PROVIDES_ROM_SHARING
+	select RTC
+	select SOC_AMD_COMMON
+	select SOC_AMD_COMMON_BLOCK_ACPI
+	select SOC_AMD_COMMON_BLOCK_ACPIMMIO
+	select SOC_AMD_COMMON_BLOCK_ACPIMMIO_PM_IO_ACCESS
+	select SOC_AMD_COMMON_BLOCK_ACPI_ALIB
+	select SOC_AMD_COMMON_BLOCK_ACPI_CPU_POWER_STATE
+	select SOC_AMD_COMMON_BLOCK_ACPI_GPIO
+	select SOC_AMD_COMMON_BLOCK_ACPI_IVRS
+	select SOC_AMD_COMMON_BLOCK_ACPI_MADT
+	select SOC_AMD_COMMON_BLOCK_ALINK
+	select SOC_AMD_COMMON_BLOCK_APOB
+	select SOC_AMD_COMMON_BLOCK_BANKED_GPIOS
+	select SOC_AMD_COMMON_BLOCK_CONFIG
+	select SOC_AMD_COMMON_BLOCK_CPUFREQ_FAM17H_19H
+	select SOC_AMD_COMMON_BLOCK_CUSTOM_AP_START
+	select SOC_AMD_COMMON_BLOCK_DATA_FABRIC
+	select SOC_AMD_COMMON_BLOCK_DATA_FABRIC_DOMAIN
+	select SOC_AMD_COMMON_BLOCK_IOMMU
+	select SOC_AMD_COMMON_BLOCK_LPC
+	select SOC_AMD_COMMON_BLOCK_MCAX
+	select SOC_AMD_COMMON_BLOCK_NONCAR
+	select SOC_AMD_COMMON_BLOCK_NO_CPPC_MSR
+	select SOC_AMD_COMMON_BLOCK_APOB_NV_DISABLE
+	select AMD_FWM_POSITION_20000_DEFAULT
+	select SOC_AMD_COMMON_BLOCK_PCI
+	select SOC_AMD_COMMON_BLOCK_PCIE_GPP_DRIVER
+	select SOC_AMD_COMMON_BLOCK_PM
+	select SOC_AMD_COMMON_BLOCK_PM_CHIPSET_STATE_SAVE
+	select SOC_AMD_COMMON_BLOCK_PSP_GEN2
+	select SOC_AMD_COMMON_BLOCK_RESET
+	select SOC_AMD_COMMON_BLOCK_SATA
+	select SOC_AMD_COMMON_BLOCK_SMBUS
+	select SOC_AMD_COMMON_BLOCK_SMI
+	select SOC_AMD_COMMON_BLOCK_SMIHANDLER
+	select SOC_AMD_COMMON_BLOCK_SMM
+	select SOC_AMD_COMMON_BLOCK_SMU
+	select SOC_AMD_COMMON_BLOCK_SMU_SX_ENTRY
+	select SOC_AMD_COMMON_BLOCK_SPI
+	select SOC_AMD_COMMON_BLOCK_SVI2
+	select SOC_AMD_COMMON_BLOCK_TSC
+	select SOC_AMD_COMMON_BLOCK_UCODE
+	select SSE2
+	select DRAM_SUPPORT_DDR4
+	select DRIVERS_I2C_DESIGNWARE
+	select X86_AMD_FIXED_MTRRS
+	select HAVE_X86_64_SUPPORT
+	help
+	  Native AMD SP3 server silicon initialization after PSP/ABL memory
+	  training. The Tyan S8030 brings up Rome (EPYC 7002).
+
+if SOC_AMD_SP3
+
+config CHIPSET_DEVICETREE
+	string
+	default "soc/amd/sp3/chipset.cb"
+
+config EARLY_RESERVED_DRAM_BASE
+	hex
+	default 0x75000000
+	help
+	  Early DRAM window ending at 0x76000000, including the PSP reset
+	  image copied to 0x75db0000. Requires at least 2 GiB of DRAM.
+
+config EARLYRAM_BSP_STACK_SIZE
+	hex
+	default 0x1000
+
+config PSP_APOB_DRAM_ADDRESS
+	hex
+	default 0x30000000
+	help
+	  Location in DRAM where the PSP will copy the AGESA PSP Output
+	  Block. This is the destination of BIOS directory entry 0x61 in the
+	  vendor directories.
+
+config PSP_APOB_DRAM_SIZE
+	hex
+	default 0x40000
+	help
+	  Sanity bound and reserved space for the server APOB. The pinned
+	  S8030 Rome firmware produces 0x21958 bytes, exceeding SP4's 128 KiB.
+
+config PRERAM_CBMEM_CONSOLE_SIZE
+	hex
+	default 0x1600
+	help
+	  Increase this value if preram cbmem console is getting truncated
+
+config C_ENV_BOOTBLOCK_SIZE
+	hex
+	default 0x250000
+	help
+	  Size of the BIOS reset image (directory entry 0x62). The PSP copies
+	  this many bytes from the end of the flash to the end of the
+	  bootblock region, so the bootblock and the reset image coincide.
+
+config ROMSTAGE_ADDR
+	hex
+	default 0x76000000
+	help
+	  Sets the address in DRAM where romstage should be loaded.
+
+config ROMSTAGE_SIZE
+	hex
+	default 0x70000
+	help
+	  Sets the size of DRAM allocation for romstage in linker script.
+
+config ECAM_MMCONF_BASE_ADDRESS
+	default 0xE0000000
+
+config ECAM_MMCONF_BUS_NUMBER
+	default 256
+
+config MAX_CPUS
+	int
+	default 128
+	help
+	  Maximum number of threads the platform can have.
+
+config SERIRQ_CONTINUOUS_MODE
+	bool
+	default n
+	help
+	  Set this option to y for serial IRQ in continuous mode.
+	  Otherwise it is in quiet mode.
+
+config DRIVERS_I2C_DESIGNWARE_CLOCK_MHZ
+	int
+	default 150
+
+config SMM_TSEG_SIZE
+	hex
+	default 0x800000 if HAVE_SMI_HANDLER
+	default 0x0
+
+config SMM_RESERVED_SIZE
+	hex
+	default 0x180000
+
+config SMM_MODULE_STACK_SIZE
+	hex
+	default 0x800
+
+config ACPI_BERT
+	bool "Build ACPI BERT Table"
+	default y
+	depends on HAVE_ACPI_TABLES
+	help
+	  Report Machine Check errors identified in POST to the OS in an
+	  ACPI Boot Error Record Table.
+
+config ACPI_BERT_SIZE
+	hex
+	default 0x4000 if ACPI_BERT
+	default 0x0
+	help
+	  Specify the amount of DRAM reserved for gathering the data used to
+	  generate the ACPI table.
+
+config DISABLE_SPI_FLASH_ROM_SHARING
+	def_bool n
+	help
+	  Instruct the chipset to not honor the EGPIO67_SPI_ROM_REQ pin
+	  which indicates a board level ROM transaction request. This
+	  removes arbitration with board and assumes the chipset controls
+	  the SPI flash bus entirely.
+
+config DISABLE_KEYBOARD_RESET_PIN
+	bool
+	help
+	  Instruct the SoC to not use the state of GPIO_129 as keyboard reset
+	  signal. When this pin is used as GPIO and the keyboard reset
+	  functionality isn't disabled, configuring it as an output and driving
+	  it as 0 will cause a reset.
+
+menu "Vendor firmware"
+
+config AMDFW_CONFIG_FILE
+	string
+	default ""
+
+config SP3_UCODE_8310_FILE
+	string "Optional newer AMD Rome B0 microcode patch"
+	default ""
+	help
+	  Raw signed AMD patch for equivalence ID 0x8310, not an AMD container.
+	  Leave empty to use the donor patch. This overrides only the x86 CBFS
+	  patch; the vendor firmware and directories are preserved verbatim.
+
+config SP3_VENDOR_ROM
+	string "Vendor firmware image"
+	default "3rdparty/blobs/mainboard/$(MAINBOARDDIR)/vendor.rom"
+	help
+	  The EFS, the PSP and BIOS directories and all signed PSP firmware
+	  (PSP boot loader, SMU, ABL, PMU, APCB, microcode) are taken
+	  unchanged from this image. Only the BIOS reset image is replaced.
+
+config SP3_VENDOR_ROM_SHA256
+	string "SHA-256 of the vendor firmware image"
+	help
+	  The build stops if the vendor image does not have this hash. The
+	  directory layout is only known for the image that was analyzed.
+
+config SP3_VENDOR_AMDFW_SIZE
+	hex
+	default 0x50b000
+	help
+	  Size of the vendor region at the start of the flash that holds the
+	  EFS, the directories and every directory entry except the reset
+	  image.
+
+endmenu
+
+endif # SOC_AMD_SP3
